@@ -16,6 +16,8 @@ builder.Services.AddHostedService<PositionService>();
 
 // Add IMU services
 builder.Services.AddSingleton<ImuInitializer>();
+builder.Services.AddSingleton<ImuParser>();
+builder.Services.AddHostedService<ImuService>();
 
 // Add CORS for frontend
 builder.Services.AddCors(options =>

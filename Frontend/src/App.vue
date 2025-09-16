@@ -160,6 +160,18 @@ onMounted(async () => {
     gnssData.value.longitude = data.longitude
   })
 
+  connection.on("ImuUpdate", (data) => {
+    imuData.value.acceleration.x = data.acceleration.x
+    imuData.value.acceleration.y = data.acceleration.y
+    imuData.value.acceleration.z = data.acceleration.z
+    imuData.value.gyroscope.x = data.gyroscope.x
+    imuData.value.gyroscope.y = data.gyroscope.y
+    imuData.value.gyroscope.z = data.gyroscope.z
+    imuData.value.magnetometer.x = data.magnetometer.x
+    imuData.value.magnetometer.y = data.magnetometer.y
+    imuData.value.magnetometer.z = data.magnetometer.z
+  })
+
   try {
     await connection.start()
     console.log("SignalR Connected successfully!")
