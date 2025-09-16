@@ -8,124 +8,105 @@ let connection = null
 // Comprehensive GNSS data model
 const gnssData = ref({
   // Fix status
-  fixType: 'RTK Fixed',
-  rtkMode: 'Fixed', // Float, Fixed
+  fixType: null,
+  rtkMode: null,
   
   // Position
-  latitude: 45.4234567,
-  longitude: -75.6987654,
-  altitude: 145.23,
+  latitude: 45.4234567, // Keep for position service
+  longitude: -75.6987654, // Keep for position service
+  altitude: null,
   
   // Accuracy estimates
-  hAcc: 0.014, // Horizontal accuracy (m)
-  vAcc: 0.023, // Vertical accuracy (m)
+  hAcc: null,
+  vAcc: null,
   
   // Dilution of Precision
-  hdop: 0.92,
-  vdop: 1.15,
-  pdop: 1.48,
-  tdop: 0.87,
+  hdop: null,
+  vdop: null,
+  pdop: null,
+  tdop: null,
   
   // Satellite counts
-  satellitesUsed: 12,
-  satellitesTracked: 18,
+  satellitesUsed: null,
+  satellitesTracked: null,
   
   // Constellation breakdown
   constellations: {
-    gps: { used: 7, tracked: 9 },
-    glonass: { used: 3, tracked: 5 },
-    galileo: { used: 2, tracked: 3 },
-    beidou: { used: 0, tracked: 1 }
+    gps: { used: null, tracked: null },
+    glonass: { used: null, tracked: null },
+    galileo: { used: null, tracked: null },
+    beidou: { used: null, tracked: null }
   },
   
   // Per-satellite data
-  satellites: [
-    { svid: 2, constellation: 'GPS', used: true, cn0: 45, elevation: 67, azimuth: 45, quality: 'Good' },
-    { svid: 5, constellation: 'GPS', used: true, cn0: 42, elevation: 45, azimuth: 120, quality: 'Good' },
-    { svid: 12, constellation: 'GPS', used: true, cn0: 38, elevation: 23, azimuth: 280, quality: 'Fair' },
-    { svid: 15, constellation: 'GPS', used: true, cn0: 47, elevation: 78, azimuth: 15, quality: 'Excellent' },
-    { svid: 18, constellation: 'GPS', used: true, cn0: 41, elevation: 34, azimuth: 190, quality: 'Good' },
-    { svid: 21, constellation: 'GPS', used: true, cn0: 39, elevation: 28, azimuth: 310, quality: 'Fair' },
-    { svid: 25, constellation: 'GPS', used: true, cn0: 44, elevation: 55, azimuth: 85, quality: 'Good' },
-    { svid: 29, constellation: 'GPS', used: false, cn0: 32, elevation: 12, azimuth: 220, quality: 'Poor' },
-    { svid: 31, constellation: 'GPS', used: false, cn0: 35, elevation: 18, azimuth: 160, quality: 'Fair' },
-    { svid: 1, constellation: 'GLONASS', used: true, cn0: 43, elevation: 42, azimuth: 75, quality: 'Good' },
-    { svid: 2, constellation: 'GLONASS', used: true, cn0: 40, elevation: 38, azimuth: 205, quality: 'Good' },
-    { svid: 11, constellation: 'GLONASS', used: true, cn0: 37, elevation: 25, azimuth: 340, quality: 'Fair' },
-    { svid: 12, constellation: 'GLONASS', used: false, cn0: 33, elevation: 15, azimuth: 130, quality: 'Poor' },
-    { svid: 24, constellation: 'GLONASS', used: false, cn0: 36, elevation: 20, azimuth: 260, quality: 'Fair' },
-    { svid: 7, constellation: 'Galileo', used: true, cn0: 46, elevation: 61, azimuth: 95, quality: 'Excellent' },
-    { svid: 12, constellation: 'Galileo', used: true, cn0: 43, elevation: 39, azimuth: 175, quality: 'Good' },
-    { svid: 19, constellation: 'Galileo', used: false, cn0: 34, elevation: 16, azimuth: 295, quality: 'Poor' },
-    { svid: 3, constellation: 'BeiDou', used: false, cn0: 31, elevation: 11, azimuth: 240, quality: 'Poor' }
-  ],
+  satellites: [],
   
   // RTK-specific metrics
   rtk: {
-    active: true,
-    arRatio: 999.9, // Ambiguity resolution ratio
-    correctionAge: 1.2, // seconds
-    baselineLength: 1247.5, // meters
-    relativeAccuracy: { north: 0.008, east: 0.012, down: 0.019 } // meters
+    active: false,
+    arRatio: null,
+    correctionAge: null,
+    baselineLength: null,
+    relativeAccuracy: { north: null, east: null, down: null }
   },
   
   // Timing and integrity
-  tAcc: 15, // Time accuracy (ns)
-  solutionLatency: 145, // ms
+  tAcc: null,
+  solutionLatency: null,
   
   // Hardware/environment diagnostics
-  antenna: { status: 'OK', shortDetected: false, openDetected: false },
-  jamming: { detected: false, indicator: 0 }, // 0-255 scale
-  agc: { level: 142 }, // AGC level
-  rfNoise: { level: -98 }, // dBm
-  temperature: 42.5 // Celsius
+  antenna: { status: null, shortDetected: false, openDetected: false },
+  jamming: { detected: false, indicator: null },
+  agc: { level: null },
+  rfNoise: { level: null },
+  temperature: null
 })
 
 const loraData = ref({
-  mode: 'Base Station',
-  signalStrength: -85,
-  correctionRate: '1.2 Hz',
-  packetsReceived: 1247,
-  packetsSent: 1892
+  mode: null,
+  signalStrength: null,
+  correctionRate: null,
+  packetsReceived: null,
+  packetsSent: null
 })
 
 const imuData = ref({
-  acceleration: { x: 0.12, y: -0.05, z: 9.81 },
-  gyroscope: { x: 0.001, y: -0.003, z: 0.002 },
-  magnetometer: { x: 25.4, y: -18.2, z: 42.1 }
+  acceleration: { x: null, y: null, z: null },
+  gyroscope: { x: null, y: null, z: null },
+  magnetometer: { x: null, y: null, z: null }
 })
 
 const systemHealth = ref({
-  cpuUsage: 23,
-  memoryUsage: 67,
-  temperature: 52,
-  storageUsed: 45
+  cpuUsage: null,
+  memoryUsage: null,
+  temperature: null,
+  storageUsed: 45  // Keep storage as mock since not implemented
 })
 
 const powerStatus = ref({
-  batteryLevel: 78,
+  batteryLevel: null,
   isCharging: false,
-  powerConsumption: 12.4,
-  estimatedRuntime: '6h 24m'
+  powerConsumption: null,
+  estimatedRuntime: null
 })
 
 const dataRates = ref({
-  gnssRate: '5.2 Hz',
-  imuRate: '100 Hz',
-  correctionRate: '1.2 Hz'
+  gnssRate: null,
+  imuRate: null,
+  correctionRate: null
 })
 
 const fileManagement = ref({
-  currentSession: '2024-01-15_session_003',
-  filesCreated: 47,
-  totalSize: '2.3 GB',
-  availableSpace: '125.7 GB'
+  currentSession: null,
+  filesCreated: null,
+  totalSize: null,
+  availableSpace: null
 })
 
 const encoderData = ref({
-  rawCount: 0,
-  direction: 'CW',
-  pulsesPerSecond: 0
+  rawCount: null,
+  direction: null,
+  pulsesPerSecond: null
 })
 
 // Helper functions
@@ -252,27 +233,27 @@ onUnmounted(async () => {
           <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-center">
             <div>
               <div class="text-xs text-slate-400 mb-1">hAcc</div>
-              <div class="text-lg font-bold text-emerald-300">{{ (gnssData.hAcc * 1000).toFixed(0) }}mm</div>
+              <div class="text-lg font-bold" :class="gnssData.hAcc !== null ? 'text-emerald-300' : 'text-slate-400'">{{ gnssData.hAcc !== null ? (gnssData.hAcc * 1000).toFixed(0) + 'mm' : '—' }}</div>
             </div>
             <div>
               <div class="text-xs text-slate-400 mb-1">vAcc</div>
-              <div class="text-lg font-bold text-emerald-300">{{ (gnssData.vAcc * 1000).toFixed(0) }}mm</div>
+              <div class="text-lg font-bold" :class="gnssData.vAcc !== null ? 'text-emerald-300' : 'text-slate-400'">{{ gnssData.vAcc !== null ? (gnssData.vAcc * 1000).toFixed(0) + 'mm' : '—' }}</div>
             </div>
             <div>
               <div class="text-xs text-slate-400 mb-1">HDOP</div>
-              <div class="text-lg font-bold text-amber-300">{{ gnssData.hdop.toFixed(2) }}</div>
+              <div class="text-lg font-bold" :class="gnssData.hdop !== null ? 'text-amber-300' : 'text-slate-400'">{{ gnssData.hdop !== null ? gnssData.hdop.toFixed(2) : '—' }}</div>
             </div>
             <div>
               <div class="text-xs text-slate-400 mb-1">VDOP</div>
-              <div class="text-lg font-bold text-amber-300">{{ gnssData.vdop.toFixed(2) }}</div>
+              <div class="text-lg font-bold" :class="gnssData.vdop !== null ? 'text-amber-300' : 'text-slate-400'">{{ gnssData.vdop !== null ? gnssData.vdop.toFixed(2) : '—' }}</div>
             </div>
             <div>
               <div class="text-xs text-slate-400 mb-1">PDOP</div>
-              <div class="text-lg font-bold text-amber-300">{{ gnssData.pdop.toFixed(2) }}</div>
+              <div class="text-lg font-bold" :class="gnssData.pdop !== null ? 'text-amber-300' : 'text-slate-400'">{{ gnssData.pdop !== null ? gnssData.pdop.toFixed(2) : '—' }}</div>
             </div>
             <div>
               <div class="text-xs text-slate-400 mb-1">Satellites</div>
-              <div class="text-lg font-bold text-blue-300">{{ gnssData.satellitesUsed }}/{{ gnssData.satellitesTracked }}</div>
+              <div class="text-lg font-bold" :class="gnssData.satellitesUsed !== null ? 'text-blue-300' : 'text-slate-400'">{{ gnssData.satellitesUsed !== null ? gnssData.satellitesUsed + '/' + gnssData.satellitesTracked : '—' }}</div>
             </div>
           </div>
         </div>
@@ -287,26 +268,26 @@ onUnmounted(async () => {
                 <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
               </svg>
               <h2 class="text-xl font-bold text-slate-800">Satellite Health</h2>
-              <div class="ml-auto text-sm text-emerald-600 font-semibold">{{ dataRates.gnssRate }}</div>
+              <div class="ml-auto text-sm font-semibold" :class="dataRates.gnssRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.gnssRate !== null ? dataRates.gnssRate : '—' }}</div>
             </div>
             
             <!-- Constellation Summary -->
             <div class="grid grid-cols-4 gap-3 mb-6">
               <div class="text-center p-3 bg-blue-50 rounded-xl">
                 <div class="text-xs text-slate-600 mb-1">GPS</div>
-                <div class="text-lg font-bold text-blue-700">{{ gnssData.constellations.gps.used }}/{{ gnssData.constellations.gps.tracked }}</div>
+                <div class="text-lg font-bold" :class="gnssData.constellations.gps.used !== null ? 'text-blue-700' : 'text-slate-400'">{{ gnssData.constellations.gps.used !== null ? gnssData.constellations.gps.used + '/' + gnssData.constellations.gps.tracked : '—' }}</div>
               </div>
               <div class="text-center p-3 bg-red-50 rounded-xl">
                 <div class="text-xs text-slate-600 mb-1">GLONASS</div>
-                <div class="text-lg font-bold text-red-700">{{ gnssData.constellations.glonass.used }}/{{ gnssData.constellations.glonass.tracked }}</div>
+                <div class="text-lg font-bold" :class="gnssData.constellations.glonass.used !== null ? 'text-red-700' : 'text-slate-400'">{{ gnssData.constellations.glonass.used !== null ? gnssData.constellations.glonass.used + '/' + gnssData.constellations.glonass.tracked : '—' }}</div>
               </div>
               <div class="text-center p-3 bg-purple-50 rounded-xl">
                 <div class="text-xs text-slate-600 mb-1">Galileo</div>
-                <div class="text-lg font-bold text-purple-700">{{ gnssData.constellations.galileo.used }}/{{ gnssData.constellations.galileo.tracked }}</div>
+                <div class="text-lg font-bold" :class="gnssData.constellations.galileo.used !== null ? 'text-purple-700' : 'text-slate-400'">{{ gnssData.constellations.galileo.used !== null ? gnssData.constellations.galileo.used + '/' + gnssData.constellations.galileo.tracked : '—' }}</div>
               </div>
               <div class="text-center p-3 bg-yellow-50 rounded-xl">
                 <div class="text-xs text-slate-600 mb-1">BeiDou</div>
-                <div class="text-lg font-bold text-yellow-700">{{ gnssData.constellations.beidou.used }}/{{ gnssData.constellations.beidou.tracked }}</div>
+                <div class="text-lg font-bold" :class="gnssData.constellations.beidou.used !== null ? 'text-yellow-700' : 'text-slate-400'">{{ gnssData.constellations.beidou.used !== null ? gnssData.constellations.beidou.used + '/' + gnssData.constellations.beidou.tracked : '—' }}</div>
               </div>
             </div>
             
@@ -364,7 +345,7 @@ onUnmounted(async () => {
                   <path d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z"/>
                 </svg>
                 <h2 class="text-xl font-bold text-slate-800">RTK Quality</h2>
-                <div class="text-sm text-emerald-600 font-semibold">{{ dataRates.correctionRate }}</div>
+                <div class="text-sm font-semibold" :class="dataRates.correctionRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.correctionRate !== null ? dataRates.correctionRate : '—' }}</div>
               </div>
               <span class="text-sm font-bold px-3 py-1 rounded-lg" 
                     :class="gnssData.rtkMode === 'Fixed' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'">
@@ -375,32 +356,32 @@ onUnmounted(async () => {
             <div class="grid grid-cols-2 gap-4 mb-6">
               <div class="text-center p-4 bg-emerald-50 rounded-xl">
                 <div class="text-xs text-slate-600 mb-1">AR Ratio</div>
-                <div class="text-2xl font-bold text-emerald-700">{{ gnssData.rtk.arRatio.toFixed(1) }}</div>
+                <div class="text-2xl font-bold" :class="gnssData.rtk.arRatio !== null ? 'text-emerald-700' : 'text-slate-400'">{{ gnssData.rtk.arRatio !== null ? gnssData.rtk.arRatio.toFixed(1) : '—' }}</div>
               </div>
               <div class="text-center p-4 bg-blue-50 rounded-xl">
                 <div class="text-xs text-slate-600 mb-1">Correction Age</div>
-                <div class="text-2xl font-bold text-blue-700">{{ gnssData.rtk.correctionAge.toFixed(1) }}s</div>
+                <div class="text-2xl font-bold" :class="gnssData.rtk.correctionAge !== null ? 'text-blue-700' : 'text-slate-400'">{{ gnssData.rtk.correctionAge !== null ? gnssData.rtk.correctionAge.toFixed(1) + 's' : '—' }}</div>
               </div>
             </div>
             
             <div class="space-y-2">
               <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
                 <span class="text-slate-600">Baseline Length:</span>
-                <span class="font-bold">{{ gnssData.rtk.baselineLength.toFixed(0) }}m</span>
+                <span class="font-bold" :class="gnssData.rtk.baselineLength !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.baselineLength !== null ? gnssData.rtk.baselineLength.toFixed(0) + 'm' : '—' }}</span>
               </div>
               <div class="p-3 bg-slate-50 rounded-lg">
                 <div class="text-xs text-slate-600 mb-2">Relative Accuracy</div>
                 <div class="grid grid-cols-3 gap-2 text-xs">
                   <div class="text-center">
-                    <div class="font-mono font-semibold">{{ gnssData.rtk.relativeAccuracy.north.toFixed(3) }}m</div>
+                    <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.north !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.north !== null ? gnssData.rtk.relativeAccuracy.north.toFixed(3) + 'm' : '—' }}</div>
                     <div class="text-slate-500">North</div>
                   </div>
                   <div class="text-center">
-                    <div class="font-mono font-semibold">{{ gnssData.rtk.relativeAccuracy.east.toFixed(3) }}m</div>
+                    <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.east !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.east !== null ? gnssData.rtk.relativeAccuracy.east.toFixed(3) + 'm' : '—' }}</div>
                     <div class="text-slate-500">East</div>
                   </div>
                   <div class="text-center">
-                    <div class="font-mono font-semibold">{{ gnssData.rtk.relativeAccuracy.down.toFixed(3) }}m</div>
+                    <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.down !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.down !== null ? gnssData.rtk.relativeAccuracy.down.toFixed(3) + 'm' : '—' }}</div>
                     <div class="text-slate-500">Down</div>
                   </div>
                 </div>
@@ -424,7 +405,7 @@ onUnmounted(async () => {
                 </div>
                 <div class="flex justify-between p-3 bg-white rounded-lg border">
                   <span class="text-slate-600">Altitude:</span>
-                  <span class="font-bold font-mono text-slate-800">{{ gnssData.altitude.toFixed(2) }}m</span>
+                  <span class="font-bold font-mono" :class="gnssData.altitude !== null ? 'text-slate-800' : 'text-slate-400'">{{ gnssData.altitude !== null ? gnssData.altitude.toFixed(2) + 'm' : '—' }}</span>
                 </div>
               </div>
             </div>
@@ -444,11 +425,11 @@ onUnmounted(async () => {
               <div class="grid grid-cols-1 gap-4">
                 <div class="flex justify-between p-3 bg-white rounded-lg border">
                   <span class="text-slate-600">Time Accuracy:</span>
-                  <span class="font-bold font-mono text-slate-800">{{ gnssData.tAcc }}ns</span>
+                  <span class="font-bold font-mono" :class="gnssData.tAcc !== null ? 'text-slate-800' : 'text-slate-400'">{{ gnssData.tAcc !== null ? gnssData.tAcc + 'ns' : '—' }}</span>
                 </div>
                 <div class="flex justify-between p-3 bg-white rounded-lg border">
                   <span class="text-slate-600">Solution Latency:</span>
-                  <span class="font-bold font-mono text-slate-800">{{ gnssData.solutionLatency }}ms</span>
+                  <span class="font-bold font-mono" :class="gnssData.solutionLatency !== null ? 'text-slate-800' : 'text-slate-400'">{{ gnssData.solutionLatency !== null ? gnssData.solutionLatency + 'ms' : '—' }}</span>
                 </div>
               </div>
             </div>
@@ -465,8 +446,8 @@ onUnmounted(async () => {
               <div class="grid grid-cols-2 gap-3 mb-4">
                 <div class="text-center p-3 rounded-xl" :class="gnssData.antenna.status === 'OK' ? 'bg-emerald-100 border border-emerald-200' : 'bg-red-100 border border-red-200'">
                   <div class="text-xs text-slate-600 mb-1">Antenna</div>
-                  <div class="text-sm font-bold" :class="gnssData.antenna.status === 'OK' ? 'text-emerald-700' : 'text-red-700'">
-                    {{ gnssData.antenna.status }}
+                  <div class="text-sm font-bold" :class="gnssData.antenna.status !== null ? (gnssData.antenna.status === 'OK' ? 'text-emerald-700' : 'text-red-700') : 'text-slate-400'">
+                    {{ gnssData.antenna.status !== null ? gnssData.antenna.status : '—' }}
                   </div>
                 </div>
                 <div class="text-center p-3 rounded-xl" :class="gnssData.jamming.detected ? 'bg-red-100 border border-red-200' : 'bg-emerald-100 border border-emerald-200'">
@@ -479,15 +460,15 @@ onUnmounted(async () => {
               <div class="grid grid-cols-3 gap-3">
                 <div class="text-center p-3 bg-white rounded-lg border">
                   <div class="text-xs text-slate-600 mb-1">AGC</div>
-                  <div class="text-sm font-bold text-slate-700">{{ gnssData.agc.level }}</div>
+                  <div class="text-sm font-bold" :class="gnssData.agc.level !== null ? 'text-slate-700' : 'text-slate-400'">{{ gnssData.agc.level !== null ? gnssData.agc.level : '—' }}</div>
                 </div>
                 <div class="text-center p-3 bg-white rounded-lg border">
                   <div class="text-xs text-slate-600 mb-1">RF Noise</div>
-                  <div class="text-sm font-bold text-slate-700">{{ gnssData.rfNoise.level }}dBm</div>
+                  <div class="text-sm font-bold" :class="gnssData.rfNoise.level !== null ? 'text-slate-700' : 'text-slate-400'">{{ gnssData.rfNoise.level !== null ? gnssData.rfNoise.level + 'dBm' : '—' }}</div>
                 </div>
                 <div class="text-center p-3 bg-white rounded-lg border">
                   <div class="text-xs text-slate-600 mb-1">Temp</div>
-                  <div class="text-sm font-bold text-slate-700">{{ gnssData.temperature.toFixed(1) }}°C</div>
+                  <div class="text-sm font-bold" :class="gnssData.temperature !== null ? 'text-slate-700' : 'text-slate-400'">{{ gnssData.temperature !== null ? gnssData.temperature.toFixed(1) + '°C' : '—' }}</div>
                 </div>
               </div>
             </div>
@@ -509,27 +490,27 @@ onUnmounted(async () => {
               </div>
               <div>
                 <h3 class="font-bold text-slate-800">IMU</h3>
-                <div class="text-xs text-emerald-600">{{ dataRates.imuRate }}</div>
+                <div class="text-xs" :class="dataRates.imuRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.imuRate !== null ? dataRates.imuRate : '—' }}</div>
               </div>
             </div>
             <div class="grid grid-cols-3 gap-2 text-xs">
               <div class="text-center">
                 <div class="text-slate-500">Accel</div>
-                <div class="font-mono text-red-600">{{ imuData.acceleration.x.toFixed(1) }}</div>
-                <div class="font-mono text-red-600">{{ imuData.acceleration.y.toFixed(1) }}</div>
-                <div class="font-mono text-red-600">{{ imuData.acceleration.z.toFixed(1) }}</div>
+                <div class="font-mono" :class="imuData.acceleration.x !== null ? 'text-red-600' : 'text-slate-400'">{{ imuData.acceleration.x !== null ? imuData.acceleration.x.toFixed(1) : '—' }}</div>
+                <div class="font-mono" :class="imuData.acceleration.y !== null ? 'text-red-600' : 'text-slate-400'">{{ imuData.acceleration.y !== null ? imuData.acceleration.y.toFixed(1) : '—' }}</div>
+                <div class="font-mono" :class="imuData.acceleration.z !== null ? 'text-red-600' : 'text-slate-400'">{{ imuData.acceleration.z !== null ? imuData.acceleration.z.toFixed(1) : '—' }}</div>
               </div>
               <div class="text-center">
                 <div class="text-slate-500">Gyro</div>
-                <div class="font-mono text-blue-600">{{ imuData.gyroscope.x.toFixed(2) }}</div>
-                <div class="font-mono text-blue-600">{{ imuData.gyroscope.y.toFixed(2) }}</div>
-                <div class="font-mono text-blue-600">{{ imuData.gyroscope.z.toFixed(2) }}</div>
+                <div class="font-mono" :class="imuData.gyroscope.x !== null ? 'text-blue-600' : 'text-slate-400'">{{ imuData.gyroscope.x !== null ? imuData.gyroscope.x.toFixed(2) : '—' }}</div>
+                <div class="font-mono" :class="imuData.gyroscope.y !== null ? 'text-blue-600' : 'text-slate-400'">{{ imuData.gyroscope.y !== null ? imuData.gyroscope.y.toFixed(2) : '—' }}</div>
+                <div class="font-mono" :class="imuData.gyroscope.z !== null ? 'text-blue-600' : 'text-slate-400'">{{ imuData.gyroscope.z !== null ? imuData.gyroscope.z.toFixed(2) : '—' }}</div>
               </div>
               <div class="text-center">
                 <div class="text-slate-500">Mag</div>
-                <div class="font-mono text-green-600">{{ imuData.magnetometer.x.toFixed(0) }}</div>
-                <div class="font-mono text-green-600">{{ imuData.magnetometer.y.toFixed(0) }}</div>
-                <div class="font-mono text-green-600">{{ imuData.magnetometer.z.toFixed(0) }}</div>
+                <div class="font-mono" :class="imuData.magnetometer.x !== null ? 'text-green-600' : 'text-slate-400'">{{ imuData.magnetometer.x !== null ? imuData.magnetometer.x.toFixed(0) : '—' }}</div>
+                <div class="font-mono" :class="imuData.magnetometer.y !== null ? 'text-green-600' : 'text-slate-400'">{{ imuData.magnetometer.y !== null ? imuData.magnetometer.y.toFixed(0) : '—' }}</div>
+                <div class="font-mono" :class="imuData.magnetometer.z !== null ? 'text-green-600' : 'text-slate-400'">{{ imuData.magnetometer.z !== null ? imuData.magnetometer.z.toFixed(0) : '—' }}</div>
               </div>
             </div>
           </div>
@@ -544,21 +525,21 @@ onUnmounted(async () => {
               </div>
               <div>
                 <h3 class="font-bold text-slate-800">Camera</h3>
-                <div class="text-xs text-red-500 animate-pulse">Recording</div>
+                <div class="text-xs text-slate-400">—</div>
               </div>
             </div>
             <div class="space-y-2 text-xs">
               <div class="flex justify-between">
                 <span class="text-slate-500">Duration:</span>
-                <span class="font-mono">00:45:23</span>
+                <span class="text-slate-400">—</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-slate-500">Size:</span>
-                <span class="font-mono">2.1 GB</span>
+                <span class="text-slate-400">—</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-slate-500">Format:</span>
-                <span>1080p@30fps</span>
+                <span class="text-slate-400">—</span>
               </div>
             </div>
           </div>
@@ -579,15 +560,15 @@ onUnmounted(async () => {
             <div class="space-y-2 text-xs">
               <div class="flex justify-between">
                 <span class="text-slate-500">Count:</span>
-                <span class="font-mono">{{ encoderData.rawCount }}</span>
+                <span :class="encoderData.rawCount !== null ? 'font-mono' : 'text-slate-400'">{{ encoderData.rawCount !== null ? encoderData.rawCount : '—' }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-slate-500">Direction:</span>
-                <span>{{ encoderData.direction }}</span>
+                <span :class="encoderData.direction !== null ? '' : 'text-slate-400'">{{ encoderData.direction !== null ? encoderData.direction : '—' }}</span>
               </div>
               <div class="flex justify-between">
                 <span class="text-slate-500">Rate:</span>
-                <span class="font-mono">{{ encoderData.pulsesPerSecond }}/s</span>
+                <span :class="encoderData.pulsesPerSecond !== null ? 'font-mono' : 'text-slate-400'">{{ encoderData.pulsesPerSecond !== null ? encoderData.pulsesPerSecond + '/s' : '—' }}</span>
               </div>
             </div>
           </div>
@@ -596,43 +577,8 @@ onUnmounted(async () => {
 
       <!-- System Status Row -->
       <div class="mb-6">
-        <div class="grid gap-4 grid-cols-1 md:grid-cols-2">
+        <div class="grid gap-4 grid-cols-1">
           
-          <!-- LoRa -->
-          <div class="bg-white rounded-xl border border-slate-200 p-4">
-            <div class="flex items-center space-x-2 mb-3">
-              <div class="w-6 h-6 bg-blue-500 rounded-lg flex items-center justify-center">
-                <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 1L21.5 6.5L12 12L2.5 6.5L12 1ZM12 23L21.5 17.5L12 12L2.5 17.5L12 23Z"/>
-                </svg>
-              </div>
-              <div>
-                <h3 class="font-bold text-slate-800">LoRa</h3>
-                <div class="text-xs text-blue-600">{{ loraData.mode }}</div>
-              </div>
-            </div>
-            <div class="space-y-2 text-xs">
-              <div class="flex justify-between">
-                <span class="text-slate-500">Signal:</span>
-                <span class="font-mono" :class="getSignalColor(loraData.signalStrength)">{{ loraData.signalStrength }}dBm</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-500">Rate:</span>
-                <span>{{ loraData.correctionRate }}</span>
-              </div>
-              <div class="grid grid-cols-2 gap-1 pt-1">
-                <div class="text-center">
-                  <div class="font-bold text-emerald-600">{{ (loraData.packetsReceived/1000).toFixed(1) }}k</div>
-                  <div class="text-slate-500">RX</div>
-                </div>
-                <div class="text-center">
-                  <div class="font-bold text-blue-600">{{ (loraData.packetsSent/1000).toFixed(1) }}k</div>
-                  <div class="text-slate-500">TX</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- System Info (Combined) -->
           <div class="bg-white rounded-xl border border-slate-200 p-4">
             <div class="flex items-center space-x-2 mb-3">
@@ -643,7 +589,7 @@ onUnmounted(async () => {
               </div>
               <div>
                 <h3 class="font-bold text-slate-800">System</h3>
-                <div class="text-xs text-emerald-600">Healthy • Recording</div>
+                <div class="text-xs text-slate-400">—</div>
               </div>
             </div>
             
@@ -653,20 +599,20 @@ onUnmounted(async () => {
               <div class="space-y-1">
                 <div class="flex justify-between">
                   <span class="text-slate-500">Battery:</span>
-                  <span :class="getBatteryColor(powerStatus.batteryLevel)">{{ powerStatus.batteryLevel }}%</span>
+                  <span :class="powerStatus.batteryLevel !== null ? getBatteryColor(powerStatus.batteryLevel) : 'text-slate-400'">{{ powerStatus.batteryLevel !== null ? powerStatus.batteryLevel + '%' : '—' }}</span>
                 </div>
                 <div class="w-full bg-slate-200 rounded-full h-1 mb-1">
                   <div class="h-1 rounded-full transition-all" 
-                       :class="powerStatus.batteryLevel > 60 ? 'bg-emerald-500' : powerStatus.batteryLevel > 30 ? 'bg-yellow-500' : 'bg-red-500'"
-                       :style="`width: ${powerStatus.batteryLevel}%`"></div>
+                       :class="powerStatus.batteryLevel !== null ? (powerStatus.batteryLevel > 60 ? 'bg-emerald-500' : powerStatus.batteryLevel > 30 ? 'bg-yellow-500' : 'bg-red-500') : 'bg-slate-300'"
+                       :style="`width: ${powerStatus.batteryLevel !== null ? powerStatus.batteryLevel : 0}%`"></div>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-slate-500">Draw:</span>
-                  <span class="font-mono">{{ powerStatus.powerConsumption }}W</span>
+                  <span :class="powerStatus.powerConsumption !== null ? 'font-mono' : 'text-slate-400'">{{ powerStatus.powerConsumption !== null ? powerStatus.powerConsumption + 'W' : '—' }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-slate-500">Runtime:</span>
-                  <span>{{ powerStatus.estimatedRuntime }}</span>
+                  <span :class="powerStatus.estimatedRuntime !== null ? '' : 'text-slate-400'">{{ powerStatus.estimatedRuntime !== null ? powerStatus.estimatedRuntime : '—' }}</span>
                 </div>
               </div>
               
@@ -674,11 +620,11 @@ onUnmounted(async () => {
               <div class="space-y-1">
                 <div class="flex justify-between">
                   <span class="text-slate-500">CPU:</span>
-                  <span :class="getUsageColor(systemHealth.cpuUsage)">{{ systemHealth.cpuUsage.toFixed(1) }}%</span>
+                  <span :class="systemHealth.cpuUsage !== null ? getUsageColor(systemHealth.cpuUsage) : 'text-slate-400'">{{ systemHealth.cpuUsage !== null ? systemHealth.cpuUsage.toFixed(1) + '%' : '—' }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-slate-500">RAM:</span>
-                  <span :class="getUsageColor(systemHealth.memoryUsage)">{{ systemHealth.memoryUsage.toFixed(1) }}%</span>
+                  <span :class="systemHealth.memoryUsage !== null ? getUsageColor(systemHealth.memoryUsage) : 'text-slate-400'">{{ systemHealth.memoryUsage !== null ? systemHealth.memoryUsage.toFixed(1) + '%' : '—' }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-slate-500">Storage:</span>
@@ -686,7 +632,7 @@ onUnmounted(async () => {
                 </div>
                 <div class="flex justify-between">
                   <span class="text-slate-500">Temp:</span>
-                  <span class="text-orange-600">{{ systemHealth.temperature }}°C</span>
+                  <span :class="systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemHealth.temperature !== null ? systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
                 </div>
               </div>
             </div>
@@ -697,21 +643,21 @@ onUnmounted(async () => {
                 <div class="space-y-1">
                   <div class="flex justify-between">
                     <span class="text-slate-500">Session:</span>
-                    <span class="font-mono">{{ fileManagement.currentSession.split('_')[2] }}</span>
+                    <span :class="fileManagement.currentSession !== null ? 'font-mono' : 'text-slate-400'">{{ fileManagement.currentSession !== null ? fileManagement.currentSession.split('_')[2] : '—' }}</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-slate-500">Files:</span>
-                    <span>{{ fileManagement.filesCreated }}</span>
+                    <span :class="fileManagement.filesCreated !== null ? '' : 'text-slate-400'">{{ fileManagement.filesCreated !== null ? fileManagement.filesCreated : '—' }}</span>
                   </div>
                 </div>
                 <div class="space-y-1">
                   <div class="flex justify-between">
                     <span class="text-slate-500">Size:</span>
-                    <span>{{ fileManagement.totalSize }}</span>
+                    <span :class="fileManagement.totalSize !== null ? '' : 'text-slate-400'">{{ fileManagement.totalSize !== null ? fileManagement.totalSize : '—' }}</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-slate-500">Available:</span>
-                    <span>{{ fileManagement.availableSpace }}</span>
+                    <span :class="fileManagement.availableSpace !== null ? '' : 'text-slate-400'">{{ fileManagement.availableSpace !== null ? fileManagement.availableSpace : '—' }}</span>
                   </div>
                 </div>
               </div>
