@@ -1,3 +1,4 @@
 /Backend/obj/*
 /Backend/.vs/*
 /Backend/bin/*
+/.claude/settings.local.json

@@ -13,6 +13,9 @@ public class ImuService : BackgroundService
     private SerialPort? _serialPort;
     private readonly byte[] _buffer = new byte[1024];
     private readonly List<byte> _dataBuffer = new();
+    private DateTime _lastSignalRSent = DateTime.MinValue;
+    private readonly TimeSpan _signalRThrottleInterval = TimeSpan.FromMilliseconds(1000); // 1Hz = 1000ms interval
+    private readonly object _throttleLock = new object();
 
     public ImuService(
         IHubContext<DataHub> hubContext, 
@@ -39,7 +42,7 @@ public class ImuService : BackgroundService
             return;
         }
 
-        _logger.LogInformation("IMU Service connected to serial port - listening for MEMS data at 50Hz");
+        _logger.LogInformation("IMU Service connected to serial port - listening for MEMS data at 50Hz, sending SignalR updates at 1Hz");
 
         try
         {
@@ -99,24 +102,38 @@ public class ImuService : BackgroundService
                 var imuData = _imuParser.ParseMemsPacket(packetData);
                 if (imuData != null)
                 {
-                    // Send data via SignalR
-                    _ = Task.Run(async () =>
+                    // Send data via SignalR with throttling to 1Hz
+                    bool shouldSend = false;
+                    lock (_throttleLock)
                     {
-                        try
+                        var now = DateTime.UtcNow;
+                        if (now - _lastSignalRSent >= _signalRThrottleInterval)
                         {
-                            await _hubContext.Clients.All.SendAsync("ImuUpdate", new
+                            _lastSignalRSent = now;
+                            shouldSend = true;
+                        }
+                    }
+
+                    if (shouldSend)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
                             {
-                                timestamp = imuData.Timestamp,
-                                acceleration = new { x = imuData.Acceleration.X, y = imuData.Acceleration.Y, z = imuData.Acceleration.Z },
-                                gyroscope = new { x = imuData.Gyroscope.X, y = imuData.Gyroscope.Y, z = imuData.Gyroscope.Z },
-                                magnetometer = new { x = imuData.Magnetometer.X, y = imuData.Magnetometer.Y, z = imuData.Magnetometer.Z }
-                            });
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to send IMU update via SignalR");
-                        }
-                    });
+                                await _hubContext.Clients.All.SendAsync("ImuUpdate", new
+                                {
+                                    timestamp = imuData.Timestamp,
+                                    acceleration = new { x = imuData.Acceleration.X, y = imuData.Acceleration.Y, z = imuData.Acceleration.Z },
+                                    gyroscope = new { x = imuData.Gyroscope.X, y = imuData.Gyroscope.Y, z = imuData.Gyroscope.Z },
+                                    magnetometer = new { x = imuData.Magnetometer.X, y = imuData.Magnetometer.Y, z = imuData.Magnetometer.Z }
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to send IMU update via SignalR");
+                            }
+                        });
+                    }
                 }
             }
             else
