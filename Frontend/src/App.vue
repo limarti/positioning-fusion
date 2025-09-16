@@ -150,7 +150,9 @@ const getUsageColor = (usage) => {
 // SignalR connection setup
 onMounted(async () => {
   connection = new HubConnectionBuilder()
-    .withUrl("http://localhost:5312/datahub")
+    //.withUrl("http://localhost:5312/datahub")
+      //.withUrl("http://raspberrypi-rover.local:5312/datahub")
+      .withUrl("http://192.168.8.110:5312/datahub")
     .withAutomaticReconnect()
     .build()
 
@@ -164,7 +166,6 @@ onMounted(async () => {
     console.log("SignalR Connected successfully!")
   } catch (err) {
     console.error("SignalR Connection Error: ", err)
-    console.log("Make sure backend is running on http://localhost:5312")
   }
 })
 
