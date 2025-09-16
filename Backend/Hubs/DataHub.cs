@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
-using Backend.Services;
+using Backend.Hardware.Imu;
+using Backend.System;
 
 namespace Backend.Hubs;
 

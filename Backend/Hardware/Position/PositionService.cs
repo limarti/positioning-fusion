@@ -1,7 +1,7 @@
 using Backend.Hubs;
 using Microsoft.AspNetCore.SignalR;
 
-namespace Backend.Services;
+namespace Backend.Hardware.Position;
 
 public class PositionService : BackgroundService
 {

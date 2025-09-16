@@ -1,5 +1,7 @@
 using Backend.Hubs;
-using Backend.Services;
+using Backend.Hardware.Imu;
+using Backend.Hardware.Position;
+using Backend.System;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,7 +19,6 @@ builder.Services.AddHostedService<SystemMonitoringService>();
 
 // Add IMU services
 builder.Services.AddSingleton<ImuInitializer>();
-builder.Services.AddSingleton<ImuParser>();
 builder.Services.AddHostedService<ImuService>();
 
 // Add CORS for frontend

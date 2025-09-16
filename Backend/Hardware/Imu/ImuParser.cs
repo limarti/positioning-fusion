@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Backend.Services;
+namespace Backend.Hardware.Imu;
 
 public class ImuParser
 {

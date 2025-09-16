@@ -2,7 +2,7 @@ using Backend.Hubs;
 using Microsoft.AspNetCore.SignalR;
 using System.IO.Ports;
 
-namespace Backend.Services;
+namespace Backend.Hardware.Imu;
 
 public class ImuService : BackgroundService
 {
@@ -18,15 +18,15 @@ public class ImuService : BackgroundService
     private readonly object _throttleLock = new object();
 
     public ImuService(
-        IHubContext<DataHub> hubContext, 
-        ILogger<ImuService> logger, 
-        ImuInitializer imuInitializer, 
-        ImuParser imuParser)
+        IHubContext<DataHub> hubContext,
+        ILogger<ImuService> logger,
+        ImuInitializer imuInitializer,
+        ILoggerFactory loggerFactory)
     {
         _hubContext = hubContext;
         _logger = logger;
         _imuInitializer = imuInitializer;
-        _imuParser = imuParser;
+        _imuParser = new ImuParser(loggerFactory.CreateLogger<ImuParser>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -2,7 +2,7 @@ using Backend.Hubs;
 using Microsoft.AspNetCore.SignalR;
 using System.Globalization;
 
-namespace Backend.Services;
+namespace Backend.System;
 
 public class SystemMonitoringService : BackgroundService
 {

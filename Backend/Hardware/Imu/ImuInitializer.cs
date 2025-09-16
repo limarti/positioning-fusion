@@ -1,6 +1,6 @@
 using System.IO.Ports;
 
-namespace Backend.Services;
+namespace Backend.Hardware.Imu;
 
 public class ImuInitializer
 {
