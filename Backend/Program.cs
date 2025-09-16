@@ -13,6 +13,7 @@ builder.Services.AddSignalR();
 
 // Add background services
 builder.Services.AddHostedService<PositionService>();
+builder.Services.AddHostedService<SystemMonitoringService>();
 
 // Add IMU services
 builder.Services.AddSingleton<ImuInitializer>();

@@ -172,6 +172,12 @@ onMounted(async () => {
     imuData.value.magnetometer.z = data.magnetometer.z
   })
 
+  connection.on("SystemHealthUpdate", (data) => {
+    systemHealth.value.cpuUsage = data.cpuUsage
+    systemHealth.value.memoryUsage = data.memoryUsage
+    systemHealth.value.temperature = data.temperature
+  })
+
   try {
     await connection.start()
     console.log("SignalR Connected successfully!")
@@ -668,11 +674,11 @@ onUnmounted(async () => {
               <div class="space-y-1">
                 <div class="flex justify-between">
                   <span class="text-slate-500">CPU:</span>
-                  <span :class="getUsageColor(systemHealth.cpuUsage)">{{ systemHealth.cpuUsage }}%</span>
+                  <span :class="getUsageColor(systemHealth.cpuUsage)">{{ systemHealth.cpuUsage.toFixed(1) }}%</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-slate-500">RAM:</span>
-                  <span :class="getUsageColor(systemHealth.memoryUsage)">{{ systemHealth.memoryUsage }}%</span>
+                  <span :class="getUsageColor(systemHealth.memoryUsage)">{{ systemHealth.memoryUsage.toFixed(1) }}%</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-slate-500">Storage:</span>

@@ -20,4 +20,14 @@ public class DataHub : Hub
             magnetometer = new { x = imuData.Magnetometer.X, y = imuData.Magnetometer.Y, z = imuData.Magnetometer.Z }
         });
     }
+
+    public async Task SendSystemHealthUpdate(SystemHealth systemHealth)
+    {
+        await Clients.All.SendAsync("SystemHealthUpdate", new
+        {
+            cpuUsage = systemHealth.CpuUsage,
+            memoryUsage = systemHealth.MemoryUsage,
+            temperature = systemHealth.Temperature
+        });
+    }
 }
