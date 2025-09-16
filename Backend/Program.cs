@@ -1,6 +1,7 @@
 using Backend.Hubs;
 using Backend.Hardware.Imu;
 using Backend.Hardware.Position;
+using Backend.Hardware.Gnss;
 using Backend.System;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +22,9 @@ builder.Services.AddHostedService<SystemMonitoringService>();
 builder.Services.AddSingleton<ImuInitializer>();
 builder.Services.AddHostedService<ImuService>();
 
+// Add GNSS services
+builder.Services.AddSingleton<GnssInitializer>();
+
 // Add CORS for frontend
 builder.Services.AddCors(options =>
 {
@@ -38,12 +42,25 @@ var app = builder.Build();
 // Initialize hardware
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
+var gnssInitializer = app.Services.GetRequiredService<GnssInitializer>();
 
 logger.LogInformation("Initializing IM19 IMU hardware...");
 var imuInitialized = await imuInitializer.InitializeAsync();
 if (!imuInitialized)
 {
     logger.LogWarning("IM19 IMU initialization failed - continuing without IMU");
+}
+
+logger.LogInformation("Initializing GNSS hardware...");
+var gnssInitialized = await gnssInitializer.InitializeAsync();
+if (!gnssInitialized)
+{
+    logger.LogWarning("GNSS initialization failed - continuing without GNSS");
+}
+else
+{
+    // Log the actual connection details for verification
+    gnssInitializer.LogCurrentConnectionStatus();
 }
 
 // Configure the HTTP request pipeline.
