@@ -105,16 +105,31 @@ This application consists of two main components:
     └── ...
 ```
 
-## Monitoring
+## Admin Panel / Frontend
 
-The admin panel provides real-time monitoring of:
+The Vue.js admin panel provides a web-based interface for system monitoring and administration. The interface is accessible via web browser and provides real-time data visualization and system control.
+
+### Real-time Monitoring
+
+The admin panel displays live status information including:
 
 - **GNSS Status**: Satellite count, fix quality, position accuracy, RTK status
-- **LoRa Radio**: Operating mode (Base/Rover), signal strength, correction data rates
+- **LoRa Radio**: Operating mode (Base/Rover), signal strength, correction data rates  
 - **IMU Status**: Acceleration, gyroscope, magnetometer readings
 - **System Health**: CPU usage, memory, storage space
+- **Power Status**: Battery level, charging status, power consumption
 - **Data Rates**: Incoming data rates, correction message frequency
 - **File Management**: Storage usage, current recording files
+
+### System Administration
+
+The interface provides controls for:
+
+- Starting/stopping data collection services
+- Configuring operating modes (Base/Rover)
+- Managing file storage and rotation settings
+- Viewing system logs and diagnostics
+- Monitoring hardware connection status
 
 ## Performance Considerations
 

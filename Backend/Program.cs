@@ -1,3 +1,6 @@
+using Backend.Hubs;
+using Backend.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -5,16 +8,34 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Add SignalR
+builder.Services.AddSignalR();
+
+// Add background services
+builder.Services.AddHostedService<PositionService>();
+
+// Add CORS for frontend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Removed Swagger for cleaner console output
 
-app.UseHttpsRedirection();
+// Use CORS (before other middleware)
+app.UseCors("AllowFrontend");
+
+// Disable HTTPS redirection for development
+// app.UseHttpsRedirection();
 
 var summaries = new[]
 {
@@ -35,6 +56,9 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast")
 .WithOpenApi();
+
+// Map SignalR hub
+app.MapHub<DataHub>("/datahub");
 
 app.Run();
 
