@@ -14,6 +14,9 @@ builder.Services.AddSignalR();
 // Add background services
 builder.Services.AddHostedService<PositionService>();
 
+// Add IMU services
+builder.Services.AddSingleton<ImuInitializer>();
+
 // Add CORS for frontend
 builder.Services.AddCors(options =>
 {
@@ -27,6 +30,17 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Initialize hardware
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
+
+logger.LogInformation("Initializing IM19 IMU hardware...");
+var imuInitialized = await imuInitializer.InitializeAsync();
+if (!imuInitialized)
+{
+    logger.LogWarning("IM19 IMU initialization failed - continuing without IMU");
+}
 
 // Configure the HTTP request pipeline.
 // Removed Swagger for cleaner console output

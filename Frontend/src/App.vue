@@ -151,8 +151,7 @@ const getUsageColor = (usage) => {
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
-      //.withUrl("http://raspberrypi-rover.local:5312/datahub")
-      .withUrl("http://192.168.8.110:5312/datahub")
+      .withUrl("http://raspberrypi-rover.local:5312/datahub")
     .withAutomaticReconnect()
     .build()
 
