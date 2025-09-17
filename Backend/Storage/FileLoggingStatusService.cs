@@ -195,8 +195,7 @@ public class FileLoggingStatusService : BackgroundService
     private bool IsSessionDirectory(string dirName)
     {
         // Session directories follow pattern: yyyy-MM-dd-HH-mm
-        return DateTime.TryParseExact(dirName, "yyyy-MM-dd-HH-mm", null, 
-            System.Globalization.DateTimeStyles.None, out _);
+        return DateTime.TryParseExact(dirName, "yyyy-MM-dd-HH-mm", null, global::System.Globalization.DateTimeStyles.None, out _);
     }
 
     private long GetDirectorySize(string directoryPath)
