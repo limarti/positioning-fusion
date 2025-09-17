@@ -18,6 +18,7 @@ public class DataFileWriter : BackgroundService
     private string? _currentFilePath;
     private bool _driveAvailable = false;
     private string? _currentDrivePath;
+    private readonly DateTime _sessionStartTime = DateTime.Now;
 
     // Public properties to expose drive information
     public string? CurrentDrivePath => _currentDrivePath;
@@ -53,6 +54,9 @@ public class DataFileWriter : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("DataFileWriter started for {FileName}", _fileName);
+
+        // Initialize USB drive detection and session path immediately at startup
+        EnsureSessionPathExists();
 
         var lastFlushTime = DateTime.UtcNow;
         const int flushIntervalMs = 1000; // 1 second
@@ -141,8 +145,7 @@ public class DataFileWriter : BackgroundService
 
         try
         {
-            EnsureSessionPathExists();
-
+            // Session path should already be established at startup
             if (!_driveAvailable || string.IsNullOrEmpty(_currentFilePath))
             {
                 _logger.LogWarning("No USB drive available - dropping {Count} data lines for {FileName}",
@@ -182,21 +185,25 @@ public class DataFileWriter : BackgroundService
     {
         try
         {
-            var driveRoot = FindUsbDrive();
-            if (driveRoot == null)
+            // Only detect USB drive if we don't have one cached or it's not available
+            if (_currentDrivePath == null || !_driveAvailable)
             {
-                _driveAvailable = false;
-                _currentDrivePath = null;
-                return;
+                var driveRoot = FindUsbDrive();
+                if (driveRoot == null)
+                {
+                    _driveAvailable = false;
+                    _currentDrivePath = null;
+                    return;
+                }
+
+                _currentDrivePath = driveRoot;
+                _logger.LogInformation("Using flash drive: {DrivePath}", driveRoot);
             }
-
-            _currentDrivePath = driveRoot;
-            _logger.LogInformation("Using flash drive: {DrivePath}", driveRoot);
             
-            var loggingDir = Path.Combine(driveRoot, "Logging");
+            var loggingDir = Path.Combine(_currentDrivePath, "Logging");
 
-            // Create session directory if needed
-            var sessionFolder = DateTime.Now.ToString("yyyy-MM-dd-HH-mm");
+            // Create session directory if needed (use app start time for session name)
+            var sessionFolder = _sessionStartTime.ToString("yyyy-MM-dd-HH-mm");
             var sessionPath = Path.Combine(loggingDir, sessionFolder);
 
             if (_currentSessionPath != sessionPath)

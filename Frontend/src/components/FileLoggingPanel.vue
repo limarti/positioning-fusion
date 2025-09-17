@@ -32,16 +32,17 @@ const getStorageColor = (used, total) => {
 }
 
 const getDriveStatusColor = (available) => {
-  return available ? 'text-green-500' : 'text-red-500'
+  return available ? 'text-black' : 'text-red-500'
 }
 
 const getFileStatusColor = (isActive) => {
-  return isActive ? 'text-green-500' : 'text-slate-400'
+  return isActive ? 'text-black' : 'text-slate-400'
 }
 
 const getFileStatusText = (isActive) => {
   return isActive ? 'Writing' : 'Idle'
 }
+
 </script>
 
 <template>
@@ -63,30 +64,18 @@ const getFileStatusText = (isActive) => {
     <!-- Drive Status -->
     <div class="space-y-2 text-xs">
       <!-- Session and Storage Info -->
-      <div class="grid grid-cols-2 gap-3">
-        <div class="space-y-1">
-          <div class="flex justify-between">
-            <span class="text-slate-500">Session:</span>
-            <span :class="fileLoggingStatus.currentSession ? 'font-mono text-xs' : 'text-slate-400'">
-              {{ fileLoggingStatus.currentSession ? fileLoggingStatus.currentSession.split('-').slice(-2).join(':') : '—' }}
-            </span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-slate-500">Storage:</span>
-            <span :class="getStorageColor(fileLoggingStatus.usedSpaceBytes, fileLoggingStatus.totalSpaceBytes)">
-              {{ formatSpaceUsage(fileLoggingStatus.usedSpaceBytes, fileLoggingStatus.totalSpaceBytes) }}
-            </span>
-          </div>
+      <div class="space-y-1">
+        <div class="flex justify-between">
+          <span class="text-slate-500">Session:</span>
+          <span :class="fileLoggingStatus.currentSession ? 'font-mono text-xs' : 'text-slate-400'">
+            {{ fileLoggingStatus.currentSession || '—' }}
+          </span>
         </div>
-        <div class="space-y-1">
-          <div class="flex justify-between">
-            <span class="text-slate-500">Available:</span>
-            <span class="text-slate-600">{{ formatFileSize(fileLoggingStatus.availableSpaceBytes) }}</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-slate-500">Total:</span>
-            <span class="text-slate-600">{{ formatFileSize(fileLoggingStatus.totalSpaceBytes) }}</span>
-          </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">Storage:</span>
+          <span :class="getStorageColor(fileLoggingStatus.usedSpaceBytes, fileLoggingStatus.totalSpaceBytes)">
+            {{ formatSpaceUsage(fileLoggingStatus.usedSpaceBytes, fileLoggingStatus.totalSpaceBytes) }} / {{ formatFileSize(fileLoggingStatus.totalSpaceBytes) }}
+          </span>
         </div>
       </div>
 
@@ -96,12 +85,7 @@ const getFileStatusText = (isActive) => {
         <div v-if="fileLoggingStatus.activeFiles && fileLoggingStatus.activeFiles.length > 0" class="space-y-1">
           <div v-for="file in fileLoggingStatus.activeFiles" :key="file.fileName"
                class="flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-              <span class="text-slate-600">{{ file.fileName }}</span>
-              <span :class="getFileStatusColor(file.isActive)" class="text-xs">
-                {{ getFileStatusText(file.isActive) }}
-              </span>
-            </div>
+            <span class="text-slate-600">{{ file.fileName }}</span>
             <span class="text-slate-500 font-mono">{{ formatFileSize(file.fileSizeBytes) }}</span>
           </div>
         </div>

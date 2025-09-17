@@ -18,6 +18,6 @@ public static class SystemConfiguration
     public static int GnssDataRate { get; set; } = 5; //1, 5 o 10 Hz
 
     // Logging configuration
-    public static int LoggingFlushIntervalSeconds { get; set; } = 30;
+    public static int LoggingFlushIntervalSeconds { get; set; } = 10;
     public static int LoggingMaxBufferSizeBytes { get; set; } = 1048576; // 1MB
 }

@@ -107,7 +107,7 @@ public class ImuService : BackgroundService
                 if (imuData != null)
                 {
                     // Log data to file
-                    var csvLine = $"{imuData.Timestamp:F3},{imuData.Acceleration.X:F6},{imuData.Acceleration.Y:F6},{imuData.Acceleration.Z:F6},{imuData.Gyroscope.X:F6},{imuData.Gyroscope.Y:F6},{imuData.Gyroscope.Z:F6},{imuData.Magnetometer.X:F6},{imuData.Magnetometer.Y:F6},{imuData.Magnetometer.Z:F6}";
+                    var csvLine = $"{imuData.Timestamp:F2},{imuData.Acceleration.X:F4},{imuData.Acceleration.Y:F4},{imuData.Acceleration.Z:F4},{imuData.Gyroscope.X:F4},{imuData.Gyroscope.Y:F4},{imuData.Gyroscope.Z:F4},{imuData.Magnetometer.X:F2},{imuData.Magnetometer.Y:F2},{imuData.Magnetometer.Z:F2}";
                     _dataFileWriter.WriteData(csvLine);
 
                     // Send data via SignalR with throttling to 1Hz

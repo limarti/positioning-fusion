@@ -80,8 +80,7 @@ public class FileLoggingStatusService : BackgroundService
                                 FileName = fileName,
                                 FilePath = filePath,
                                 FileSizeBytes = fileInfo.Length,
-                                LastModified = fileInfo.LastWriteTime,
-                                IsActive = IsFileBeingWritten(filePath)
+                                LastModified = fileInfo.LastWriteTime
                             });
                         }
                     }
@@ -104,19 +103,6 @@ public class FileLoggingStatusService : BackgroundService
     }
 
 
-    private bool IsFileBeingWritten(string filePath)
-    {
-        try
-        {
-            // Check if file was modified in the last 5 seconds
-            var lastWrite = File.GetLastWriteTime(filePath);
-            return DateTime.Now - lastWrite < TimeSpan.FromSeconds(5);
-        }
-        catch
-        {
-            return false;
-        }
-    }
 }
 
 public class FileLoggingStatus
@@ -136,5 +122,4 @@ public class LoggingFileInfo
     public string FilePath { get; set; } = string.Empty;
     public long FileSizeBytes { get; set; }
     public DateTime LastModified { get; set; }
-    public bool IsActive { get; set; }
 }
