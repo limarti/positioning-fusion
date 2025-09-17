@@ -13,17 +13,18 @@ public class GnssInitializer
     private const StopBits DefaultStopBits = StopBits.One;
     private const int ResponseTimeoutMs = 1000;
 
-    // Common GNSS baud rates to scan
+    // ZED-X20P specific baud rates - default is 38400
     private readonly int[] _baudRatesToScan = new int[]
     {
-        9600,   // Most common default
+        460800,
+        38400,  // Default
+
         4800,   // Older devices
+        9600,   // Most common default
         19200,  // Higher speed
-        38400,  // High speed
         57600,  // Very high speed
         115200, // Maximum common speed
         230400,
-        460800
     };
 
     public GnssInitializer(ILogger<GnssInitializer> logger)
@@ -43,6 +44,10 @@ public class GnssInitializer
             {
                 _logger.LogInformation("GNSS initialized successfully on port {PortName} at {BaudRate} baud",
                     portName, _serialPort?.BaudRate ?? baudRate);
+
+                // Configure GNSS for satellite data output
+                await ConfigureForSatelliteDataAsync();
+
                 return true;
             }
         }
@@ -305,6 +310,220 @@ public class GnssInitializer
     public SerialPort? GetSerialPort()
     {
         return _serialPort;
+    }
+
+    private async Task ConfigureForSatelliteDataAsync()
+    {
+        if (_serialPort == null || !_serialPort.IsOpen)
+        {
+            _logger.LogWarning("Cannot configure GNSS - serial port not available");
+            return;
+        }
+
+        _logger.LogInformation("Configuring GNSS for satellite data output (runtime only)");
+
+        try
+        {
+            _logger.LogInformation("ZED-X20P: Using CFG-VALSET for modern UBX configuration");
+
+            // Use CFG-VALSET to enable supported messages
+            await ConfigureMessagesWithValset();
+
+            _logger.LogInformation("ZED-X20P UBX configuration completed");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to configure GNSS for satellite data");
+        }
+    }
+
+    private static byte[] CreateCfgMsgPayload(byte msgClass, byte msgId, byte uart1Rate = UbxConstants.RATE_1HZ)
+    {
+        return new byte[]
+        {
+            msgClass, msgId, 0x00,                    // Message class, ID, reserved
+            UbxConstants.RATE_DISABLED,               // DDC (I2C) rate
+            uart1Rate,                                // UART1 rate (our target)
+            UbxConstants.RATE_DISABLED,               // UART2 rate
+            UbxConstants.RATE_DISABLED,               // USB rate
+            UbxConstants.RATE_DISABLED                // SPI rate
+        };
+    }
+
+    private async Task EnableNavMessage(byte messageId, byte rate = UbxConstants.RATE_1HZ)
+    {
+        var payload = CreateCfgMsgPayload(UbxConstants.CLASS_NAV, messageId, rate);
+        await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_MSG, payload);
+
+        _logger.LogDebug("Enabled NAV message 0x{MessageId:X2} at {Rate}Hz", messageId, rate);
+    }
+
+    private async Task EnableRxmMessage(byte messageId, byte rate = UbxConstants.RATE_1HZ)
+    {
+        var payload = CreateCfgMsgPayload(UbxConstants.CLASS_RXM, messageId, rate);
+        await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_MSG, payload);
+
+        _logger.LogDebug("Enabled RXM message 0x{MessageId:X2} at {Rate}Hz", messageId, rate);
+    }
+
+    private async Task ConfigureMessagesWithValset()
+    {
+        try
+        {
+            _logger.LogInformation("Using CFG-VALSET to configure ZED-X20P messages");
+
+            // Enable NAV-PVT at 1Hz (supported message)
+            await EnableMessageWithValset("MSGOUT-UBX_NAV_PVT_UART1", 1);
+            await Task.Delay(500);
+
+            // Enable RXM-RAWX at 1Hz (documented as supported)
+            await EnableMessageWithValset("MSGOUT-UBX_RXM_RAWX_UART1", 1);
+            await Task.Delay(500);
+
+            // Enable RXM-SFRBX at 1Hz (documented as supported)
+            await EnableMessageWithValset("MSGOUT-UBX_RXM_SFRBX_UART1", 1);
+            await Task.Delay(500);
+
+            _logger.LogInformation("✅ CFG-VALSET configuration completed");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to configure messages with CFG-VALSET");
+        }
+    }
+
+    private async Task EnableMessageWithValset(string keyName, byte rate)
+    {
+        try
+        {
+            // CFG-VALSET payload: version(1) + layer(1) + transaction(1) + reserved(1) + keyId(4) + value(1)
+            var keyId = GetKeyIdForMessage(keyName);
+
+            var payload = new List<byte>
+            {
+                UbxConstants.VAL_VERSION,                    // Version
+                UbxConstants.VAL_LAYER_RAM,                  // Layer: RAM only
+                (byte)UbxConstants.ValTransaction.None,      // Transaction: single message
+                0x00,                                        // Reserved
+            };
+
+            // Add key ID (little endian)
+            payload.AddRange(BitConverter.GetBytes(keyId));
+
+            // Add value (1 byte for message rate)
+            payload.Add(rate);
+
+            await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+
+            _logger.LogInformation("Enabled {KeyName} with rate {Rate}", keyName, rate);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enable message {KeyName}", keyName);
+        }
+    }
+
+    private static uint GetKeyIdForMessage(string keyName)
+    {
+        return keyName switch
+        {
+            "MSGOUT-UBX_NAV_PVT_UART1" => 0x20910007,     // NAV-PVT UART1 output rate
+            "MSGOUT-UBX_RXM_RAWX_UART1" => 0x209102a5,    // RXM-RAWX UART1 output rate
+            "MSGOUT-UBX_RXM_SFRBX_UART1" => 0x20910232,   // RXM-SFRBX UART1 output rate
+            _ => throw new ArgumentException($"Unknown key: {keyName}")
+        };
+    }
+
+    private async Task<bool> SendUbxConfigMessageAsync(byte messageClass, byte messageId, byte[] payload)
+    {
+        if (_serialPort == null || !_serialPort.IsOpen)
+        {
+            return false;
+        }
+
+        try
+        {
+            var ubxMessage = CreateUbxMessage(messageClass, messageId, payload);
+
+            _logger.LogInformation("Sending UBX config: Class=0x{Class:X2}, ID=0x{Id:X2}, Length={Length}",
+                messageClass, messageId, payload.Length);
+
+            // Log the complete UBX message for debugging
+            var hexMessage = string.Join(" ", ubxMessage.Select(b => $"{b:X2}"));
+            _logger.LogDebug("UBX message bytes: {HexMessage}", hexMessage);
+
+            _serialPort.DiscardInBuffer();
+            _serialPort.DiscardOutBuffer();
+            _serialPort.Write(ubxMessage, 0, ubxMessage.Length);
+
+            // Wait for ACK response
+            await Task.Delay(500);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send UBX config message");
+            return false;
+        }
+    }
+
+    private byte[] CreateUbxMessage(byte messageClass, byte messageId, byte[] payload)
+    {
+        var message = new List<byte>();
+
+        // Sync chars
+        message.Add(UbxConstants.SYNC_CHAR_1);
+        message.Add(UbxConstants.SYNC_CHAR_2);
+
+        // Message class and ID
+        message.Add(messageClass);
+        message.Add(messageId);
+
+        // Payload length (little-endian)
+        var length = (ushort)payload.Length;
+        message.Add((byte)(length & 0xFF));
+        message.Add((byte)(length >> 8));
+
+        // Payload
+        message.AddRange(payload);
+
+        // Calculate checksum
+        var checksum = CalculateUbxChecksum(messageClass, messageId, payload);
+        message.Add(checksum.ck_a);
+        message.Add(checksum.ck_b);
+
+        _logger.LogDebug("UBX checksum: CK_A=0x{CkA:X2}, CK_B=0x{CkB:X2}", checksum.ck_a, checksum.ck_b);
+
+        return message.ToArray();
+    }
+
+    private (byte ck_a, byte ck_b) CalculateUbxChecksum(byte messageClass, byte messageId, byte[] payload)
+    {
+        byte ck_a = 0;
+        byte ck_b = 0;
+
+        // Include class and ID in checksum
+        ck_a += messageClass;
+        ck_b += ck_a;
+        ck_a += messageId;
+        ck_b += ck_a;
+
+        // Include length in checksum
+        var length = (ushort)payload.Length;
+        ck_a += (byte)(length & 0xFF);
+        ck_b += ck_a;
+        ck_a += (byte)(length >> 8);
+        ck_b += ck_a;
+
+        // Include payload in checksum
+        foreach (var b in payload)
+        {
+            ck_a += b;
+            ck_b += ck_a;
+        }
+
+        return (ck_a, ck_b);
     }
 
     public void Dispose()

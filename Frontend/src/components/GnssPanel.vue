@@ -35,7 +35,11 @@ const props = defineProps({
         <div class="flex items-center space-x-4">
           <div>
             <div class="text-sm text-slate-300">Current Position</div>
-            <div class="text-lg font-mono">{{ gnssData.latitude.toFixed(7) }}°, {{ gnssData.longitude.toFixed(7) }}°</div>
+            <div class="text-lg font-mono">
+              {{ gnssData.latitude !== null && gnssData.longitude !== null
+                  ? `${gnssData.latitude.toFixed(7)}°, ${gnssData.longitude.toFixed(7)}°`
+                  : 'Waiting for GNSS fix...' }}
+            </div>
           </div>
         </div>
         <div class="flex items-center space-x-3">

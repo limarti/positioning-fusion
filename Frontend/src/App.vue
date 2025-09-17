@@ -16,9 +16,9 @@ const gnssData = ref({
   fixType: null,
   rtkMode: null,
   
-  // Position
-  latitude: 45.4234567, // Keep for position service
-  longitude: -75.6987654, // Keep for position service
+  // Position (will be updated by real GNSS data)
+  latitude: null,
+  longitude: null,
   altitude: null,
   
   // Accuracy estimates
@@ -129,10 +129,7 @@ onMounted(async () => {
     .withAutomaticReconnect()
     .build()
 
-  connection.on("PositionUpdate", (data) => {
-    gnssData.value.latitude = data.latitude
-    gnssData.value.longitude = data.longitude
-  })
+  // PositionUpdate removed - now using PvtUpdate for real GNSS position data
 
   connection.on("ImuUpdate", (data) => {
     imuData.value.acceleration.x = data.acceleration.x
@@ -150,6 +147,110 @@ onMounted(async () => {
     systemHealth.value.cpuUsage = data.cpuUsage
     systemHealth.value.memoryUsage = data.memoryUsage
     systemHealth.value.temperature = data.temperature
+  })
+
+  connection.on("SatelliteUpdate", (data) => {
+    console.log("🛰️ SatelliteUpdate received:", data)
+    console.log("Number of satellites:", data.numSatellites)
+    console.log("Satellites array length:", data.satellites?.length)
+
+    // Update satellite data from NAV-SAT messages
+    gnssData.value.satellitesTracked = data.numSatellites
+    gnssData.value.satellites = data.satellites.map(sat => ({
+      svid: sat.svId,
+      constellation: sat.gnssName,
+      used: sat.svUsed,
+      cn0: sat.cno,
+      elevation: sat.elevation,
+      azimuth: sat.azimuth,
+      health: sat.health,
+      qualityIndicator: sat.qualityIndicator,
+      pseudorangeResidual: sat.pseudorangeResidual,
+      differentialCorrection: sat.differentialCorrection,
+      smoothed: sat.smoothed
+    }))
+
+    // Update constellation breakdown
+    const constellations = { gps: {used: 0, tracked: 0}, glonass: {used: 0, tracked: 0}, galileo: {used: 0, tracked: 0}, beidou: {used: 0, tracked: 0} }
+    let totalUsed = 0
+
+    data.satellites.forEach(sat => {
+      if (sat.svUsed) totalUsed++
+
+      switch(sat.gnssName.toLowerCase()) {
+        case 'gps':
+          constellations.gps.tracked++
+          if (sat.svUsed) constellations.gps.used++
+          break
+        case 'glonass':
+          constellations.glonass.tracked++
+          if (sat.svUsed) constellations.glonass.used++
+          break
+        case 'galileo':
+          constellations.galileo.tracked++
+          if (sat.svUsed) constellations.galileo.used++
+          break
+        case 'beidou':
+          constellations.beidou.tracked++
+          if (sat.svUsed) constellations.beidou.used++
+          break
+      }
+    })
+
+    gnssData.value.constellations = constellations
+    gnssData.value.satellitesUsed = totalUsed
+
+    console.log("✅ Satellite data updated:", {
+      totalTracked: gnssData.value.satellitesTracked,
+      totalUsed: gnssData.value.satellitesUsed,
+      constellations: gnssData.value.constellations
+    })
+  })
+
+  connection.on("PvtUpdate", (data) => {
+    console.log("📍 PvtUpdate received:", data)
+    console.log("Position:", data.latitude, data.longitude)
+    console.log("Fix type:", data.fixType, "Carrier solution:", data.carrierSolution)
+
+    // Update position and navigation data from NAV-PVT messages
+    gnssData.value.latitude = data.latitude
+    gnssData.value.longitude = data.longitude
+    gnssData.value.altitude = data.heightMSL / 1000 // Convert mm to m
+    gnssData.value.hAcc = data.horizontalAccuracy / 1000 // Convert mm to m
+    gnssData.value.vAcc = data.verticalAccuracy / 1000 // Convert mm to m
+
+    // Update fix type based on UBX fix type values
+    const fixTypes = {
+      0: 'No Fix',
+      1: 'Dead Reckoning',
+      2: '2D Fix',
+      3: '3D Fix',
+      4: 'GNSS+DR',
+      5: 'Time Only'
+    }
+    gnssData.value.fixType = fixTypes[data.fixType] || 'Unknown'
+
+    // Update RTK information based on carrier solution
+    if (data.carrierSolution === 2) {
+      gnssData.value.fixType = 'RTK Fixed'
+      gnssData.value.rtkMode = 'Fixed'
+      gnssData.value.rtk.active = true
+    } else if (data.carrierSolution === 1) {
+      gnssData.value.fixType = 'RTK Float'
+      gnssData.value.rtkMode = 'Float'
+      gnssData.value.rtk.active = true
+    } else {
+      gnssData.value.rtk.active = false
+    }
+
+    gnssData.value.satellitesUsed = data.numSatellites
+    gnssData.value.tAcc = data.timeAccuracy
+
+    console.log("✅ Position data updated:", {
+      position: `${data.latitude.toFixed(7)}, ${data.longitude.toFixed(7)}`,
+      fixType: gnssData.value.fixType,
+      accuracy: `${gnssData.value.hAcc.toFixed(3)}m`
+    })
   })
 
   try {

@@ -1,6 +1,5 @@
 using Backend.Hubs;
 using Backend.Hardware.Imu;
-using Backend.Hardware.Position;
 using Backend.Hardware.Gnss;
 using Backend.System;
 
@@ -15,7 +14,6 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSignalR();
 
 // Add background services
-builder.Services.AddHostedService<PositionService>();
 builder.Services.AddHostedService<SystemMonitoringService>();
 
 // Add IMU services
@@ -24,6 +22,7 @@ builder.Services.AddHostedService<ImuService>();
 
 // Add GNSS services
 builder.Services.AddSingleton<GnssInitializer>();
+builder.Services.AddHostedService<GnssService>();
 
 // Add CORS for frontend
 builder.Services.AddCors(options =>
@@ -56,11 +55,6 @@ var gnssInitialized = await gnssInitializer.InitializeAsync();
 if (!gnssInitialized)
 {
     logger.LogWarning("GNSS initialization failed - continuing without GNSS");
-}
-else
-{
-    // Log the actual connection details for verification
-    gnssInitializer.LogCurrentConnectionStatus();
 }
 
 // Configure the HTTP request pipeline.
