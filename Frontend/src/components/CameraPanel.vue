@@ -13,10 +13,10 @@
       </div>
       <div>
         <h3 class="font-bold text-slate-800">Camera</h3>
-        <div class="text-xs text-slate-400">—</div>
+        <div class="text-sm text-slate-400">—</div>
       </div>
     </div>
-    <div class="space-y-2 text-xs">
+    <div class="space-y-2 text-sm">
       <div class="flex justify-between">
         <span class="text-slate-500">Duration:</span>
         <span class="text-slate-400">—</span>

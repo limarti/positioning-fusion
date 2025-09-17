@@ -22,10 +22,10 @@ const props = defineProps({
       </div>
       <div>
         <h3 class="font-bold text-slate-800">IMU</h3>
-        <div class="text-xs" :class="dataRates.imuRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.imuRate !== null ? dataRates.imuRate : '—' }}</div>
+        <div class="text-sm" :class="dataRates.imuRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.imuRate !== null ? dataRates.imuRate : '—' }}</div>
       </div>
     </div>
-    <div class="grid grid-cols-3 gap-2 text-xs">
+    <div class="grid grid-cols-3 gap-2 text-sm">
       <div class="text-center">
         <div class="text-slate-500">Accel</div>
         <div class="font-mono" :class="imuData.acceleration.x !== null ? 'text-red-600' : 'text-slate-400'">{{ imuData.acceleration.x !== null ? imuData.acceleration.x.toFixed(1) : '—' }}</div>

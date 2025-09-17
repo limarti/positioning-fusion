@@ -69,12 +69,12 @@ const getFileStatusText = (isActive) => {
     </div>
 
     <!-- Drive Status -->
-    <div class="space-y-2 text-xs">
+    <div class="space-y-2 text-sm">
       <!-- Session and Storage Info -->
       <div class="space-y-1">
         <div class="flex justify-between">
           <span class="text-slate-500">Session:</span>
-          <span :class="fileLoggingStatus.currentSession ? 'font-mono text-xs' : 'text-slate-400'">
+          <span :class="fileLoggingStatus.currentSession ? 'font-mono text-sm' : 'text-slate-400'">
             {{ fileLoggingStatus.currentSession || '—' }}
           </span>
         </div>
@@ -88,15 +88,15 @@ const getFileStatusText = (isActive) => {
 
       <!-- Active Files Section -->
       <div class="mt-3 pt-2 border-t border-slate-100">
-        <div class="text-slate-600 font-medium mb-2">Active Files</div>
+        <div class="text-slate-600 font-medium mb-2 text-sm">Active Files</div>
         <div v-if="fileLoggingStatus.activeFiles && fileLoggingStatus.activeFiles.length > 0" class="space-y-1">
           <div v-for="file in fileLoggingStatus.activeFiles" :key="file.fileName"
                class="flex justify-between items-center">
-            <span class="text-slate-600">{{ file.fileName }}</span>
-            <span class="text-slate-500 font-mono">{{ formatFileSize(file.fileSizeBytes) }}</span>
+            <span class="text-slate-600 text-sm">{{ file.fileName }}</span>
+            <span class="text-slate-500 font-mono text-sm">{{ formatFileSize(file.fileSizeBytes) }}</span>
           </div>
         </div>
-        <div v-else class="text-slate-400 text-center py-2">
+        <div v-else class="text-slate-400 text-center py-2 text-sm">
           No active files
         </div>
       </div>

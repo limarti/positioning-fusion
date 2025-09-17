@@ -18,10 +18,10 @@ const props = defineProps({
       </div>
       <div>
         <h3 class="font-bold text-slate-800">Encoder</h3>
-        <div class="text-xs text-emerald-600">Active</div>
+        <div class="text-sm text-emerald-600">Active</div>
       </div>
     </div>
-    <div class="space-y-2 text-xs">
+    <div class="space-y-2 text-sm">
       <div class="flex justify-between">
         <span class="text-slate-500">Count:</span>
         <span :class="encoderData.rawCount !== null ? 'font-mono' : 'text-slate-400'">{{ encoderData.rawCount !== null ? encoderData.rawCount : '—' }}</span>

@@ -38,12 +38,12 @@ const getUsageColor = (usage) => {
       </div>
       <div>
         <h3 class="font-bold text-slate-800">System</h3>
-        <div class="text-xs text-slate-400">—</div>
+        <div class="text-sm text-slate-400">—</div>
       </div>
     </div>
     
     <!-- Combined system data in compact grid -->
-    <div class="grid grid-cols-2 gap-3 text-xs">
+    <div class="grid grid-cols-2 gap-3 text-sm">
       <!-- Power section -->
       <div class="space-y-1">
         <div class="flex justify-between">
@@ -88,7 +88,7 @@ const getUsageColor = (usage) => {
     
     <!-- File Management section -->
     <div class="mt-3 pt-2 border-t border-slate-100">
-      <div class="grid grid-cols-2 gap-3 text-xs">
+      <div class="grid grid-cols-2 gap-3 text-sm">
         <div class="space-y-1">
           <div class="flex justify-between">
             <span class="text-slate-500">Session:</span>

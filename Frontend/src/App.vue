@@ -307,18 +307,7 @@ onMounted(async () => {
     gnssData.value.hAcc = data.horizontalAccuracy / 1000 // Convert mm to m
     gnssData.value.vAcc = data.verticalAccuracy / 1000 // Convert mm to m
 
-    // Update fix type based on UBX fix type values
-    const fixTypes = {
-      0: 'No Fix',
-      1: 'Dead Reckoning',
-      2: '2D Fix',
-      3: '3D Fix',
-      4: 'GNSS+DR',
-      5: 'Time Only'
-    }
-    gnssData.value.fixType = fixTypes[data.fixType] || 'Unknown'
-
-    // Update RTK information based on carrier solution
+    // Update RTK information based on carrier solution - RTK takes priority
     if (data.carrierSolution === 2) {
       gnssData.value.fixType = 'RTK Fixed'
       gnssData.value.rtkMode = 'Fixed'
@@ -328,6 +317,14 @@ onMounted(async () => {
       gnssData.value.rtkMode = 'Float'
       gnssData.value.rtk.active = true
     } else {
+      // Only show basic status for non-RTK
+      if (data.fixType === 0) {
+        gnssData.value.fixType = 'No Fix'
+      } else if (data.numSatellites >= 4) {
+        gnssData.value.fixType = 'GNSS Fixed'
+      } else {
+        gnssData.value.fixType = 'Acquiring'
+      }
       gnssData.value.rtk.active = false
     }
 
@@ -370,7 +367,7 @@ onUnmounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+  <div class="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
     <!-- Header -->
     <header class="bg-gradient-to-r from-slate-800 to-slate-900 text-white border-b-2 border-slate-700">
       <div class="px-4 py-6">
@@ -404,7 +401,9 @@ onUnmounted(async () => {
     <!-- Main Content -->
     <main class="px-4 py-6 max-w-7xl mx-auto">
       <!-- GNSS System -->
-      <GnssPanel :gnssData="gnssData" :dataRates="dataRates" />
+      <div class="mb-6">
+        <GnssPanel :gnssData="gnssData" :dataRates="dataRates" />
+      </div>
       
       <!-- Sensor Data Row -->
       <div class="mb-6">
@@ -422,9 +421,6 @@ onUnmounted(async () => {
           <SystemPanel :systemHealth="systemHealth" :powerStatus="powerStatus" :fileManagement="fileManagement" />
         </div>
       </div>
-      
-
-
     </main>
   </div>
 </template>
