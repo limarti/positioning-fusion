@@ -13,5 +13,5 @@ public static class SystemConfiguration
     }
 
     public static CorrectionsMode CorrectionsOperation { get; set; } = CorrectionsMode.Disabled;
-    public static int GnssDataRate { get; set; } = 1; // 1Hz default
+    public static int GnssDataRate { get; set; } = 5; // Hz
 }

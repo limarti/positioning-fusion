@@ -356,8 +356,7 @@ public class GnssInitializer
         try
         {
             _logger.LogInformation("ZED-X20P: Using CFG-VALSET for modern UBX configuration");
-            _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz",
-                SystemConfiguration.CorrectionsOperation, SystemConfiguration.GnssDataRate);
+            _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz", SystemConfiguration.CorrectionsOperation, SystemConfiguration.GnssDataRate);
 
             // Use CFG-VALSET to enable supported messages
             await ConfigureMessagesWithValset();
@@ -383,41 +382,63 @@ public class GnssInitializer
         };
     }
 
-    private async Task EnableNavMessage(byte messageId, byte rate = UbxConstants.RATE_1HZ)
-    {
-        var payload = CreateCfgMsgPayload(UbxConstants.CLASS_NAV, messageId, rate);
-        await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_MSG, payload);
-
-        _logger.LogDebug("Enabled NAV message 0x{MessageId:X2} at {Rate}Hz", messageId, rate);
-    }
-
-    private async Task EnableRxmMessage(byte messageId, byte rate = UbxConstants.RATE_1HZ)
-    {
-        var payload = CreateCfgMsgPayload(UbxConstants.CLASS_RXM, messageId, rate);
-        await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_MSG, payload);
-
-        _logger.LogDebug("Enabled RXM message 0x{MessageId:X2} at {Rate}Hz", messageId, rate);
-    }
-
     private async Task ConfigureMessagesWithValset()
     {
         try
         {
             _logger.LogInformation("Using CFG-VALSET to configure ZED-X20P messages");
 
-            // Enable messages at configured rate
-            var rate = (byte)SystemConfiguration.GnssDataRate;
-            await EnableMessageWithValset("MSGOUT-UBX_NAV_PVT_UART1", rate);
-            _logger.LogInformation("🛰️ Enabling NAV-SAT messages for satellite data at {Rate}Hz", rate);
-            await EnableMessageWithValset("MSGOUT-UBX_NAV_SAT_UART1", rate);  // Enable satellite data!
-            await EnableMessageWithValset("MSGOUT-UBX_RXM_RAWX_UART1", rate);
-            await EnableMessageWithValset("MSGOUT-UBX_RXM_SFRBX_UART1", rate);
+            // First, set the navigation rate to match desired output frequency
+            var desiredRateHz = SystemConfiguration.GnssDataRate;
+            await SetNavigationRate(desiredRateHz);
 
-            _logger.LogInformation("CFG-VALSET configuration completed");
+            // Enable messages to output every navigation solution (rate = 1)
+            // Since we set nav rate to match desired frequency, this gives us the correct output rate
+            const byte outputEveryNavSolution = 1;
+            await EnableMessageWithValset("MSGOUT-UBX_NAV_PVT_UART1", outputEveryNavSolution);
+            await EnableMessageWithValset("MSGOUT-UBX_NAV_SAT_UART1", outputEveryNavSolution);  // Enable satellite data!
+            await EnableMessageWithValset("MSGOUT-UBX_RXM_RAWX_UART1", outputEveryNavSolution);
+            await EnableMessageWithValset("MSGOUT-UBX_RXM_SFRBX_UART1", outputEveryNavSolution);
+
+            _logger.LogInformation("CFG-VALSET configuration completed for {DesiredRate}Hz output", desiredRateHz);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to configure messages with CFG-VALSET");
+        }
+    }
+
+    private async Task SetNavigationRate(int rateHz)
+    {
+        try
+        {
+            _logger.LogInformation("Setting navigation rate to {RateHz}Hz", rateHz);
+
+            // Calculate measurement period in milliseconds (1000ms / rate)
+            var measurementPeriodMs = (ushort)(1000 / rateHz);
+
+            // CFG-VALSET payload for RATE_MEAS (measurement period in ms)
+            var payload = new List<byte>
+            {
+                UbxConstants.VAL_VERSION,                    // Version
+                UbxConstants.VAL_LAYER_RAM,                  // Layer: RAM only
+                (byte)UbxConstants.ValTransaction.None,      // Transaction: single message
+                0x00,                                        // Reserved
+            };
+
+            // Add RATE_MEAS key ID (0x30210001) - little endian
+            payload.AddRange(BitConverter.GetBytes(0x30210001u));
+
+            // Add measurement period value (2 bytes, little endian)
+            payload.AddRange(BitConverter.GetBytes(measurementPeriodMs));
+
+            await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+
+            _logger.LogInformation("Navigation rate set to {Period}ms ({RateHz}Hz)", measurementPeriodMs, rateHz);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to set navigation rate to {RateHz}Hz", rateHz);
         }
     }
 

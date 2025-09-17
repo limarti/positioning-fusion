@@ -19,8 +19,7 @@ public static class NavigationSatelliteParser
         var version = data[4];
         var numSvs = data[5];
 
-        logger.LogInformation("NAV-SAT: iTow={iTow}, version={Version}, numSvs={NumSvs}, dataLength={DataLength}",
-            iTow, version, numSvs, data.Length);
+        //logger.LogInformation("NAV-SAT: iTow={iTow}, version={Version}, numSvs={NumSvs}, dataLength={DataLength}", iTow, version, numSvs, data.Length);
 
         // Check if we have enough data for all satellites
         var expectedLength = 8 + (numSvs * 12);
@@ -78,10 +77,8 @@ public static class NavigationSatelliteParser
         }
 
         // Log constellation summary
-        var constellationSummary = string.Join(", ",
-            constellationCounts.Select(kv => $"{kv.Key}:{kv.Value}"));
-        logger.LogInformation("Parsed {TotalSats} satellites: {ConstellationSummary}",
-            satellites.Count, constellationSummary);
+        //var constellationSummary = string.Join(", ", constellationCounts.Select(kv => $"{kv.Key}:{kv.Value}"));
+        //logger.LogInformation("Parsed {TotalSats} satellites: {ConstellationSummary}", satellites.Count, constellationSummary);
 
         var satelliteData = new SatelliteUpdate
         {
