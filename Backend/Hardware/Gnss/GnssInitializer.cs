@@ -12,20 +12,21 @@ public class GnssInitializer
     private const Parity DefaultParity = Parity.None;
     private const int DefaultDataBits = 8;
     private const StopBits DefaultStopBits = StopBits.One;
-    private const int ResponseTimeoutMs = 1000;
+    private const int ResponseTimeoutMs = 3000;
 
     // ZED-X20P specific baud rates - default is 38400
     private readonly int[] _baudRatesToScan = new int[]
     {
+        //the only ones we are using. default, and ours
         460800,
-        38400,  // Default
+        38400,
 
-        4800,   // Older devices
-        9600,   // Most common default
-        19200,  // Higher speed
-        57600,  // Very high speed
-        115200, // Maximum common speed
-        230400,
+        //4800,   // Older devices
+        //9600,   // Most common default
+        //19200,  // Higher speed
+        //57600,  // Very high speed
+        //115200, // Maximum common speed
+        //230400,
     };
 
     public GnssInitializer(ILogger<GnssInitializer> logger)
@@ -35,25 +36,48 @@ public class GnssInitializer
 
     public async Task<bool> InitializeAsync(string portName = DefaultPortName)
     {
-        _logger.LogInformation("Initializing GNSS on port {PortName}", portName);
+        const int maxRetries = 10;
+        const int retryDelayMs = 2000;
 
-        foreach (var baudRate in _baudRatesToScan)
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            _logger.LogInformation("Testing GNSS communication at {BaudRate} baud", baudRate);
+            _logger.LogInformation("Initializing GNSS on port {PortName} (attempt {Attempt}/{MaxRetries})",
+                portName, attempt, maxRetries);
 
-            if (await TryBaudRateAsync(portName, baudRate))
+            for (int i = 0; i < _baudRatesToScan.Length; i++)
             {
-                _logger.LogInformation("GNSS initialized successfully on port {PortName} at {BaudRate} baud",
-                    portName, _serialPort?.BaudRate ?? baudRate);
+                var baudRate = _baudRatesToScan[i];
+                _logger.LogInformation("Testing GNSS communication at {BaudRate} baud", baudRate);
 
-                // Configure GNSS for satellite data output
-                await ConfigureForSatelliteDataAsync();
+                if (await TryBaudRateAsync(portName, baudRate))
+                {
+                    _logger.LogInformation("GNSS initialized successfully on port {PortName} at {BaudRate} baud",
+                        portName, _serialPort?.BaudRate ?? baudRate);
 
-                return true;
+                    // Configure GNSS for satellite data output
+                    await ConfigureForSatelliteDataAsync();
+
+                    return true;
+                }
+
+                // Wait between baud rate attempts (except after the last one)
+                if (i < _baudRatesToScan.Length - 1)
+                {
+                    _logger.LogDebug("Waiting 3 seconds before trying next baud rate...");
+                    await Task.Delay(3000);
+                }
+            }
+
+            if (attempt < maxRetries)
+            {
+                _logger.LogWarning("GNSS initialization attempt {Attempt} failed, retrying in {Delay}ms...",
+                    attempt, retryDelayMs);
+                await Task.Delay(retryDelayMs);
             }
         }
 
-        _logger.LogError("Failed to initialize GNSS on port {PortName} - no valid baud rate found", portName);
+        _logger.LogError("Failed to initialize GNSS on port {PortName} after {MaxRetries} attempts - no valid baud rate found",
+            portName, maxRetries);
         return false;
     }
 
@@ -75,7 +99,7 @@ public class GnssInitializer
             _logger.LogDebug("Serial port {PortName} opened at {BaudRate} baud", portName, baudRate);
 
             // Allow port to stabilize
-            await Task.Delay(100);
+            await Task.Delay(500);
 
             // Clear any existing data
             testPort.DiscardInBuffer();
@@ -85,6 +109,9 @@ public class GnssInitializer
             var pollCommand = "$PUBX,00*33\r\n";
             _logger.LogDebug("Sending GNSS position query: {Command}", pollCommand.Trim());
             testPort.Write(pollCommand);
+
+            // Wait before checking for response to allow device to process
+            await Task.Delay(200);
 
             // Wait for response
             var response = await WaitForGnssResponseAsync(testPort);
@@ -161,14 +188,14 @@ public class GnssInitializer
             currentPort.Write(pubxBaudCommand);
 
             // Wait for command to be processed
-            await Task.Delay(2000);
+            await Task.Delay(3000);
 
             // Close current connection
             currentPort.Close();
             currentPort.Dispose();
 
             // Wait for device to reconfigure
-            await Task.Delay(2000);
+            await Task.Delay(3000);
 
             // Test reconnection at 460800 baud
             return await TestAndSetConnection(portName, 460800);
@@ -195,13 +222,16 @@ public class GnssInitializer
             };
 
             testPort.Open();
-            await Task.Delay(100);
+            await Task.Delay(500);
 
             testPort.DiscardInBuffer();
             testPort.DiscardOutBuffer();
 
             var pollCommand = "$PUBX,00*33\r\n";
             testPort.Write(pollCommand);
+
+            // Wait before checking for response
+            await Task.Delay(200);
 
             var response = await WaitForGnssResponseAsync(testPort);
 
@@ -264,7 +294,7 @@ public class GnssInitializer
                 break;
             }
 
-            await Task.Delay(50);
+            await Task.Delay(100);
         }
 
         return response.Trim();
@@ -378,6 +408,8 @@ public class GnssInitializer
             // Enable messages at configured rate
             var rate = (byte)SystemConfiguration.GnssDataRate;
             await EnableMessageWithValset("MSGOUT-UBX_NAV_PVT_UART1", rate);
+            _logger.LogInformation("🛰️ Enabling NAV-SAT messages for satellite data at {Rate}Hz", rate);
+            await EnableMessageWithValset("MSGOUT-UBX_NAV_SAT_UART1", rate);  // Enable satellite data!
             await EnableMessageWithValset("MSGOUT-UBX_RXM_RAWX_UART1", rate);
             await EnableMessageWithValset("MSGOUT-UBX_RXM_SFRBX_UART1", rate);
 
@@ -423,6 +455,7 @@ public class GnssInitializer
         return keyName switch
         {
             "MSGOUT-UBX_NAV_PVT_UART1" => 0x20910007,     // NAV-PVT UART1 output rate
+            "MSGOUT-UBX_NAV_SAT_UART1" => 0x20910016,     // NAV-SAT UART1 output rate
             "MSGOUT-UBX_RXM_RAWX_UART1" => 0x209102a5,    // RXM-RAWX UART1 output rate
             "MSGOUT-UBX_RXM_SFRBX_UART1" => 0x20910232,   // RXM-SFRBX UART1 output rate
             _ => throw new ArgumentException($"Unknown key: {keyName}")
@@ -447,8 +480,8 @@ public class GnssInitializer
             _serialPort.DiscardOutBuffer();
             _serialPort.Write(ubxMessage, 0, ubxMessage.Length);
 
-            // Wait for ACK response
-            await Task.Delay(500);
+            // Wait for ACK response and processing
+            await Task.Delay(1000);
 
             return true;
         }

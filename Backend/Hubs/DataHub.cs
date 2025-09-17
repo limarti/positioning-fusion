@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Backend.Hardware.Imu;
 using Backend.Hardware.Position;
+using Backend.Hardware.Gnss;
 using Backend.System;
 
 namespace Backend.Hubs;
