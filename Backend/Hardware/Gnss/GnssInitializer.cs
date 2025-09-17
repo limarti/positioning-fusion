@@ -374,17 +374,10 @@ public class GnssInitializer
 
             // Enable NAV-PVT at 1Hz (supported message)
             await EnableMessageWithValset("MSGOUT-UBX_NAV_PVT_UART1", 1);
-            await Task.Delay(500);
-
-            // Enable RXM-RAWX at 1Hz (documented as supported)
             await EnableMessageWithValset("MSGOUT-UBX_RXM_RAWX_UART1", 1);
-            await Task.Delay(500);
-
-            // Enable RXM-SFRBX at 1Hz (documented as supported)
             await EnableMessageWithValset("MSGOUT-UBX_RXM_SFRBX_UART1", 1);
-            await Task.Delay(500);
 
-            _logger.LogInformation("✅ CFG-VALSET configuration completed");
+            _logger.LogInformation("CFG-VALSET configuration completed");
         }
         catch (Exception ex)
         {
@@ -414,8 +407,6 @@ public class GnssInitializer
             payload.Add(rate);
 
             await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
-
-            _logger.LogInformation("Enabled {KeyName} with rate {Rate}", keyName, rate);
         }
         catch (Exception ex)
         {
@@ -445,12 +436,8 @@ public class GnssInitializer
         {
             var ubxMessage = CreateUbxMessage(messageClass, messageId, payload);
 
-            _logger.LogInformation("Sending UBX config: Class=0x{Class:X2}, ID=0x{Id:X2}, Length={Length}",
+            _logger.LogDebug("Sending UBX config: Class=0x{Class:X2}, ID=0x{Id:X2}, Length={Length}",
                 messageClass, messageId, payload.Length);
-
-            // Log the complete UBX message for debugging
-            var hexMessage = string.Join(" ", ubxMessage.Select(b => $"{b:X2}"));
-            _logger.LogDebug("UBX message bytes: {HexMessage}", hexMessage);
 
             _serialPort.DiscardInBuffer();
             _serialPort.DiscardOutBuffer();
@@ -493,7 +480,6 @@ public class GnssInitializer
         message.Add(checksum.ck_a);
         message.Add(checksum.ck_b);
 
-        _logger.LogDebug("UBX checksum: CK_A=0x{CkA:X2}, CK_B=0x{CkB:X2}", checksum.ck_a, checksum.ck_b);
 
         return message.ToArray();
     }

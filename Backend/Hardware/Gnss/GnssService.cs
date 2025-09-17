@@ -151,32 +151,27 @@ public class GnssService : BackgroundService
 
             if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_SAT)
             {
-                _logger.LogInformation("Processing NAV-SAT message with {Length} bytes", data.Length);
                 await ProcessNavSatMessage(data, stoppingToken);
             }
             else if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_PVT)
             {
-                _logger.LogInformation("Processing NAV-PVT message with {Length} bytes", data.Length);
                 await ProcessNavPvtMessage(data, stoppingToken);
             }
             else if (messageClass == UbxConstants.CLASS_CFG)
             {
-                _logger.LogInformation("📋 Received CFG message: ID=0x{Id:X2}, Length={Length}", messageId, data.Length);
+                //_logger.LogInformation("📋 Received CFG message: ID=0x{Id:X2}, Length={Length}", messageId, data.Length);
                 // Log configuration responses for debugging
             }
             else if (messageClass == UbxConstants.CLASS_MON && messageId == UbxConstants.MON_VER)
             {
-                _logger.LogInformation("📋 Processing MON-VER message with {Length} bytes", data.Length);
                 await ProcessMonVerMessage(data, stoppingToken);
             }
             else if (messageClass == UbxConstants.CLASS_RXM && messageId == UbxConstants.RXM_SFRBX)
             {
-                _logger.LogInformation("Processing RXM-SFRBX message with {Length} bytes", data.Length);
                 await ProcessRxmSfrbxMessage(data, stoppingToken);
             }
             else if (messageClass == UbxConstants.CLASS_RXM && messageId == UbxConstants.RXM_RAWX)
             {
-                _logger.LogInformation("Processing RXM-RAWX message with {Length} bytes", data.Length);
                 await ProcessRxmRawxMessage(data, stoppingToken);
             }
             else if (messageClass == UbxConstants.CLASS_ACK)
@@ -209,6 +204,159 @@ public class GnssService : BackgroundService
         }
     }
 
+    private async Task ProcessNavPosllhMessage(byte[] data, CancellationToken stoppingToken)
+    {
+        _logger.LogDebug("ProcessNavPosllhMessage: Received {DataLength} bytes", data.Length);
+
+        if (data.Length < 28)
+        {
+            _logger.LogWarning("NAV-POSLLH message too short: {Length} bytes, minimum 28 required", data.Length);
+            return;
+        }
+
+        var iTow = BitConverter.ToUInt32(data, 0);
+        var lon = BitConverter.ToInt32(data, 4) * 1e-7;
+        var lat = BitConverter.ToInt32(data, 8) * 1e-7;
+        var height = BitConverter.ToInt32(data, 12) / 1000.0; // mm to m
+        var hMSL = BitConverter.ToInt32(data, 16) / 1000.0; // mm to m
+        var hAcc = BitConverter.ToUInt32(data, 20) / 1000.0; // mm to m
+        var vAcc = BitConverter.ToUInt32(data, 24) / 1000.0; // mm to m
+
+        _logger.LogInformation("NAV-POSLLH: iTow={iTow}, Lat={Lat:F7}°, Lon={Lon:F7}°, Alt={Alt:F1}m, hAcc={HAcc:F3}m",
+            iTow, lat, lon, hMSL, hAcc);
+
+        var positionData = new
+        {
+            iTow = iTow,
+            latitude = lat,
+            longitude = lon,
+            heightEllipsoid = height,
+            heightMSL = hMSL,
+            horizontalAccuracy = hAcc,
+            verticalAccuracy = vAcc
+        };
+
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("PositionUpdate", positionData, stoppingToken);
+            _logger.LogInformation("✅ Position data sent to frontend: Lat={Lat:F7}, Lon={Lon:F7}", lat, lon);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Failed to send position data to frontend");
+        }
+    }
+
+    private async Task ProcessNavStatusMessage(byte[] data, CancellationToken stoppingToken)
+    {
+        _logger.LogDebug("ProcessNavStatusMessage: Received {DataLength} bytes", data.Length);
+
+        if (data.Length < 16)
+        {
+            _logger.LogWarning("NAV-STATUS message too short: {Length} bytes, minimum 16 required", data.Length);
+            return;
+        }
+
+        var iTow = BitConverter.ToUInt32(data, 0);
+        var gpsFix = data[4];
+        var flags = data[5];
+        var diffStat = data[6];
+        var ttff = BitConverter.ToUInt32(data, 8);
+        var msss = BitConverter.ToUInt32(data, 12);
+
+        var gpsFixOk = (flags & 0x01) != 0;
+        var diffSoln = (flags & 0x02) != 0;
+
+        var fixTypeString = gpsFix switch
+        {
+            0x00 => "No Fix",
+            0x01 => "Dead Reckoning",
+            0x02 => "2D Fix",
+            0x03 => "3D Fix",
+            0x04 => "GPS+DR",
+            0x05 => "Time Only",
+            _ => $"Unknown({gpsFix})"
+        };
+
+        _logger.LogInformation("NAV-STATUS: iTow={iTow}, Fix={FixType}, GpsFixOk={GpsFixOk}, DiffSoln={DiffSoln}, TTFF={Ttff}ms",
+            iTow, fixTypeString, gpsFixOk, diffSoln, ttff);
+
+        var statusData = new
+        {
+            iTow = iTow,
+            fixType = gpsFix,
+            fixTypeString = fixTypeString,
+            gpsFixOk = gpsFixOk,
+            differentialSolution = diffSoln,
+            timeToFirstFix = ttff
+        };
+
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("StatusUpdate", statusData, stoppingToken);
+            _logger.LogInformation("✅ Status data sent to frontend: {FixType}", fixTypeString);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Failed to send status data to frontend");
+        }
+    }
+
+    private async Task ProcessNavSolMessage(byte[] data, CancellationToken stoppingToken)
+    {
+        _logger.LogDebug("ProcessNavSolMessage: Received {DataLength} bytes", data.Length);
+
+        if (data.Length < 52)
+        {
+            _logger.LogWarning("NAV-SOL message too short: {Length} bytes, minimum 52 required", data.Length);
+            return;
+        }
+
+        var iTow = BitConverter.ToUInt32(data, 0);
+        var fTow = BitConverter.ToInt32(data, 4);
+        var week = BitConverter.ToInt16(data, 8);
+        var gpsFix = data[10];
+        var flags = data[11];
+        var ecefX = BitConverter.ToInt32(data, 12);
+        var ecefY = BitConverter.ToInt32(data, 16);
+        var ecefZ = BitConverter.ToInt32(data, 20);
+        var pAcc = BitConverter.ToUInt32(data, 24);
+        var ecefVX = BitConverter.ToInt32(data, 28);
+        var ecefVY = BitConverter.ToInt32(data, 32);
+        var ecefVZ = BitConverter.ToInt32(data, 36);
+        var sAcc = BitConverter.ToUInt32(data, 40);
+        var pDOP = BitConverter.ToUInt16(data, 44);
+        var numSV = data[47];
+
+        var gpsFixOk = (flags & 0x01) != 0;
+        var diffSoln = (flags & 0x02) != 0;
+
+        _logger.LogInformation("NAV-SOL: iTow={iTow}, Week={Week}, Fix={FixType}, NumSV={NumSV}, PDOP={Pdop}, pAcc={PAcc}mm",
+            iTow, week, gpsFix, numSV, pDOP * 0.01, pAcc);
+
+        var solutionData = new
+        {
+            iTow = iTow,
+            week = week,
+            fixType = gpsFix,
+            gpsFixOk = gpsFixOk,
+            differentialSolution = diffSoln,
+            numSatellites = numSV,
+            pdop = pDOP * 0.01,
+            positionAccuracy = pAcc,
+            speedAccuracy = sAcc
+        };
+
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("SolutionUpdate", solutionData, stoppingToken);
+            _logger.LogInformation("✅ Solution data sent to frontend: Fix={FixType}, {NumSV} sats", gpsFix, numSV);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Failed to send solution data to frontend");
+        }
+    }
 
     private async Task ProcessNavSatMessage(byte[] data, CancellationToken stoppingToken)
     {
@@ -298,7 +446,7 @@ public class GnssService : BackgroundService
         try
         {
             await _hubContext.Clients.All.SendAsync("SatelliteUpdate", satelliteData, stoppingToken);
-            _logger.LogInformation("✅ Satellite data sent to frontend: {NumSats} satellites", numSvs);
+            //_logger.LogInformation("✅ Satellite data sent to frontend: {NumSats} satellites", numSvs);
         }
         catch (Exception ex)
         {
@@ -428,8 +576,7 @@ public class GnssService : BackgroundService
 
         var gnssName = GetGnssName(gnssId);
 
-        _logger.LogInformation("RXM-SFRBX: {Constellation} SV{SvId}, FreqId={FreqId}, Words={NumWords}, Channel={Channel}, Version={Version}",
-            gnssName, svId, freqId, numWords, chn, version);
+        //_logger.LogInformation("RXM-SFRBX: {Constellation} SV{SvId}, FreqId={FreqId}, Words={NumWords}, Channel={Channel}, Version={Version}", gnssName, svId, freqId, numWords, chn, version);
 
         // For broadcast navigation data, we'll extract satellite information
         // Note: This is simplified - full SFRBX parsing would decode the actual navigation message
@@ -447,7 +594,7 @@ public class GnssService : BackgroundService
         try
         {
             await _hubContext.Clients.All.SendAsync("BroadcastDataUpdate", satelliteInfo, stoppingToken);
-            _logger.LogInformation("✅ Broadcast navigation data sent to frontend: {Constellation} SV{SvId}", gnssName, svId);
+            //_logger.LogInformation("✅ Broadcast navigation data sent to frontend: {Constellation} SV{SvId}", gnssName, svId);
         }
         catch (Exception ex)
         {
@@ -472,8 +619,7 @@ public class GnssService : BackgroundService
         var recStat = data[12];
         var version = data[13];
 
-        _logger.LogInformation("RXM-RAWX: Week={Week}, TOW={Tow:F3}, Measurements={NumMeas}, RecStat=0x{RecStat:X2}, Version={Version}",
-            week, rcvTow, numMeas, recStat, version);
+        //_logger.LogInformation("RXM-RAWX: Week={Week}, TOW={Tow:F3}, Measurements={NumMeas}, RecStat=0x{RecStat:X2}, Version={Version}", week, rcvTow, numMeas, recStat, version);
 
         // Check if we have enough data for all measurements
         var expectedLength = 16 + (numMeas * 32);
