@@ -12,10 +12,13 @@ let connection = null
 
 // Comprehensive GNSS data model
 const gnssData = ref({
+  // Connection status
+  connected: false,
+
   // Fix status
   fixType: null,
   rtkMode: null,
-  
+
   // Position (will be updated by real GNSS data)
   latitude: null,
   longitude: null,
@@ -150,9 +153,9 @@ onMounted(async () => {
   })
 
   connection.on("SatelliteUpdate", (data) => {
-    console.log("🛰️ SatelliteUpdate received:", data)
-    console.log("Number of satellites:", data.numSatellites)
-    console.log("Satellites array length:", data.satellites?.length)
+
+    // Update connection status
+    gnssData.value.connected = data.connected ?? false
 
     // Update satellite data from NAV-SAT messages
     gnssData.value.satellitesTracked = data.numSatellites
@@ -199,18 +202,12 @@ onMounted(async () => {
 
     gnssData.value.constellations = constellations
     gnssData.value.satellitesUsed = totalUsed
-
-    console.log("✅ Satellite data updated:", {
-      totalTracked: gnssData.value.satellitesTracked,
-      totalUsed: gnssData.value.satellitesUsed,
-      constellations: gnssData.value.constellations
-    })
   })
 
   connection.on("PvtUpdate", (data) => {
-    console.log("📍 PvtUpdate received:", data)
-    console.log("Position:", data.latitude, data.longitude)
-    console.log("Fix type:", data.fixType, "Carrier solution:", data.carrierSolution)
+
+    // Update connection status
+    gnssData.value.connected = data.connected ?? false
 
     // Update position and navigation data from NAV-PVT messages
     gnssData.value.latitude = data.latitude
@@ -245,12 +242,6 @@ onMounted(async () => {
 
     gnssData.value.satellitesUsed = data.numSatellites
     gnssData.value.tAcc = data.timeAccuracy
-
-    console.log("✅ Position data updated:", {
-      position: `${data.latitude.toFixed(7)}, ${data.longitude.toFixed(7)}`,
-      fixType: gnssData.value.fixType,
-      accuracy: `${gnssData.value.hAcc.toFixed(3)}m`
-    })
   })
 
   try {

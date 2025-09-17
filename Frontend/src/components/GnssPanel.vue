@@ -22,9 +22,16 @@ const props = defineProps({
             <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
           </svg>
         </div>
-        <div>
+        <div class="flex-1">
           <h1 class="text-2xl font-bold">GNSS System</h1>
           <p class="text-slate-300 text-sm">Global Navigation Satellite System</p>
+        </div>
+        <!-- Connection Status Indicator -->
+        <div class="flex items-center space-x-2">
+          <div class="w-3 h-3 rounded-full" :class="gnssData.connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'"></div>
+          <span class="text-sm font-medium" :class="gnssData.connected ? 'text-green-300' : 'text-red-300'">
+            {{ gnssData.connected ? 'Connected' : 'Offline' }}
+          </span>
         </div>
       </div>
     </div>

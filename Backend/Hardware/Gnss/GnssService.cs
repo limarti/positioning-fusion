@@ -28,6 +28,10 @@ public class GnssService : BackgroundService
         if (_serialPort == null || !_serialPort.IsOpen)
         {
             _logger.LogWarning("GNSS serial port not available - service will not collect data");
+
+            // Send disconnected status to frontend
+            await _hubContext.Clients.All.SendAsync("SatelliteUpdate", new { connected = false }, stoppingToken);
+            await _hubContext.Clients.All.SendAsync("PvtUpdate", new { connected = false }, stoppingToken);
             return;
         }
 
@@ -440,7 +444,8 @@ public class GnssService : BackgroundService
         {
             iTow = iTow,
             numSatellites = numSvs,
-            satellites = satellites
+            satellites = satellites,
+            connected = true
         };
 
         try
@@ -511,15 +516,9 @@ public class GnssService : BackgroundService
             _ => $"Unknown({carrSoln})"
         };
 
-        _logger.LogInformation("NAV-PVT: iTow={iTow}, {DateTime}, Fix={FixType}({FixCode}), Carrier={Carrier}, Sats={NumSV}",
-            iTow, $"{year:D4}-{month:D2}-{day:D2} {hour:D2}:{min:D2}:{sec:D2}",
-            fixTypeString, fixType, carrierString, numSV);
-
-        _logger.LogInformation("Position: Lat={Lat:F7}°, Lon={Lon:F7}°, Alt={Alt:F1}m, hAcc={HAcc}mm, vAcc={VAcc}mm",
-            lat, lon, hMSL / 1000.0, hAcc, vAcc);
-
-        _logger.LogDebug("Flags: gnssFixOk={GnssFixOk}, diffSoln={DiffSoln}, timeValid=0x{TimeValid:X2}",
-            gnssFixOk, diffSoln, valid);
+        //_logger.LogInformation("NAV-PVT: iTow={iTow}, {DateTime}, Fix={FixType}({FixCode}), Carrier={Carrier}, Sats={NumSV}", iTow, $"{year:D4}-{month:D2}-{day:D2} {hour:D2}:{min:D2}:{sec:D2}", fixTypeString, fixType, carrierString, numSV);
+        //_logger.LogInformation("Position: Lat={Lat:F7}°, Lon={Lon:F7}°, Alt={Alt:F1}m, hAcc={HAcc}mm, vAcc={VAcc}mm", lat, lon, hMSL / 1000.0, hAcc, vAcc);
+        //_logger.LogDebug("Flags: gnssFixOk={GnssFixOk}, diffSoln={DiffSoln}, timeValid=0x{TimeValid:X2}", gnssFixOk, diffSoln, valid);
 
         var pvtData = new
         {
@@ -542,14 +541,14 @@ public class GnssService : BackgroundService
             heightMSL = hMSL,
             horizontalAccuracy = hAcc,
             verticalAccuracy = vAcc,
-            carrierSolution = carrSoln
+            carrierSolution = carrSoln,
+            connected = true
         };
 
         try
         {
             await _hubContext.Clients.All.SendAsync("PvtUpdate", pvtData, stoppingToken);
-            _logger.LogInformation("✅ PVT data sent to frontend: {FixType}, {NumSV} sats, Lat={Lat:F7}, Lon={Lon:F7}",
-                fixTypeString, numSV, lat, lon);
+            //_logger.LogInformation("✅ PVT data sent to frontend: {FixType}, {NumSV} sats, Lat={Lat:F7}, Lon={Lon:F7}", fixTypeString, numSV, lat, lon);
         }
         catch (Exception ex)
         {
@@ -681,10 +680,8 @@ public class GnssService : BackgroundService
         }
 
         // Log constellation summary
-        var constellationSummary = string.Join(", ",
-            constellationCounts.Select(kv => $"{kv.Key}:{kv.Value}"));
-        _logger.LogInformation("Parsed {TotalMeas} raw measurements: {ConstellationSummary}",
-            satellites.Count, constellationSummary);
+        var constellationSummary = string.Join(", ", constellationCounts.Select(kv => $"{kv.Key}:{kv.Value}"));
+        //_logger.LogInformation("Parsed {TotalMeas} raw measurements: {ConstellationSummary}", satellites.Count, constellationSummary);
 
         var rawxData = new
         {
@@ -699,7 +696,7 @@ public class GnssService : BackgroundService
         try
         {
             await _hubContext.Clients.All.SendAsync("SatelliteUpdate", rawxData, stoppingToken);
-            _logger.LogInformation("✅ Raw measurement data sent to frontend: {NumMeas} measurements", numMeas);
+            //_logger.LogInformation("✅ Raw measurement data sent to frontend: {NumMeas} measurements", numMeas);
         }
         catch (Exception ex)
         {
