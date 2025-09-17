@@ -1,10 +1,13 @@
 using Backend.Hubs;
+using Backend.Configuration;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Backend.Hardware.Gnss.Parsers;
 
 public static class ReceiverVersionParser
 {
+    private static DateTime _lastSentTime = DateTime.MinValue;
+
     public static async Task ProcessAsync(byte[] data, IHubContext<DataHub> hubContext, ILogger logger, CancellationToken stoppingToken)
     {
         try
@@ -47,6 +50,12 @@ public static class ReceiverVersionParser
                 ReceiverType = "ZED-X20P"
             };
 
+            // Throttle dashboard updates
+            var throttleInterval = TimeSpan.FromMilliseconds(1000.0 / SystemConfiguration.GnssDataRateDashboard);
+            if (DateTime.UtcNow - _lastSentTime < throttleInterval)
+                return; // Skip this update
+
+            _lastSentTime = DateTime.UtcNow;
             await hubContext.Clients.All.SendAsync("VersionUpdate", versionData, stoppingToken);
             logger.LogInformation("✅ Version data sent to frontend");
         }

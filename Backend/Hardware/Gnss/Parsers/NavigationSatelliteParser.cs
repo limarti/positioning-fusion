@@ -1,10 +1,13 @@
 using Backend.Hubs;
+using Backend.Configuration;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Backend.Hardware.Gnss.Parsers;
 
 public static class NavigationSatelliteParser
 {
+    private static DateTime _lastSentTime = DateTime.MinValue;
+
     public static async Task ProcessAsync(byte[] data, IHubContext<DataHub> hubContext, ILogger logger, CancellationToken stoppingToken)
     {
         logger.LogDebug("ProcessNavSatMessage: Received {DataLength} bytes", data.Length);
@@ -90,6 +93,12 @@ public static class NavigationSatelliteParser
 
         try
         {
+            // Throttle dashboard updates
+            var throttleInterval = TimeSpan.FromMilliseconds(1000.0 / SystemConfiguration.GnssDataRateDashboard);
+            if (DateTime.UtcNow - _lastSentTime < throttleInterval)
+                return; // Skip this update
+
+            _lastSentTime = DateTime.UtcNow;
             await hubContext.Clients.All.SendAsync("SatelliteUpdate", satelliteData, stoppingToken);
             //logger.LogInformation("✅ Satellite data sent to frontend: {NumSats} satellites", numSvs);
         }

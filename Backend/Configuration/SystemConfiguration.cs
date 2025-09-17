@@ -12,6 +12,8 @@ public static class SystemConfiguration
         Send        // Send RTK corrections (base station mode)
     }
 
+    public static int GnssDataRateDashboard { get; set; } = 2;  //Hz
+
     public static CorrectionsMode CorrectionsOperation { get; set; } = CorrectionsMode.Disabled;
-    public static int GnssDataRate { get; set; } = 5; // Hz
+    public static int GnssDataRate { get; set; } = 5; //1, 5 o 10 Hz
 }
