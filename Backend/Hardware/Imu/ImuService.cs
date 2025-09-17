@@ -120,12 +120,12 @@ public class ImuService : BackgroundService
                         {
                             try
                             {
-                                await _hubContext.Clients.All.SendAsync("ImuUpdate", new
+                                await _hubContext.Clients.All.SendAsync("ImuUpdate", new ImuUpdate
                                 {
-                                    timestamp = imuData.Timestamp,
-                                    acceleration = new { x = imuData.Acceleration.X, y = imuData.Acceleration.Y, z = imuData.Acceleration.Z },
-                                    gyroscope = new { x = imuData.Gyroscope.X, y = imuData.Gyroscope.Y, z = imuData.Gyroscope.Z },
-                                    magnetometer = new { x = imuData.Magnetometer.X, y = imuData.Magnetometer.Y, z = imuData.Magnetometer.Z }
+                                    Timestamp = imuData.Timestamp,
+                                    Acceleration = new Vector3Update { X = imuData.Acceleration.X, Y = imuData.Acceleration.Y, Z = imuData.Acceleration.Z },
+                                    Gyroscope = new Vector3Update { X = imuData.Gyroscope.X, Y = imuData.Gyroscope.Y, Z = imuData.Gyroscope.Z },
+                                    Magnetometer = new Vector3Update { X = imuData.Magnetometer.X, Y = imuData.Magnetometer.Y, Z = imuData.Magnetometer.Z }
                                 });
                             }
                             catch (Exception ex)

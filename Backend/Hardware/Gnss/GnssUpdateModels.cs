@@ -1,0 +1,97 @@
+namespace Backend.Hardware.Gnss;
+
+public class SatelliteUpdate
+{
+    public uint ITow { get; set; }
+    public byte NumSatellites { get; set; }
+    public List<SatelliteInfo> Satellites { get; set; } = new();
+    public bool Connected { get; set; }
+}
+
+public class SatelliteInfo
+{
+    public byte GnssId { get; set; }
+    public string GnssName { get; set; } = string.Empty;
+    public byte SvId { get; set; }
+    public byte Cno { get; set; }
+    public sbyte Elevation { get; set; }
+    public short Azimuth { get; set; }
+    public double PseudorangeResidual { get; set; }
+    public uint QualityIndicator { get; set; }
+    public bool SvUsed { get; set; }
+    public uint Health { get; set; }
+    public bool DifferentialCorrection { get; set; }
+    public bool Smoothed { get; set; }
+}
+
+public class PvtUpdate
+{
+    public uint ITow { get; set; }
+    public ushort Year { get; set; }
+    public byte Month { get; set; }
+    public byte Day { get; set; }
+    public byte Hour { get; set; }
+    public byte Minute { get; set; }
+    public byte Second { get; set; }
+    public byte TimeValid { get; set; }
+    public uint TimeAccuracy { get; set; }
+    public byte FixType { get; set; }
+    public bool GnssFixOk { get; set; }
+    public bool DifferentialSolution { get; set; }
+    public byte NumSatellites { get; set; }
+    public double Longitude { get; set; }
+    public double Latitude { get; set; }
+    public int HeightEllipsoid { get; set; }
+    public int HeightMSL { get; set; }
+    public uint HorizontalAccuracy { get; set; }
+    public uint VerticalAccuracy { get; set; }
+    public int CarrierSolution { get; set; }
+}
+
+public class BroadcastDataUpdate
+{
+    public byte GnssId { get; set; }
+    public string GnssName { get; set; } = string.Empty;
+    public byte SvId { get; set; }
+    public byte FrequencyId { get; set; }
+    public byte Channel { get; set; }
+    public int MessageLength { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
+public class RawMeasurementUpdate
+{
+    public double RcvTow { get; set; }
+    public ushort Week { get; set; }
+    public sbyte LeapSeconds { get; set; }
+    public byte NumMeasurements { get; set; }
+    public byte ReceiverStatus { get; set; }
+    public List<RawMeasurementInfo> Satellites { get; set; } = new();
+    public bool Connected { get; set; }
+}
+
+public class RawMeasurementInfo
+{
+    public byte GnssId { get; set; }
+    public string GnssName { get; set; } = string.Empty;
+    public byte SvId { get; set; }
+    public byte FrequencyId { get; set; }
+    public byte Cno { get; set; }
+    public double Pseudorange { get; set; }
+    public double CarrierPhase { get; set; }
+    public float Doppler { get; set; }
+    public ushort Locktime { get; set; }
+    public bool PseudorangeValid { get; set; }
+    public bool CarrierPhaseValid { get; set; }
+    public bool HalfCycleValid { get; set; }
+    public int PseudorangeStdev { get; set; }
+    public int CarrierPhaseStdev { get; set; }
+    public int DopplerStdev { get; set; }
+}
+
+public class VersionUpdate
+{
+    public string SoftwareVersion { get; set; } = string.Empty;
+    public string HardwareVersion { get; set; } = string.Empty;
+    public string ReceiverType { get; set; } = string.Empty;
+}

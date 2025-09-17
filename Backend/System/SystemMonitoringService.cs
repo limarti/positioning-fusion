@@ -29,11 +29,11 @@ public class SystemMonitoringService : BackgroundService
             {
                 var systemHealth = await GatherSystemHealth();
 
-                await _hubContext.Clients.All.SendAsync("SystemHealthUpdate", new
+                await _hubContext.Clients.All.SendAsync("SystemHealthUpdate", new SystemHealthUpdate
                 {
-                    cpuUsage = systemHealth.CpuUsage,
-                    memoryUsage = systemHealth.MemoryUsage,
-                    temperature = systemHealth.Temperature
+                    CpuUsage = systemHealth.CpuUsage,
+                    MemoryUsage = systemHealth.MemoryUsage,
+                    Temperature = systemHealth.Temperature
                 }, stoppingToken);
 
                 _logger.LogDebug("System health update sent: CPU={CpuUsage:F1}%, Memory={MemoryUsage:F1}%, Temp={Temperature:F1}°C",

@@ -30,7 +30,7 @@ public class GnssService : BackgroundService
             _logger.LogWarning("GNSS serial port not available - service will not collect data");
 
             // Send disconnected status to frontend
-            await _hubContext.Clients.All.SendAsync("SatelliteUpdate", new { connected = false }, stoppingToken);
+            await _hubContext.Clients.All.SendAsync("SatelliteUpdate", new SatelliteUpdate { Connected = false }, stoppingToken);
             return;
         }
 
@@ -234,7 +234,7 @@ public class GnssService : BackgroundService
             return;
         }
 
-        var satellites = new List<object>();
+        var satellites = new List<SatelliteInfo>();
         var constellationCounts = new Dictionary<string, int>();
 
         for (int i = 0; i < numSvs && (8 + i * 12) + 11 < data.Length; i++)
@@ -263,20 +263,20 @@ public class GnssService : BackgroundService
             _logger.LogDebug("Satellite {Index}: {Constellation} {SvId}, C/N0={Cno}, Elev={Elev}°, Az={Az}°, Used={Used}",
                 i, gnssName, svId, cno, elev, azim, svUsed);
 
-            satellites.Add(new
+            satellites.Add(new SatelliteInfo
             {
-                gnssId = gnssId,
-                gnssName = gnssName,
-                svId = svId,
-                cno = cno,
-                elevation = elev,
-                azimuth = azim,
-                pseudorangeResidual = prRes * 0.1, // Convert to meters
-                qualityIndicator = qualityInd,
-                svUsed = svUsed,
-                health = health,
-                differentialCorrection = diffCorr,
-                smoothed = smoothed
+                GnssId = gnssId,
+                GnssName = gnssName,
+                SvId = svId,
+                Cno = cno,
+                Elevation = elev,
+                Azimuth = azim,
+                PseudorangeResidual = prRes * 0.1, // Convert to meters
+                QualityIndicator = qualityInd,
+                SvUsed = svUsed,
+                Health = health,
+                DifferentialCorrection = diffCorr,
+                Smoothed = smoothed
             });
         }
 
@@ -286,12 +286,12 @@ public class GnssService : BackgroundService
         _logger.LogInformation("Parsed {TotalSats} satellites: {ConstellationSummary}",
             satellites.Count, constellationSummary);
 
-        var satelliteData = new
+        var satelliteData = new SatelliteUpdate
         {
-            iTow = iTow,
-            numSatellites = numSvs,
-            satellites = satellites,
-            connected = true
+            ITow = iTow,
+            NumSatellites = numSvs,
+            Satellites = satellites,
+            Connected = true
         };
 
         try
@@ -366,28 +366,28 @@ public class GnssService : BackgroundService
         //_logger.LogInformation("Position: Lat={Lat:F7}°, Lon={Lon:F7}°, Alt={Alt:F1}m, hAcc={HAcc}mm, vAcc={VAcc}mm", lat, lon, hMSL / 1000.0, hAcc, vAcc);
         //_logger.LogDebug("Flags: gnssFixOk={GnssFixOk}, diffSoln={DiffSoln}, timeValid=0x{TimeValid:X2}", gnssFixOk, diffSoln, valid);
 
-        var pvtData = new
+        var pvtData = new PvtUpdate
         {
-            iTow = iTow,
-            year = year,
-            month = month,
-            day = day,
-            hour = hour,
-            minute = min,
-            second = sec,
-            timeValid = valid,
-            timeAccuracy = tAcc,
-            fixType = fixType,
-            gnssFixOk = gnssFixOk,
-            differentialSolution = diffSoln,
-            numSatellites = numSV,
-            longitude = lon,
-            latitude = lat,
-            heightEllipsoid = height,
-            heightMSL = hMSL,
-            horizontalAccuracy = hAcc,
-            verticalAccuracy = vAcc,
-            carrierSolution = carrSoln
+            ITow = iTow,
+            Year = year,
+            Month = month,
+            Day = day,
+            Hour = hour,
+            Minute = min,
+            Second = sec,
+            TimeValid = valid,
+            TimeAccuracy = tAcc,
+            FixType = fixType,
+            GnssFixOk = gnssFixOk,
+            DifferentialSolution = diffSoln,
+            NumSatellites = numSV,
+            Longitude = lon,
+            Latitude = lat,
+            HeightEllipsoid = height,
+            HeightMSL = hMSL,
+            HorizontalAccuracy = hAcc,
+            VerticalAccuracy = vAcc,
+            CarrierSolution = carrSoln
         };
 
         try
@@ -424,15 +424,15 @@ public class GnssService : BackgroundService
 
         // For broadcast navigation data, we'll extract satellite information
         // Note: This is simplified - full SFRBX parsing would decode the actual navigation message
-        var satelliteInfo = new
+        var satelliteInfo = new BroadcastDataUpdate
         {
-            gnssId = gnssId,
-            gnssName = gnssName,
-            svId = svId,
-            frequencyId = freqId,
-            channel = chn,
-            messageLength = data.Length,
-            timestamp = DateTime.UtcNow
+            GnssId = gnssId,
+            GnssName = gnssName,
+            SvId = svId,
+            FrequencyId = freqId,
+            Channel = chn,
+            MessageLength = data.Length,
+            Timestamp = DateTime.UtcNow
         };
 
         try
@@ -474,7 +474,7 @@ public class GnssService : BackgroundService
             return;
         }
 
-        var satellites = new List<object>();
+        var satellites = new List<RawMeasurementInfo>();
         var constellationCounts = new Dictionary<string, int>();
 
         for (int i = 0; i < numMeas && (16 + i * 32) + 31 < data.Length; i++)
@@ -504,23 +504,23 @@ public class GnssService : BackgroundService
             _logger.LogDebug("Measurement {Index}: {Constellation} SV{SvId}, C/N0={Cno}, PR={PrMes:F3}m, Valid=PR:{PrValid}/CP:{CpValid}",
                 i, gnssName, svId, cno, prMes, prValid, cpValid);
 
-            satellites.Add(new
+            satellites.Add(new RawMeasurementInfo
             {
-                gnssId = gnssId,
-                gnssName = gnssName,
-                svId = svId,
-                frequencyId = freqId,
-                cno = cno,
-                pseudorange = prMes,
-                carrierPhase = cpMes,
-                doppler = doMes,
-                locktime = locktime,
-                pseudorangeValid = prValid,
-                carrierPhaseValid = cpValid,
-                halfCycleValid = halfCyc,
-                pseudorangeStdev = prStdev,
-                carrierPhaseStdev = cpStdev,
-                dopplerStdev = doStdev
+                GnssId = gnssId,
+                GnssName = gnssName,
+                SvId = svId,
+                FrequencyId = freqId,
+                Cno = cno,
+                Pseudorange = prMes,
+                CarrierPhase = cpMes,
+                Doppler = doMes,
+                Locktime = locktime,
+                PseudorangeValid = prValid,
+                CarrierPhaseValid = cpValid,
+                HalfCycleValid = halfCyc,
+                PseudorangeStdev = prStdev,
+                CarrierPhaseStdev = cpStdev,
+                DopplerStdev = doStdev
             });
         }
 
@@ -528,15 +528,15 @@ public class GnssService : BackgroundService
         var constellationSummary = string.Join(", ", constellationCounts.Select(kv => $"{kv.Key}:{kv.Value}"));
         //_logger.LogInformation("Parsed {TotalMeas} raw measurements: {ConstellationSummary}", satellites.Count, constellationSummary);
 
-        var rawxData = new
+        var rawxData = new RawMeasurementUpdate
         {
-            rcvTow = rcvTow,
-            week = week,
-            leapSeconds = leapS,
-            numMeasurements = numMeas,
-            receiverStatus = recStat,
-            satellites = satellites,
-            connected = true
+            RcvTow = rcvTow,
+            Week = week,
+            LeapSeconds = leapS,
+            NumMeasurements = numMeas,
+            ReceiverStatus = recStat,
+            Satellites = satellites,
+            Connected = true
         };
 
         try
@@ -585,11 +585,11 @@ public class GnssService : BackgroundService
             }
 
             // Send version info to frontend
-            var versionData = new
+            var versionData = new VersionUpdate
             {
-                softwareVersion = swVersion,
-                hardwareVersion = hwVersion,
-                receiverType = "ZED-X20P"
+                SoftwareVersion = swVersion,
+                HardwareVersion = hwVersion,
+                ReceiverType = "ZED-X20P"
             };
 
             await _hubContext.Clients.All.SendAsync("VersionUpdate", versionData, stoppingToken);

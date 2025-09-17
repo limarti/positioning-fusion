@@ -119,9 +119,9 @@ const props = defineProps({
         
         <!-- Per-Satellite Table -->
         <div class="bg-slate-50 rounded-xl overflow-hidden">
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto h-64 overflow-y-auto">
             <table class="w-full text-sm">
-              <thead class="bg-slate-100">
+              <thead class="bg-slate-100 sticky top-0">
                 <tr class="text-xs font-semibold text-slate-600 uppercase">
                   <th class="px-3 py-2 text-left">ID</th>
                   <th class="px-3 py-2 text-left">System</th>
@@ -132,13 +132,13 @@ const props = defineProps({
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-200">
-                <tr v-for="sat in gnssData.satellites.slice(0, 8)" :key="sat.svid + sat.constellation" 
-                    class="hover:bg-white transition-colors" 
+                <tr v-for="sat in gnssData.satellites" :key="sat.svid + sat.constellation"
+                    class="hover:bg-white transition-colors"
                     :class="sat.used ? 'bg-emerald-50/50' : ''">
                   <td class="px-3 py-2 font-mono font-semibold">{{ sat.svid }}</td>
                   <td class="px-3 py-2">
                     <span class="text-xs px-2 py-1 rounded font-medium"
-                          :class="sat.constellation === 'GPS' ? 'bg-blue-100 text-blue-700' : 
+                          :class="sat.constellation === 'GPS' ? 'bg-blue-100 text-blue-700' :
                                  sat.constellation === 'GLONASS' ? 'bg-red-100 text-red-700' :
                                  sat.constellation === 'Galileo' ? 'bg-purple-100 text-purple-700' :
                                  'bg-yellow-100 text-yellow-700'">
@@ -146,11 +146,11 @@ const props = defineProps({
                     </span>
                   </td>
                   <td class="px-3 py-2 text-center">
-                    <div class="w-2 h-2 rounded-full mx-auto" 
+                    <div class="w-2 h-2 rounded-full mx-auto"
                          :class="sat.used ? 'bg-emerald-500' : 'bg-slate-300'"></div>
                   </td>
-                  <td class="px-3 py-2 text-right font-mono" 
-                      :class="sat.cn0 >= 40 ? 'text-emerald-600 font-semibold' : 
+                  <td class="px-3 py-2 text-right font-mono"
+                      :class="sat.cn0 >= 40 ? 'text-emerald-600 font-semibold' :
                              sat.cn0 >= 35 ? 'text-yellow-600' : 'text-red-600'">
                     {{ sat.cn0 }}
                   </td>
