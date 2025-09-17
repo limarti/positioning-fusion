@@ -259,10 +259,8 @@ onMounted(async () => {
 
     // Update constellation breakdown
     const constellations = { gps: {used: 0, tracked: 0}, glonass: {used: 0, tracked: 0}, galileo: {used: 0, tracked: 0}, beidou: {used: 0, tracked: 0} }
-    let totalUsed = 0
 
     data.satellites.forEach(sat => {
-      if (sat.svUsed) totalUsed++
 
       switch(sat.gnssName.toLowerCase()) {
         case 'gps':
@@ -285,7 +283,6 @@ onMounted(async () => {
     })
 
     gnssData.value.constellations = constellations
-    gnssData.value.satellitesUsed = totalUsed
   })
 
   connection.on("PvtUpdate", (data) => {
