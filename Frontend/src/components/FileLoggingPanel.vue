@@ -1,4 +1,6 @@
 <script setup>
+import Card from './common/Card.vue'
+
 const props = defineProps({
   fileLoggingStatus: {
     type: Object,
@@ -46,17 +48,11 @@ const getFileStatusText = (isActive) => {
 </script>
 
 <template>
-  <div class="bg-white rounded-xl border border-slate-200 p-4">
-    <div class="flex items-center space-x-2 mb-3">
-      <div class="w-6 h-6 bg-purple-500 rounded-lg flex items-center justify-center">
-        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
-        </svg>
-      </div>
-      <div>
-        <h3 class="font-bold text-slate-800">File Logging</h3>
-      </div>
-    </div>
+  <Card 
+    title="File Logging"
+    :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z'/></svg>`"
+    icon-color="bg-purple-500"
+  >
 
     <!-- Drive Warning -->
     <div v-if="!fileLoggingStatus.driveAvailable" class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
@@ -101,5 +97,5 @@ const getFileStatusText = (isActive) => {
         </div>
       </div>
     </div>
-  </div>
+  </Card>
 </template>

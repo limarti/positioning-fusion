@@ -1,4 +1,6 @@
 <script setup>
+import Card from './common/Card.vue'
+
 const props = defineProps({
   systemHealth: {
     type: Object,
@@ -25,18 +27,12 @@ const getUsageColor = (usage) => {
 
 <template>
   <!-- System Info (Combined) -->
-  <div class="bg-white rounded-xl border border-slate-200 p-4">
-    <div class="flex items-center space-x-2 mb-3">
-      <div class="w-6 h-6 bg-emerald-500 rounded-lg flex items-center justify-center">
-        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
-        </svg>
-      </div>
-      <div>
-        <h3 class="font-bold text-slate-800">System</h3>
-        <div class="text-sm text-slate-400">—</div>
-      </div>
-    </div>
+  <Card 
+    title="System" 
+    subtitle="—" 
+    :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z'/></svg>`"
+    icon-color="bg-emerald-500"
+  >
     
     <!-- Combined system data in compact grid -->
     <div class="grid grid-cols-2 gap-3 text-sm">
@@ -77,5 +73,5 @@ const getUsageColor = (usage) => {
         </div>
       </div>
     </div>
-  </div>
+  </Card>
 </template>

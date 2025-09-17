@@ -1,4 +1,6 @@
 <script setup>
+import Card from './common/Card.vue'
+
 const props = defineProps({
   imuData: {
     type: Object,
@@ -13,18 +15,12 @@ const props = defineProps({
 
 <template>
   <!-- IMU -->
-  <div class="bg-white rounded-xl border border-slate-200 p-4">
-    <div class="flex items-center space-x-2 mb-3">
-      <div class="w-6 h-6 bg-purple-500 rounded-lg flex items-center justify-center">
-        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12 2L15.5 8.5L22 12L15.5 15.5L12 22L8.5 15.5L2 12L8.5 8.5L12 2Z"/>
-        </svg>
-      </div>
-      <div>
-        <h3 class="font-bold text-slate-800">IMU</h3>
-        <div class="text-sm" :class="dataRates.imuRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.imuRate !== null ? dataRates.imuRate : '—' }}</div>
-      </div>
-    </div>
+  <Card 
+    title="IMU" 
+    :subtitle="dataRates.imuRate !== null ? dataRates.imuRate : '—'"
+    :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M12 2L15.5 8.5L22 12L15.5 15.5L12 22L8.5 15.5L2 12L8.5 8.5L12 2Z'/></svg>`"
+    icon-color="bg-purple-500"
+  >
     <div class="grid grid-cols-3 gap-2 text-sm">
       <div class="text-center">
         <div class="text-slate-500">Accel</div>
@@ -45,5 +41,5 @@ const props = defineProps({
         <div class="font-mono" :class="imuData.magnetometer.z !== null ? 'text-green-600' : 'text-slate-400'">{{ imuData.magnetometer.z !== null ? imuData.magnetometer.z.toFixed(0) : '—' }}</div>
       </div>
     </div>
-  </div>
+  </Card>
 </template>
