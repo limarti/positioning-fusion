@@ -85,8 +85,8 @@ public static class PositionVelocityTimeParser
             Latitude = lat,
             HeightEllipsoid = height,
             HeightMSL = hMSL,
-            HorizontalAccuracy = hAcc,
-            VerticalAccuracy = vAcc,
+            HorizontalAccuracy = hAcc / 1000.0, // Convert mm to meters
+            VerticalAccuracy = vAcc / 1000.0, // Convert mm to meters
             CarrierSolution = carrSoln
         };
 

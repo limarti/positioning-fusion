@@ -9,6 +9,26 @@ const props = defineProps({
     required: true
   }
 })
+
+const formatAccuracy = (meters) => {
+  if (meters === null || meters === undefined) return '—'
+
+  // Convert to millimeters
+  const mm = meters * 1000
+
+  // If >= 1000mm (1m), show in meters
+  if (mm >= 1000) {
+    return (mm / 1000).toFixed(1) + 'm'
+  }
+  // If >= 10mm (1cm), show in centimeters
+  else if (mm >= 10) {
+    return (mm / 10).toFixed(0) + 'cm'
+  }
+  // Otherwise show in millimeters
+  else {
+    return mm.toFixed(0) + 'mm'
+  }
+}
 </script>
 
 <template>
@@ -59,11 +79,11 @@ const props = defineProps({
       <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-center">
         <div>
           <div class="text-xs text-slate-400 mb-1">hAcc</div>
-          <div class="text-lg font-bold" :class="gnssData.hAcc !== null ? 'text-emerald-300' : 'text-slate-400'">{{ gnssData.hAcc !== null ? (gnssData.hAcc * 1000).toFixed(0) + 'mm' : '—' }}</div>
+          <div class="text-lg font-bold" :class="gnssData.hAcc !== null ? 'text-emerald-300' : 'text-slate-400'">{{ formatAccuracy(gnssData.hAcc) }}</div>
         </div>
         <div>
           <div class="text-xs text-slate-400 mb-1">vAcc</div>
-          <div class="text-lg font-bold" :class="gnssData.vAcc !== null ? 'text-emerald-300' : 'text-slate-400'">{{ gnssData.vAcc !== null ? (gnssData.vAcc * 1000).toFixed(0) + 'mm' : '—' }}</div>
+          <div class="text-lg font-bold" :class="gnssData.vAcc !== null ? 'text-emerald-300' : 'text-slate-400'">{{ formatAccuracy(gnssData.vAcc) }}</div>
         </div>
         <div>
           <div class="text-xs text-slate-400 mb-1">HDOP</div>

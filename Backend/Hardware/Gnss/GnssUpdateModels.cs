@@ -43,8 +43,8 @@ public class PvtUpdate
     public double Latitude { get; set; }
     public int HeightEllipsoid { get; set; }
     public int HeightMSL { get; set; }
-    public uint HorizontalAccuracy { get; set; }
-    public uint VerticalAccuracy { get; set; }
+    public double HorizontalAccuracy { get; set; }
+    public double VerticalAccuracy { get; set; }
     public int CarrierSolution { get; set; }
 }
 
