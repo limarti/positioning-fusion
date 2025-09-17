@@ -1,4 +1,5 @@
 using System.IO.Ports;
+using Backend.Configuration;
 
 namespace Backend.Hardware.Gnss;
 
@@ -325,6 +326,8 @@ public class GnssInitializer
         try
         {
             _logger.LogInformation("ZED-X20P: Using CFG-VALSET for modern UBX configuration");
+            _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz",
+                SystemConfiguration.CorrectionsOperation, SystemConfiguration.GnssDataRate);
 
             // Use CFG-VALSET to enable supported messages
             await ConfigureMessagesWithValset();
@@ -372,10 +375,11 @@ public class GnssInitializer
         {
             _logger.LogInformation("Using CFG-VALSET to configure ZED-X20P messages");
 
-            // Enable NAV-PVT at 1Hz (supported message)
-            await EnableMessageWithValset("MSGOUT-UBX_NAV_PVT_UART1", 1);
-            await EnableMessageWithValset("MSGOUT-UBX_RXM_RAWX_UART1", 1);
-            await EnableMessageWithValset("MSGOUT-UBX_RXM_SFRBX_UART1", 1);
+            // Enable messages at configured rate
+            var rate = (byte)SystemConfiguration.GnssDataRate;
+            await EnableMessageWithValset("MSGOUT-UBX_NAV_PVT_UART1", rate);
+            await EnableMessageWithValset("MSGOUT-UBX_RXM_RAWX_UART1", rate);
+            await EnableMessageWithValset("MSGOUT-UBX_RXM_SFRBX_UART1", rate);
 
             _logger.LogInformation("CFG-VALSET configuration completed");
         }
