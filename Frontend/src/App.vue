@@ -96,8 +96,7 @@ const imuData = ref({
 const systemHealth = ref({
   cpuUsage: null,
   memoryUsage: null,
-  temperature: null,
-  storageUsed: 45  // Keep storage as mock since not implemented
+  temperature: null
 })
 
 const powerStatus = ref({
@@ -115,12 +114,6 @@ const dataRates = ref({
   kbpsGnssOut: null
 })
 
-const fileManagement = ref({
-  currentSession: null,
-  filesCreated: null,
-  totalSize: null,
-  availableSpace: null
-})
 
 const encoderData = ref({
   rawCount: null,
@@ -429,7 +422,7 @@ onUnmounted(async () => {
         
         <!-- System Panel -->
         <div class="break-inside-avoid mb-6">
-          <SystemPanel :systemHealth="systemHealth" :powerStatus="powerStatus" :fileManagement="fileManagement" />
+          <SystemPanel :systemHealth="systemHealth" :powerStatus="powerStatus" />
         </div>
       </div>
     </main>

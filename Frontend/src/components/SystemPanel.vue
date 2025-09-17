@@ -7,10 +7,6 @@ const props = defineProps({
   powerStatus: {
     type: Object,
     required: true
-  },
-  fileManagement: {
-    type: Object,
-    required: true
   }
 })
 
@@ -76,38 +72,8 @@ const getUsageColor = (usage) => {
           <span :class="systemHealth.memoryUsage !== null ? getUsageColor(systemHealth.memoryUsage) : 'text-slate-400'">{{ systemHealth.memoryUsage !== null ? systemHealth.memoryUsage.toFixed(1) + '%' : '—' }}</span>
         </div>
         <div class="flex justify-between">
-          <span class="text-slate-500">Storage:</span>
-          <span :class="getUsageColor(systemHealth.storageUsed)">{{ systemHealth.storageUsed }}%</span>
-        </div>
-        <div class="flex justify-between">
           <span class="text-slate-500">Temp:</span>
           <span :class="systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemHealth.temperature !== null ? systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
-        </div>
-      </div>
-    </div>
-    
-    <!-- File Management section -->
-    <div class="mt-3 pt-2 border-t border-slate-100">
-      <div class="grid grid-cols-2 gap-3 text-sm">
-        <div class="space-y-1">
-          <div class="flex justify-between">
-            <span class="text-slate-500">Session:</span>
-            <span :class="fileManagement.currentSession !== null ? 'font-mono' : 'text-slate-400'">{{ fileManagement.currentSession !== null ? fileManagement.currentSession.split('_')[2] : '—' }}</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-slate-500">Files:</span>
-            <span :class="fileManagement.filesCreated !== null ? '' : 'text-slate-400'">{{ fileManagement.filesCreated !== null ? fileManagement.filesCreated : '—' }}</span>
-          </div>
-        </div>
-        <div class="space-y-1">
-          <div class="flex justify-between">
-            <span class="text-slate-500">Size:</span>
-            <span :class="fileManagement.totalSize !== null ? '' : 'text-slate-400'">{{ fileManagement.totalSize !== null ? fileManagement.totalSize : '—' }}</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="text-slate-500">Available:</span>
-            <span :class="fileManagement.availableSpace !== null ? '' : 'text-slate-400'">{{ fileManagement.availableSpace !== null ? fileManagement.availableSpace : '—' }}</span>
-          </div>
         </div>
       </div>
     </div>
