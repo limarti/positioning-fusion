@@ -1,4 +1,5 @@
 using Backend.Hubs;
+using Backend.Storage;
 using Microsoft.AspNetCore.SignalR;
 using System.IO.Ports;
 
@@ -10,6 +11,7 @@ public class ImuService : BackgroundService
     private readonly ILogger<ImuService> _logger;
     private readonly ImuInitializer _imuInitializer;
     private readonly ImuParser _imuParser;
+    private readonly DataFileWriter _dataFileWriter;
     private SerialPort? _serialPort;
     private readonly byte[] _buffer = new byte[1024];
     private readonly List<byte> _dataBuffer = new();
@@ -21,12 +23,14 @@ public class ImuService : BackgroundService
         IHubContext<DataHub> hubContext,
         ILogger<ImuService> logger,
         ImuInitializer imuInitializer,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        DataFileWriter dataFileWriter)
     {
         _hubContext = hubContext;
         _logger = logger;
         _imuInitializer = imuInitializer;
         _imuParser = new ImuParser(loggerFactory.CreateLogger<ImuParser>());
+        _dataFileWriter = dataFileWriter;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -102,6 +106,10 @@ public class ImuService : BackgroundService
                 var imuData = _imuParser.ParseMemsPacket(packetData);
                 if (imuData != null)
                 {
+                    // Log data to file
+                    var csvLine = $"{imuData.Timestamp:F3},{imuData.Acceleration.X:F6},{imuData.Acceleration.Y:F6},{imuData.Acceleration.Z:F6},{imuData.Gyroscope.X:F6},{imuData.Gyroscope.Y:F6},{imuData.Gyroscope.Z:F6},{imuData.Magnetometer.X:F6},{imuData.Magnetometer.Y:F6},{imuData.Magnetometer.Z:F6}";
+                    _dataFileWriter.WriteData(csvLine);
+
                     // Send data via SignalR with throttling to 1Hz
                     bool shouldSend = false;
                     lock (_throttleLock)

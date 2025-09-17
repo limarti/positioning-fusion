@@ -3,6 +3,7 @@ using Backend.Hardware.Imu;
 using Backend.Hardware.Position;
 using Backend.Hardware.Gnss;
 using Backend.System;
+using Backend.Storage;
 
 namespace Backend.Hubs;
 
@@ -37,5 +38,10 @@ public class DataHub : Hub
     public async Task SendDataRatesUpdate(DataRatesUpdate dataRates)
     {
         await Clients.All.SendAsync("DataRatesUpdate", dataRates);
+    }
+
+    public async Task SendFileLoggingStatusUpdate(FileLoggingStatus status)
+    {
+        await Clients.All.SendAsync("FileLoggingStatusUpdate", status);
     }
 }

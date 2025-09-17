@@ -2,6 +2,7 @@ using Backend.Hubs;
 using Backend.Hardware.Imu;
 using Backend.Hardware.Gnss;
 using Backend.System;
+using Backend.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,15 @@ builder.Services.AddHostedService<ImuService>();
 // Add GNSS services
 builder.Services.AddSingleton<GnssInitializer>();
 builder.Services.AddHostedService<GnssService>();
+
+// Add logging services
+builder.Services.AddSingleton<DataFileWriter>(provider =>
+    new DataFileWriter("imu.txt", provider.GetRequiredService<ILogger<DataFileWriter>>()));
+builder.Services.AddHostedService<DataFileWriter>(provider =>
+    provider.GetRequiredService<DataFileWriter>());
+
+// Add file logging status service
+builder.Services.AddHostedService<FileLoggingStatusService>();
 
 // Add CORS for frontend
 builder.Services.AddCors(options =>

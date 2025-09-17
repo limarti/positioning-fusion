@@ -6,6 +6,7 @@ import ImuPanel from './components/ImuPanel.vue'
 import CameraPanel from './components/CameraPanel.vue'
 import EncoderPanel from './components/EncoderPanel.vue'
 import SystemPanel from './components/SystemPanel.vue'
+import FileLoggingPanel from './components/FileLoggingPanel.vue'
 import ConnectionStatus from './components/ConnectionStatus.vue'
 
 // SignalR connection
@@ -125,6 +126,16 @@ const encoderData = ref({
   rawCount: null,
   direction: null,
   pulsesPerSecond: null
+})
+
+const fileLoggingStatus = ref({
+  driveAvailable: false,
+  drivePath: null,
+  currentSession: null,
+  totalSpaceBytes: null,
+  availableSpaceBytes: null,
+  usedSpaceBytes: null,
+  activeFiles: []
 })
 
 // Helper functions (moved to components where needed)
@@ -329,6 +340,16 @@ onMounted(async () => {
     dataRates.value.kbpsGnssOut = data.kbpsGnssOut
   })
 
+  connection.on("FileLoggingStatusUpdate", (data) => {
+    fileLoggingStatus.value.driveAvailable = data.driveAvailable
+    fileLoggingStatus.value.drivePath = data.drivePath
+    fileLoggingStatus.value.currentSession = data.currentSession
+    fileLoggingStatus.value.totalSpaceBytes = data.totalSpaceBytes
+    fileLoggingStatus.value.availableSpaceBytes = data.availableSpaceBytes
+    fileLoggingStatus.value.usedSpaceBytes = data.usedSpaceBytes
+    fileLoggingStatus.value.activeFiles = data.activeFiles || []
+  })
+
   try {
     connectionStatus.value = 'Connecting'
     await connection.start()
@@ -387,10 +408,11 @@ onUnmounted(async () => {
       
       <!-- Sensor Data Row -->
       <div class="mb-6">
-        <div class="grid gap-4 grid-cols-1 md:grid-cols-3">
+        <div class="grid gap-4 grid-cols-1 md:grid-cols-4">
           <ImuPanel :imuData="imuData" :dataRates="dataRates" />
           <CameraPanel />
           <EncoderPanel :encoderData="encoderData" />
+          <FileLoggingPanel :fileLoggingStatus="fileLoggingStatus" />
         </div>
       </div>
 
