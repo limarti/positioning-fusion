@@ -1,4 +1,6 @@
 <script setup>
+import SatelliteHealthChart from './SatelliteHealthChart.vue'
+
 const props = defineProps({
   gnssData: {
     type: Object,
@@ -67,6 +69,9 @@ const formatAccuracy = (meters) => {
                   ? `${gnssData.latitude.toFixed(7)}°, ${gnssData.longitude.toFixed(7)}°`
                   : 'Waiting for GNSS fix...' }}
             </div>
+            <div v-if="gnssData.altitude !== null" class="text-sm text-slate-300 font-mono mt-1">
+              Altitude: {{ gnssData.altitude.toFixed(2) }}m
+            </div>
           </div>
         </div>
         <div class="flex items-center space-x-3">
@@ -108,83 +113,115 @@ const formatAccuracy = (meters) => {
     <div class="bg-white rounded-b-2xl border-2 border-slate-200 p-4">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <!-- Satellite Health Subsection -->
-      <div class="bg-white/90 backdrop-blur-sm rounded-2xl border-2 border-slate-200 p-4">
-        <div class="flex items-center space-x-3 mb-4">
-          <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
-          </svg>
-          <h2 class="text-xl font-bold text-slate-800">Satellite Health</h2>
-          <div class="ml-auto text-sm font-semibold" :class="dataRates.gnssRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.gnssRate !== null ? dataRates.gnssRate : '—' }}</div>
+        <div class="bg-white/90 backdrop-blur-sm rounded-2xl border-2 border-slate-200 p-4">
+          <div class="flex items-center space-x-3 mb-4">
+            <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
+            </svg>
+            <h2 class="text-xl font-bold text-slate-800">Satellite Health</h2>
+            <div class="ml-auto text-sm font-semibold" :class="dataRates.gnssRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.gnssRate !== null ? dataRates.gnssRate : '—' }}</div>
+          </div>
+
+          <!-- Constellation Summary -->
+          <div class="grid grid-cols-4 gap-3 mb-6">
+            <div class="text-center p-3 bg-blue-50 rounded-xl">
+              <div class="text-xs text-slate-600 mb-1">GPS</div>
+              <div class="text-lg font-bold" :class="gnssData.constellations.gps.used !== null ? 'text-blue-700' : 'text-slate-400'">{{ gnssData.constellations.gps.used !== null ? gnssData.constellations.gps.used + '/' + gnssData.constellations.gps.tracked : '—' }}</div>
+            </div>
+            <div class="text-center p-3 bg-red-50 rounded-xl">
+              <div class="text-xs text-slate-600 mb-1">GLONASS</div>
+              <div class="text-lg font-bold" :class="gnssData.constellations.glonass.used !== null ? 'text-red-700' : 'text-slate-400'">{{ gnssData.constellations.glonass.used !== null ? gnssData.constellations.glonass.used + '/' + gnssData.constellations.glonass.tracked : '—' }}</div>
+            </div>
+            <div class="text-center p-3 bg-purple-50 rounded-xl">
+              <div class="text-xs text-slate-600 mb-1">Galileo</div>
+              <div class="text-lg font-bold" :class="gnssData.constellations.galileo.used !== null ? 'text-purple-700' : 'text-slate-400'">{{ gnssData.constellations.galileo.used !== null ? gnssData.constellations.galileo.used + '/' + gnssData.constellations.galileo.tracked : '—' }}</div>
+            </div>
+            <div class="text-center p-3 bg-yellow-50 rounded-xl">
+              <div class="text-xs text-slate-600 mb-1">BeiDou</div>
+              <div class="text-lg font-bold" :class="gnssData.constellations.beidou.used !== null ? 'text-yellow-700' : 'text-slate-400'">{{ gnssData.constellations.beidou.used !== null ? gnssData.constellations.beidou.used + '/' + gnssData.constellations.beidou.tracked : '—' }}</div>
+            </div>
+          </div>
+
+          <!-- Satellite Health Chart -->
+          <SatelliteHealthChart :satellites="gnssData.satellites" />
         </div>
-        
-        <!-- Constellation Summary -->
-        <div class="grid grid-cols-4 gap-3 mb-6">
-          <div class="text-center p-3 bg-blue-50 rounded-xl">
-            <div class="text-xs text-slate-600 mb-1">GPS</div>
-            <div class="text-lg font-bold" :class="gnssData.constellations.gps.used !== null ? 'text-blue-700' : 'text-slate-400'">{{ gnssData.constellations.gps.used !== null ? gnssData.constellations.gps.used + '/' + gnssData.constellations.gps.tracked : '—' }}</div>
+        <!-- Corrections Subsection (Conditional) -->
+        <div v-if="gnssData.corrections?.active" class="bg-white/90 backdrop-blur-sm rounded-2xl border-2 border-slate-200 p-4">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center space-x-3">
+              <svg class="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+              </svg>
+              <h2 class="text-xl font-bold text-slate-800">Corrections</h2>
+              <div class="text-sm font-semibold" :class="dataRates.correctionRate !== null ? 'text-purple-600' : 'text-slate-400'">{{ dataRates.correctionRate !== null ? dataRates.correctionRate : '—' }}</div>
+            </div>
+            <span class="text-sm font-bold px-3 py-1 rounded-lg"
+                  :class="gnssData.corrections?.connected ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
+              {{ gnssData.corrections?.connected ? 'ACTIVE' : 'OFFLINE' }}
+            </span>
           </div>
-          <div class="text-center p-3 bg-red-50 rounded-xl">
-            <div class="text-xs text-slate-600 mb-1">GLONASS</div>
-            <div class="text-lg font-bold" :class="gnssData.constellations.glonass.used !== null ? 'text-red-700' : 'text-slate-400'">{{ gnssData.constellations.glonass.used !== null ? gnssData.constellations.glonass.used + '/' + gnssData.constellations.glonass.tracked : '—' }}</div>
+
+          <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="text-center p-4 bg-purple-50 rounded-xl">
+              <div class="text-xs text-slate-600 mb-1">Source Type</div>
+              <div class="text-lg font-bold" :class="gnssData.corrections?.sourceType !== null ? 'text-purple-700' : 'text-slate-400'">{{ gnssData.corrections?.sourceType !== null ? gnssData.corrections?.sourceType : '—' }}</div>
+            </div>
+            <div class="text-center p-4 bg-indigo-50 rounded-xl">
+              <div class="text-xs text-slate-600 mb-1">Data Age</div>
+              <div class="text-lg font-bold" :class="gnssData.corrections?.dataAge !== null ? 'text-indigo-700' : 'text-slate-400'">{{ gnssData.corrections?.dataAge !== null ? gnssData.corrections?.dataAge.toFixed(1) + 's' : '—' }}</div>
+            </div>
           </div>
-          <div class="text-center p-3 bg-purple-50 rounded-xl">
-            <div class="text-xs text-slate-600 mb-1">Galileo</div>
-            <div class="text-lg font-bold" :class="gnssData.constellations.galileo.used !== null ? 'text-purple-700' : 'text-slate-400'">{{ gnssData.constellations.galileo.used !== null ? gnssData.constellations.galileo.used + '/' + gnssData.constellations.galileo.tracked : '—' }}</div>
-          </div>
-          <div class="text-center p-3 bg-yellow-50 rounded-xl">
-            <div class="text-xs text-slate-600 mb-1">BeiDou</div>
-            <div class="text-lg font-bold" :class="gnssData.constellations.beidou.used !== null ? 'text-yellow-700' : 'text-slate-400'">{{ gnssData.constellations.beidou.used !== null ? gnssData.constellations.beidou.used + '/' + gnssData.constellations.beidou.tracked : '—' }}</div>
+
+          <div class="space-y-2">
+            <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
+              <span class="text-slate-600">Base Station ID:</span>
+              <span class="font-bold font-mono" :class="gnssData.corrections?.baseStationId !== null ? '' : 'text-slate-400'">{{ gnssData.corrections?.baseStationId !== null ? gnssData.corrections?.baseStationId : '—' }}</span>
+            </div>
+            <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
+              <span class="text-slate-600">Message Types:</span>
+              <span class="font-bold font-mono text-xs" :class="gnssData.corrections?.messageTypes !== null ? '' : 'text-slate-400'">{{ gnssData.corrections?.messageTypes !== null ? gnssData.corrections?.messageTypes.join(', ') : '—' }}</span>
+            </div>
+            <div class="p-3 bg-slate-50 rounded-lg">
+              <div class="text-xs text-slate-600 mb-2">Signal Quality</div>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="text-center">
+                  <div class="font-mono font-semibold" :class="gnssData.corrections?.signalStrength !== null ? '' : 'text-slate-400'">{{ gnssData.corrections?.signalStrength !== null ? gnssData.corrections?.signalStrength + 'dBm' : '—' }}</div>
+                  <div class="text-slate-500">Signal</div>
+                </div>
+                <div class="text-center">
+                  <div class="font-mono font-semibold" :class="gnssData.corrections?.throughput !== null ? '' : 'text-slate-400'">{{ gnssData.corrections?.throughput !== null ? gnssData.corrections?.throughput + ' bps' : '—' }}</div>
+                  <div class="text-slate-500">Throughput</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        
-        <!-- Per-Satellite Table -->
-        <div class="bg-slate-50 rounded-xl overflow-hidden">
-          <div class="overflow-x-auto h-64 overflow-y-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-100 sticky top-0">
-                <tr class="text-xs font-semibold text-slate-600 uppercase">
-                  <th class="px-3 py-2 text-left">ID</th>
-                  <th class="px-3 py-2 text-left">System</th>
-                  <th class="px-3 py-2 text-center">Used</th>
-                  <th class="px-3 py-2 text-right">C/N0</th>
-                  <th class="px-3 py-2 text-right">Elev</th>
-                  <th class="px-3 py-2 text-right">Az</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-200">
-                <tr v-for="sat in gnssData.satellites" :key="sat.svid + sat.constellation"
-                    class="hover:bg-white transition-colors"
-                    :class="sat.used ? 'bg-emerald-50/50' : ''">
-                  <td class="px-3 py-2 font-mono font-semibold">{{ sat.svid }}</td>
-                  <td class="px-3 py-2">
-                    <span class="text-xs px-2 py-1 rounded font-medium"
-                          :class="sat.constellation === 'GPS' ? 'bg-blue-100 text-blue-700' :
-                                 sat.constellation === 'GLONASS' ? 'bg-red-100 text-red-700' :
-                                 sat.constellation === 'Galileo' ? 'bg-purple-100 text-purple-700' :
-                                 'bg-yellow-100 text-yellow-700'">
-                      {{ sat.constellation.substring(0,3) }}
-                    </span>
-                  </td>
-                  <td class="px-3 py-2 text-center">
-                    <div class="w-2 h-2 rounded-full mx-auto"
-                         :class="sat.used ? 'bg-emerald-500' : 'bg-slate-300'"></div>
-                  </td>
-                  <td class="px-3 py-2 text-right font-mono"
-                      :class="sat.cn0 >= 40 ? 'text-emerald-600 font-semibold' :
-                             sat.cn0 >= 35 ? 'text-yellow-600' : 'text-red-600'">
-                    {{ sat.cn0 }}
-                  </td>
-                  <td class="px-3 py-2 text-right font-mono text-xs text-slate-600">{{ sat.elevation }}°</td>
-                  <td class="px-3 py-2 text-right font-mono text-xs text-slate-600">{{ sat.azimuth }}°</td>
-                </tr>
-              </tbody>
-            </table>
+
+        <!-- If Corrections not active, show basic status in its place -->
+        <div v-else class="bg-slate-50 rounded-2xl border-2 border-slate-300 p-4">
+          <div class="flex items-center space-x-3 mb-4">
+            <svg class="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+            </svg>
+            <h2 class="text-xl font-bold text-slate-800">No Corrections</h2>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4">
+            <div class="flex justify-between p-3 bg-white rounded-lg border">
+              <span class="text-slate-600">Status:</span>
+              <span class="font-bold text-slate-800">Standalone Mode</span>
+            </div>
+            <div class="flex justify-between p-3 bg-white rounded-lg border">
+              <span class="text-slate-600">Precision:</span>
+              <span class="font-bold font-mono text-slate-600">Standard GNSS</span>
+            </div>
           </div>
         </div>
       </div>
 
-        <!-- RTK Quality Subsection (Conditional) -->
-      <div v-if="gnssData.rtk.active" class="bg-white/90 backdrop-blur-sm rounded-2xl border-2 border-slate-200 p-4">
+      <!-- RTK Quality Section -->
+      <div v-if="gnssData.rtk.active" class="mb-6">
+        <div class="bg-white/90 backdrop-blur-sm rounded-2xl border-2 border-slate-200 p-4">
         <div class="flex items-center justify-between mb-4">
           <div class="flex items-center space-x-3">
             <svg class="w-6 h-6 text-emerald-600" fill="currentColor" viewBox="0 0 24 24">
@@ -233,27 +270,6 @@ const formatAccuracy = (meters) => {
             </div>
           </div>
         </div>
-      </div>
-      
-        <!-- If RTK not active, show basic status in its place -->
-        <div v-else class="bg-slate-50 rounded-2xl border-2 border-slate-300 p-4">
-          <div class="flex items-center space-x-3 mb-4">
-            <svg class="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
-            </svg>
-            <h2 class="text-xl font-bold text-slate-800">Standard GNSS</h2>
-          </div>
-          
-          <div class="grid grid-cols-1 gap-4">
-            <div class="flex justify-between p-3 bg-white rounded-lg border">
-              <span class="text-slate-600">Fix Type:</span>
-              <span class="font-bold text-slate-800">{{ gnssData.fixType }}</span>
-            </div>
-            <div class="flex justify-between p-3 bg-white rounded-lg border">
-              <span class="text-slate-600">Altitude:</span>
-              <span class="font-bold font-mono" :class="gnssData.altitude !== null ? 'text-slate-800' : 'text-slate-400'">{{ gnssData.altitude !== null ? gnssData.altitude.toFixed(2) + 'm' : '—' }}</span>
-            </div>
-          </div>
         </div>
       </div>
       
