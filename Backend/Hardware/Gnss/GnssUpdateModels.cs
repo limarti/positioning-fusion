@@ -59,35 +59,6 @@ public class BroadcastDataUpdate
     public DateTime Timestamp { get; set; }
 }
 
-public class RawMeasurementUpdate
-{
-    public double RcvTow { get; set; }
-    public ushort Week { get; set; }
-    public sbyte LeapSeconds { get; set; }
-    public byte NumMeasurements { get; set; }
-    public byte ReceiverStatus { get; set; }
-    public List<RawMeasurementInfo> Satellites { get; set; } = new();
-    public bool Connected { get; set; }
-}
-
-public class RawMeasurementInfo
-{
-    public byte GnssId { get; set; }
-    public string GnssName { get; set; } = string.Empty;
-    public byte SvId { get; set; }
-    public byte FrequencyId { get; set; }
-    public byte Cno { get; set; }
-    public double Pseudorange { get; set; }
-    public double CarrierPhase { get; set; }
-    public float Doppler { get; set; }
-    public ushort Locktime { get; set; }
-    public bool PseudorangeValid { get; set; }
-    public bool CarrierPhaseValid { get; set; }
-    public bool HalfCycleValid { get; set; }
-    public int PseudorangeStdev { get; set; }
-    public int CarrierPhaseStdev { get; set; }
-    public int DopplerStdev { get; set; }
-}
 
 public class VersionUpdate
 {

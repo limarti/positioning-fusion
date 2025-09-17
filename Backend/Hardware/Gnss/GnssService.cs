@@ -173,10 +173,6 @@ public class GnssService : BackgroundService
             {
                 await ProcessRxmSfrbxMessage(data, stoppingToken);
             }
-            else if (messageClass == UbxConstants.CLASS_RXM && messageId == UbxConstants.RXM_RAWX)
-            {
-                await ProcessRxmRawxMessage(data, stoppingToken);
-            }
             else if (messageClass == UbxConstants.CLASS_ACK)
             {
                 if (messageId == UbxConstants.ACK_ACK)
@@ -446,109 +442,6 @@ public class GnssService : BackgroundService
         }
     }
 
-    private async Task ProcessRxmRawxMessage(byte[] data, CancellationToken stoppingToken)
-    {
-        _logger.LogDebug("ProcessRxmRawxMessage: Received {DataLength} bytes", data.Length);
-
-        if (data.Length < 16)
-        {
-            _logger.LogWarning("RXM-RAWX message too short: {Length} bytes, minimum 16 required", data.Length);
-            return;
-        }
-
-        var rcvTow = BitConverter.ToDouble(data, 0);
-        var week = BitConverter.ToUInt16(data, 8);
-        var leapS = (sbyte)data[10];
-        var numMeas = data[11];
-        var recStat = data[12];
-        var version = data[13];
-
-        //_logger.LogInformation("RXM-RAWX: Week={Week}, TOW={Tow:F3}, Measurements={NumMeas}, RecStat=0x{RecStat:X2}, Version={Version}", week, rcvTow, numMeas, recStat, version);
-
-        // Check if we have enough data for all measurements
-        var expectedLength = 16 + (numMeas * 32);
-        if (data.Length < expectedLength)
-        {
-            _logger.LogWarning("RXM-RAWX message incomplete: expected {Expected} bytes, got {Actual} bytes for {NumMeas} measurements",
-                expectedLength, data.Length, numMeas);
-            return;
-        }
-
-        var satellites = new List<RawMeasurementInfo>();
-        var constellationCounts = new Dictionary<string, int>();
-
-        for (int i = 0; i < numMeas && (16 + i * 32) + 31 < data.Length; i++)
-        {
-            var offset = 16 + i * 32;
-
-            var prMes = BitConverter.ToDouble(data, offset);
-            var cpMes = BitConverter.ToDouble(data, offset + 8);
-            var doMes = BitConverter.ToSingle(data, offset + 16);
-            var gnssId = data[offset + 20];
-            var svId = data[offset + 21];
-            var freqId = data[offset + 22];
-            var locktime = BitConverter.ToUInt16(data, offset + 23);
-            var cno = data[offset + 25];
-            var prStdev = data[offset + 26] & 0x0F;
-            var cpStdev = data[offset + 27] & 0x0F;
-            var doStdev = data[offset + 28] & 0x0F;
-            var trkStat = data[offset + 29];
-
-            var gnssName = GetGnssName(gnssId);
-            constellationCounts[gnssName] = constellationCounts.GetValueOrDefault(gnssName, 0) + 1;
-
-            var prValid = (trkStat & 0x01) != 0;
-            var cpValid = (trkStat & 0x02) != 0;
-            var halfCyc = (trkStat & 0x04) != 0;
-
-            _logger.LogDebug("Measurement {Index}: {Constellation} SV{SvId}, C/N0={Cno}, PR={PrMes:F3}m, Valid=PR:{PrValid}/CP:{CpValid}",
-                i, gnssName, svId, cno, prMes, prValid, cpValid);
-
-            satellites.Add(new RawMeasurementInfo
-            {
-                GnssId = gnssId,
-                GnssName = gnssName,
-                SvId = svId,
-                FrequencyId = freqId,
-                Cno = cno,
-                Pseudorange = prMes,
-                CarrierPhase = cpMes,
-                Doppler = doMes,
-                Locktime = locktime,
-                PseudorangeValid = prValid,
-                CarrierPhaseValid = cpValid,
-                HalfCycleValid = halfCyc,
-                PseudorangeStdev = prStdev,
-                CarrierPhaseStdev = cpStdev,
-                DopplerStdev = doStdev
-            });
-        }
-
-        // Log constellation summary
-        var constellationSummary = string.Join(", ", constellationCounts.Select(kv => $"{kv.Key}:{kv.Value}"));
-        //_logger.LogInformation("Parsed {TotalMeas} raw measurements: {ConstellationSummary}", satellites.Count, constellationSummary);
-
-        var rawxData = new RawMeasurementUpdate
-        {
-            RcvTow = rcvTow,
-            Week = week,
-            LeapSeconds = leapS,
-            NumMeasurements = numMeas,
-            ReceiverStatus = recStat,
-            Satellites = satellites,
-            Connected = true
-        };
-
-        try
-        {
-            await _hubContext.Clients.All.SendAsync("RawMeasurementUpdate", rawxData, stoppingToken);
-            //_logger.LogInformation("✅ Raw measurement data sent to frontend: {NumMeas} measurements", numMeas);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "❌ Failed to send raw measurement data to frontend");
-        }
-    }
 
     private async Task ProcessMonVerMessage(byte[] data, CancellationToken stoppingToken)
     {
