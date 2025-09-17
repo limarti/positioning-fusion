@@ -22,11 +22,11 @@ const sortedMessageTypes = computed(() => {
 
 // Get color based on message type
 const getMessageColor = (messageType) => {
-  if (messageType.includes('NAV')) return 'text-blue-600 bg-blue-50 border-blue-200'
-  if (messageType.includes('RXM')) return 'text-green-600 bg-green-50 border-green-200'
-  if (messageType.includes('TIM')) return 'text-purple-600 bg-purple-50 border-purple-200'
-  if (messageType.includes('MON')) return 'text-orange-600 bg-orange-50 border-orange-200'
-  return 'text-slate-600 bg-slate-50 border-slate-200'
+  if (messageType.includes('NAV')) return 'text-blue-600 bg-blue-50'
+  if (messageType.includes('RXM')) return 'text-green-600 bg-green-50'
+  if (messageType.includes('TIM')) return 'text-purple-600 bg-purple-50'
+  if (messageType.includes('MON')) return 'text-orange-600 bg-orange-50'
+  return 'text-slate-600 bg-slate-50'
 }
 
 // Get rate status color
@@ -51,11 +51,11 @@ const getRateColor = (rate) => {
       No UBX messages received
     </div>
 
-    <div v-else class="space-y-2">
+    <div v-else class="space-y-1">
       <div 
         v-for="message in sortedMessageTypes" 
         :key="message.type"
-        class="flex items-center justify-between p-3 rounded-lg border"
+        class="flex items-center justify-between px-2 py-1 rounded"
         :class="getMessageColor(message.type)"
       >
         <div class="flex items-center space-x-3">

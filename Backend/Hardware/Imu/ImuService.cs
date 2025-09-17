@@ -30,7 +30,7 @@ public class ImuService : BackgroundService
         _logger = logger;
         _imuInitializer = imuInitializer;
         _imuParser = new ImuParser(loggerFactory.CreateLogger<ImuParser>());
-        _dataFileWriter = new DataFileWriter("imu.txt", loggerFactory.CreateLogger<DataFileWriter>());
+        _dataFileWriter = new DataFileWriter("IMU.txt", loggerFactory.CreateLogger<DataFileWriter>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

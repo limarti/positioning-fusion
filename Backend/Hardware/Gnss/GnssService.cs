@@ -33,7 +33,7 @@ public class GnssService : BackgroundService
         _hubContext = hubContext;
         _logger = logger;
         _gnssInitializer = gnssInitializer;
-        _dataFileWriter = new DataFileWriter("gnss.raw", loggerFactory.CreateLogger<DataFileWriter>());
+        _dataFileWriter = new DataFileWriter("GNSS.raw", loggerFactory.CreateLogger<DataFileWriter>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
