@@ -1,6 +1,7 @@
 using Backend.Hubs;
 using Backend.Hardware.Gnss;
 using Backend.Hardware.Gnss.Parsers;
+using Backend.Storage;
 using Microsoft.AspNetCore.SignalR;
 using System.IO.Ports;
 
@@ -11,6 +12,7 @@ public class GnssService : BackgroundService
     private readonly IHubContext<DataHub> _hubContext;
     private readonly ILogger<GnssService> _logger;
     private readonly GnssInitializer _gnssInitializer;
+    private readonly DataFileWriter _dataFileWriter;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
 
@@ -26,16 +28,20 @@ public class GnssService : BackgroundService
     private double _currentInRate = 0.0;
     private double _currentOutRate = 0.0;
 
-    public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer)
+    public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory)
     {
         _hubContext = hubContext;
         _logger = logger;
         _gnssInitializer = gnssInitializer;
+        _dataFileWriter = new DataFileWriter("gnss.raw", loggerFactory.CreateLogger<DataFileWriter>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("GNSS Service started");
+
+        // Start the data file writer
+        _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
 
         _serialPort = _gnssInitializer.GetSerialPort();
         if (_serialPort == null || !_serialPort.IsOpen)
@@ -148,10 +154,10 @@ public class GnssService : BackgroundService
             if (_dataBuffer.Count < totalLength)
                 break;
 
-            var messageData = _dataBuffer.GetRange(6, length).ToArray();
+            var completeMessage = _dataBuffer.GetRange(0, totalLength).ToArray();
             _dataBuffer.RemoveRange(0, totalLength);
 
-            await ProcessUbxMessage(messageClass, messageId, messageData, stoppingToken);
+            await ProcessUbxMessage(completeMessage, stoppingToken);
         }
     }
 
@@ -170,12 +176,20 @@ public class GnssService : BackgroundService
 
     // NMEA fallback removed - UBX binary messages only
 
-    private async Task ProcessUbxMessage(byte messageClass, byte messageId, byte[] data, CancellationToken stoppingToken)
+    private async Task ProcessUbxMessage(byte[] completeMessage, CancellationToken stoppingToken)
     {
         try
         {
+            var messageClass = completeMessage[2];
+            var messageId = completeMessage[3];
+            var length = (ushort)(completeMessage[4] | (completeMessage[5] << 8));
+            var data = completeMessage.AsSpan(6, length).ToArray();
+
             _logger.LogDebug("Processing UBX message: Class=0x{Class:X2}, ID=0x{Id:X2}, Length={Length}",
                 messageClass, messageId, data.Length);
+
+            // Log raw GNSS UBX message data to file (complete UBX frame)
+            _dataFileWriter.WriteData(completeMessage);
 
             if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_SAT)
             {
@@ -245,6 +259,8 @@ public class GnssService : BackgroundService
         }
         catch (Exception ex)
         {
+            var messageClass = completeMessage.Length > 2 ? completeMessage[2] : (byte)0;
+            var messageId = completeMessage.Length > 3 ? completeMessage[3] : (byte)0;
             _logger.LogError(ex, "Error processing UBX message Class=0x{Class:X2}, ID=0x{Id:X2}", messageClass, messageId);
         }
     }
@@ -320,9 +336,17 @@ public class GnssService : BackgroundService
         _bytesSent += bytesSent;
     }
 
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Stopping GNSS Service");
+        await _dataFileWriter.StopAsync(cancellationToken);
+        await base.StopAsync(cancellationToken);
+    }
+
     public override void Dispose()
     {
         _logger.LogInformation("GNSS Service disposing");
+        _dataFileWriter.Dispose();
         base.Dispose();
     }
 }

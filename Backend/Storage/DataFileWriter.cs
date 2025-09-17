@@ -10,11 +10,11 @@ public class DataFileWriter : BackgroundService
     
     private readonly ILogger<DataFileWriter> _logger;
     private readonly string _fileName;
-    private readonly Channel<string> _dataChannel;
-    private readonly ChannelWriter<string> _writer;
-    private readonly ChannelReader<string> _reader;
+    private readonly Channel<object> _dataChannel;
+    private readonly ChannelWriter<object> _writer;
+    private readonly ChannelReader<object> _reader;
 
-    private readonly List<string> _dataBuffer = new();
+    private readonly List<object> _dataBuffer = new();
     private DateTime _lastFlush = DateTime.UtcNow;
     private string? _currentSessionPath;
     private string? _currentFilePath;
@@ -28,6 +28,11 @@ public class DataFileWriter : BackgroundService
     public string? CurrentSessionPath => _currentSessionPath;
     public bool IsDriveAvailable => _driveAvailable;
 
+    // Static properties for sharing drive information across services
+    public static string? SharedDrivePath { get; private set; }
+    public static string? SharedSessionPath { get; private set; }
+    public static bool SharedDriveAvailable { get; private set; }
+
     public DataFileWriter(string fileName, ILogger<DataFileWriter> logger)
     {
         _fileName = fileName;
@@ -40,9 +45,10 @@ public class DataFileWriter : BackgroundService
             SingleWriter = false
         };
 
-        _dataChannel = Channel.CreateBounded<string>(options);
+        _dataChannel = Channel.CreateBounded<object>(options);
         _writer = _dataChannel.Writer;
         _reader = _dataChannel.Reader;
+
     }
 
     public void WriteData(string csvLine)
@@ -50,6 +56,14 @@ public class DataFileWriter : BackgroundService
         if (!_writer.TryWrite(csvLine))
         {
             _logger.LogWarning("Failed to queue data for {FileName} - channel full", _fileName);
+        }
+    }
+
+    public void WriteData(byte[] binaryData)
+    {
+        if (!_writer.TryWrite(binaryData))
+        {
+            _logger.LogWarning("Failed to queue binary data for {FileName} - channel full", _fileName);
         }
     }
 
@@ -90,9 +104,9 @@ public class DataFileWriter : BackgroundService
                         if (await _reader.WaitToReadAsync(timeoutCts.Token))
                         {
                             // Process incoming data
-                            while (_reader.TryRead(out string? csvLine))
+                            while (_reader.TryRead(out object? data))
                             {
-                                _dataBuffer.Add(csvLine);
+                                _dataBuffer.Add(data);
                             }
                         }
                     }
@@ -150,29 +164,50 @@ public class DataFileWriter : BackgroundService
             // Session path should already be established at startup
             if (!_driveAvailable || string.IsNullOrEmpty(_currentFilePath))
             {
-                _logger.LogWarning("No USB drive available - dropping {Count} data lines for {FileName}",
+                _logger.LogWarning("No USB drive available - dropping {Count} data items for {FileName}",
                     _dataBuffer.Count, _fileName);
                 _dataBuffer.Clear();
                 return;
             }
 
-            var csvContent = new StringBuilder();
-
-            // Add header if file doesn't exist
-            if (!File.Exists(_currentFilePath))
+            // Check if we have text or binary data
+            bool hasBinaryData = _dataBuffer.Any(item => item is byte[]);
+            
+            if (hasBinaryData)
             {
-                csvContent.AppendLine(GetCsvHeader());
+                // Write binary data
+                using var fileStream = new FileStream(_currentFilePath, FileMode.Append, FileAccess.Write);
+                foreach (var item in _dataBuffer)
+                {
+                    if (item is byte[] binaryData)
+                    {
+                        await fileStream.WriteAsync(binaryData);
+                    }
+                    else if (item is string textData)
+                    {
+                        var textBytes = Encoding.UTF8.GetBytes(textData + Environment.NewLine);
+                        await fileStream.WriteAsync(textBytes);
+                    }
+                }
+            }
+            else
+            {
+                // Write text data
+                var textContent = new StringBuilder();
+
+                // Add all buffered data
+                foreach (var item in _dataBuffer)
+                {
+                    if (item is string line)
+                    {
+                        textContent.AppendLine(line);
+                    }
+                }
+
+                await File.AppendAllTextAsync(_currentFilePath, textContent.ToString());
             }
 
-            // Add all buffered data
-            foreach (var line in _dataBuffer)
-            {
-                csvContent.AppendLine(line);
-            }
-
-            await File.AppendAllTextAsync(_currentFilePath, csvContent.ToString());
-
-            _logger.LogDebug("Flushed {Count} lines to {FilePath}", _dataBuffer.Count, _currentFilePath);
+            _logger.LogDebug("Flushed {Count} items to {FilePath}", _dataBuffer.Count, _currentFilePath);
 
             _dataBuffer.Clear();
             _lastFlush = DateTime.UtcNow;
@@ -219,30 +254,33 @@ public class DataFileWriter : BackgroundService
             }
 
             _driveAvailable = true;
+
+            // Update shared static properties
+            SharedDrivePath = _currentDrivePath;
+            SharedSessionPath = _currentSessionPath;
+            SharedDriveAvailable = _driveAvailable;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error ensuring session path exists");
             _driveAvailable = false;
+
+            // Update shared static properties
+            SharedDriveAvailable = false;
         }
 
     }
 
     private int GetBufferSizeInBytes()
     {
-        return _dataBuffer.Sum(line => Encoding.UTF8.GetByteCount(line + Environment.NewLine));
+        return _dataBuffer.Sum(item => item switch
+        {
+            string line => Encoding.UTF8.GetByteCount(line + Environment.NewLine),
+            byte[] binaryData => binaryData.Length,
+            _ => 0
+        });
     }
 
-    private string GetCsvHeader()
-    {
-        return _fileName.ToLower() switch
-        {
-            "imu.txt" => "timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z",
-            "gnss.raw" => "timestamp,data", // Can be customized later
-            "system.txt" => "timestamp,cpu_percent,memory_mb,temperature_c", // Can be customized later
-            _ => "timestamp,data"
-        };
-    }
 
     private string? FindUsbDrive()
     {
@@ -358,6 +396,7 @@ public class DataFileWriter : BackgroundService
             // Channel was already closed
             _logger.LogDebug("Channel writer was already closed for {FileName}", _fileName);
         }
+
         
         base.Dispose();
     }

@@ -39,12 +39,6 @@ builder.Services.AddHostedService<ImuService>();
 builder.Services.AddSingleton<GnssInitializer>();
 builder.Services.AddHostedService<GnssService>();
 
-// Add logging services
-builder.Services.AddSingleton<DataFileWriter>(provider =>
-    new DataFileWriter("imu.txt", provider.GetRequiredService<ILogger<DataFileWriter>>()));
-
-builder.Services.AddHostedService<DataFileWriter>(provider =>
-    provider.GetRequiredService<DataFileWriter>());
 
 // Add file logging status service
 builder.Services.AddHostedService<FileLoggingStatusService>();

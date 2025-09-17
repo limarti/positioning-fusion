@@ -8,16 +8,13 @@ public class FileLoggingStatusService : BackgroundService
 {
     private readonly ILogger<FileLoggingStatusService> _logger;
     private readonly IHubContext<DataHub> _hubContext;
-    private readonly DataFileWriter _dataFileWriter;
 
     public FileLoggingStatusService(
         ILogger<FileLoggingStatusService> logger,
-        IHubContext<DataHub> hubContext,
-        DataFileWriter dataFileWriter)
+        IHubContext<DataHub> hubContext)
     {
         _logger = logger;
         _hubContext = hubContext;
-        _dataFileWriter = dataFileWriter;
     }
 
 
@@ -49,9 +46,9 @@ public class FileLoggingStatusService : BackgroundService
     {
         var status = new FileLoggingStatus();
 
-        // Get USB drive information from DataFileWriter
-        status.DriveAvailable = _dataFileWriter.IsDriveAvailable;
-        status.DrivePath = _dataFileWriter.CurrentDrivePath;
+        // Get USB drive information from shared DataFileWriter properties
+        status.DriveAvailable = DataFileWriter.SharedDriveAvailable;
+        status.DrivePath = DataFileWriter.SharedDrivePath;
 
         // Get file information for active logging files
         status.ActiveFiles = new List<LoggingFileInfo>();
@@ -60,29 +57,24 @@ public class FileLoggingStatusService : BackgroundService
         {
             try
             {
-                // Use the current session from DataFileWriter if available
-                var currentSessionPath = _dataFileWriter.CurrentSessionPath;
+                // Use the current session from shared DataFileWriter properties
+                var currentSessionPath = DataFileWriter.SharedSessionPath;
                 if (!string.IsNullOrEmpty(currentSessionPath) && Directory.Exists(currentSessionPath))
                 {
                     status.CurrentSession = Path.GetFileName(currentSessionPath);
 
-                    // Check for active logging files
-                    var files = new[] { "imu.txt", "gnss.raw", "system.txt" };
-
-                    foreach (var fileName in files)
+                    // Check for all files in the current session directory
+                    var allFiles = Directory.GetFiles(currentSessionPath);
+                    foreach (var filePath in allFiles)
                     {
-                        var filePath = Path.Combine(currentSessionPath, fileName);
-                        if (File.Exists(filePath))
+                        var fileInfo = new FileInfo(filePath);
+                        status.ActiveFiles.Add(new LoggingFileInfo
                         {
-                            var fileInfo = new FileInfo(filePath);
-                            status.ActiveFiles.Add(new LoggingFileInfo
-                            {
-                                FileName = fileName,
-                                FilePath = filePath,
-                                FileSizeBytes = fileInfo.Length,
-                                LastModified = fileInfo.LastWriteTime
-                            });
-                        }
+                            FileName = fileInfo.Name,
+                            FilePath = filePath,
+                            FileSizeBytes = fileInfo.Length,
+                            LastModified = fileInfo.LastWriteTime
+                        });
                     }
                 }
 
@@ -116,7 +108,7 @@ public class FileLoggingStatusService : BackgroundService
         return status;
     }
 
-    private async Task PerformLogRotation(string drivePath)
+    private Task PerformLogRotation(string drivePath)
     {
         try
         {
@@ -124,7 +116,7 @@ public class FileLoggingStatusService : BackgroundService
             if (!Directory.Exists(loggingDir))
             {
                 _logger.LogWarning("Logging directory not found: {LoggingDir}", loggingDir);
-                return;
+                return Task.CompletedTask;
             }
 
             // Get all session directories sorted by creation time (oldest first)
@@ -137,11 +129,11 @@ public class FileLoggingStatusService : BackgroundService
             if (sessionDirs.Count <= 1)
             {
                 _logger.LogInformation("Only {SessionCount} session(s) found - skipping rotation", sessionDirs.Count);
-                return;
+                return Task.CompletedTask;
             }
 
             // Get current session to avoid deleting it
-            var currentSessionPath = _dataFileWriter.CurrentSessionPath;
+            var currentSessionPath = DataFileWriter.SharedSessionPath;
             var currentSessionName = !string.IsNullOrEmpty(currentSessionPath) 
                 ? Path.GetFileName(currentSessionPath) 
                 : null;
@@ -190,6 +182,8 @@ public class FileLoggingStatusService : BackgroundService
         {
             _logger.LogError(ex, "Error performing log rotation");
         }
+        
+        return Task.CompletedTask;
     }
 
     private bool IsSessionDirectory(string dirName)
@@ -211,6 +205,7 @@ public class FileLoggingStatusService : BackgroundService
             return 0;
         }
     }
+
 
 
 }

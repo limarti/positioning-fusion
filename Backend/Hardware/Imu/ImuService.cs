@@ -18,24 +18,27 @@ public class ImuService : BackgroundService
     private DateTime _lastSignalRSent = DateTime.MinValue;
     private readonly TimeSpan _signalRThrottleInterval = TimeSpan.FromMilliseconds(1000); // 1Hz = 1000ms interval
     private readonly object _throttleLock = new object();
+    private bool _headerWritten = false;
 
     public ImuService(
         IHubContext<DataHub> hubContext,
         ILogger<ImuService> logger,
         ImuInitializer imuInitializer,
-        ILoggerFactory loggerFactory,
-        DataFileWriter dataFileWriter)
+        ILoggerFactory loggerFactory)
     {
         _hubContext = hubContext;
         _logger = logger;
         _imuInitializer = imuInitializer;
         _imuParser = new ImuParser(loggerFactory.CreateLogger<ImuParser>());
-        _dataFileWriter = dataFileWriter;
+        _dataFileWriter = new DataFileWriter("imu.txt", loggerFactory.CreateLogger<DataFileWriter>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("IMU Service started");
+
+        // Start the data file writer
+        _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
 
         // Get the initialized serial port
         _serialPort = _imuInitializer.GetSerialPort();
@@ -106,6 +109,14 @@ public class ImuService : BackgroundService
                 var imuData = _imuParser.ParseMemsPacket(packetData);
                 if (imuData != null)
                 {
+                    // Write CSV header if this is the first data
+                    if (!_headerWritten)
+                    {
+                        var csvHeader = "timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z";
+                        _dataFileWriter.WriteData(csvHeader);
+                        _headerWritten = true;
+                    }
+
                     // Log data to file
                     var csvLine = $"{imuData.Timestamp:F2},{imuData.Acceleration.X:F4},{imuData.Acceleration.Y:F4},{imuData.Acceleration.Z:F4},{imuData.Gyroscope.X:F4},{imuData.Gyroscope.Y:F4},{imuData.Gyroscope.Z:F4},{imuData.Magnetometer.X:F2},{imuData.Magnetometer.Y:F2},{imuData.Magnetometer.Z:F2}";
                     _dataFileWriter.WriteData(csvLine);
@@ -178,6 +189,7 @@ public class ImuService : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Stopping IMU Service");
+        await _dataFileWriter.StopAsync(cancellationToken);
         await base.StopAsync(cancellationToken);
     }
 }
