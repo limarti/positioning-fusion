@@ -6,6 +6,8 @@ namespace Backend.Storage;
 
 public class DataFileWriter : BackgroundService
 {
+    public const string LoggingDirectoryName = "Logging";
+    
     private readonly ILogger<DataFileWriter> _logger;
     private readonly string _fileName;
     private readonly Channel<string> _dataChannel;
@@ -200,7 +202,7 @@ public class DataFileWriter : BackgroundService
                 _logger.LogInformation("Using flash drive: {DrivePath}", driveRoot);
             }
             
-            var loggingDir = Path.Combine(_currentDrivePath, "Logging");
+            var loggingDir = Path.Combine(_currentDrivePath, LoggingDirectoryName);
 
             // Create session directory if needed (use app start time for session name)
             var sessionFolder = _sessionStartTime.ToString("yyyy-MM-dd-HH-mm");

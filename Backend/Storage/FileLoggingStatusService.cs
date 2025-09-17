@@ -91,6 +91,20 @@ public class FileLoggingStatusService : BackgroundService
                 status.TotalSpaceBytes = driveInfo.TotalSize;
                 status.AvailableSpaceBytes = driveInfo.AvailableFreeSpace;
                 status.UsedSpaceBytes = status.TotalSpaceBytes - status.AvailableSpaceBytes;
+
+                // Check if storage usage exceeds 80% and perform cleanup if needed
+                var storageUsagePercent = (double)status.UsedSpaceBytes / status.TotalSpaceBytes * 100;
+                if (storageUsagePercent > 80.0)
+                {
+                    _logger.LogWarning("Storage usage at {UsagePercent:F1}% - triggering log rotation", storageUsagePercent);
+                    await PerformLogRotation(status.DrivePath);
+                    
+                    // Recalculate storage after cleanup
+                    driveInfo = new DriveInfo(status.DrivePath);
+                    status.TotalSpaceBytes = driveInfo.TotalSize;
+                    status.AvailableSpaceBytes = driveInfo.AvailableFreeSpace;
+                    status.UsedSpaceBytes = status.TotalSpaceBytes - status.AvailableSpaceBytes;
+                }
             }
             catch (Exception ex)
             {
@@ -100,6 +114,103 @@ public class FileLoggingStatusService : BackgroundService
         }
 
         return status;
+    }
+
+    private async Task PerformLogRotation(string drivePath)
+    {
+        try
+        {
+            var loggingDir = Path.Combine(drivePath, DataFileWriter.LoggingDirectoryName);
+            if (!Directory.Exists(loggingDir))
+            {
+                _logger.LogWarning("Logging directory not found: {LoggingDir}", loggingDir);
+                return;
+            }
+
+            // Get all session directories sorted by creation time (oldest first)
+            var sessionDirs = Directory.GetDirectories(loggingDir)
+                .Select(dir => new DirectoryInfo(dir))
+                .Where(dirInfo => IsSessionDirectory(dirInfo.Name))
+                .OrderBy(dirInfo => dirInfo.CreationTime)
+                .ToList();
+
+            if (sessionDirs.Count <= 1)
+            {
+                _logger.LogInformation("Only {SessionCount} session(s) found - skipping rotation", sessionDirs.Count);
+                return;
+            }
+
+            // Get current session to avoid deleting it
+            var currentSessionPath = _dataFileWriter.CurrentSessionPath;
+            var currentSessionName = !string.IsNullOrEmpty(currentSessionPath) 
+                ? Path.GetFileName(currentSessionPath) 
+                : null;
+
+            // Delete oldest sessions until we're under 75% usage or only current session remains
+            var driveInfo = new DriveInfo(drivePath);
+            var targetUsagePercent = 75.0;
+
+            foreach (var sessionDir in sessionDirs)
+            {
+                // Skip current session
+                if (sessionDir.Name == currentSessionName)
+                {
+                    _logger.LogDebug("Skipping current session: {SessionName}", sessionDir.Name);
+                    continue;
+                }
+
+                // Calculate current usage
+                driveInfo = new DriveInfo(drivePath);
+                var currentUsagePercent = (double)(driveInfo.TotalSize - driveInfo.AvailableFreeSpace) / driveInfo.TotalSize * 100;
+
+                if (currentUsagePercent <= targetUsagePercent)
+                {
+                    _logger.LogInformation("Storage usage now at {UsagePercent:F1}% - stopping rotation", currentUsagePercent);
+                    break;
+                }
+
+                // Calculate session size before deletion
+                var sessionSize = GetDirectorySize(sessionDir.FullName);
+                
+                _logger.LogInformation("Deleting oldest session: {SessionName} ({SizeMB:F1} MB)", 
+                    sessionDir.Name, sessionSize / (1024.0 * 1024.0));
+
+                // Delete the session directory
+                Directory.Delete(sessionDir.FullName, recursive: true);
+                
+                _logger.LogInformation("Successfully deleted session: {SessionName}", sessionDir.Name);
+            }
+
+            // Final storage check
+            driveInfo = new DriveInfo(drivePath);
+            var finalUsagePercent = (double)(driveInfo.TotalSize - driveInfo.AvailableFreeSpace) / driveInfo.TotalSize * 100;
+            _logger.LogInformation("Log rotation completed - storage usage now at {UsagePercent:F1}%", finalUsagePercent);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error performing log rotation");
+        }
+    }
+
+    private bool IsSessionDirectory(string dirName)
+    {
+        // Session directories follow pattern: yyyy-MM-dd-HH-mm
+        return DateTime.TryParseExact(dirName, "yyyy-MM-dd-HH-mm", null, 
+            System.Globalization.DateTimeStyles.None, out _);
+    }
+
+    private long GetDirectorySize(string directoryPath)
+    {
+        try
+        {
+            return Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories)
+                .Sum(file => new FileInfo(file).Length);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error calculating directory size for {DirectoryPath}", directoryPath);
+            return 0;
+        }
     }
 
 
