@@ -1,5 +1,6 @@
 <script setup>
 import SatelliteHealthChart from './SatelliteHealthChart.vue'
+import MessageRatesPanel from './MessageRatesPanel.vue'
 
 const props = defineProps({
   gnssData: {
@@ -7,6 +8,10 @@ const props = defineProps({
     required: true
   },
   dataRates: {
+    type: Object,
+    required: true
+  },
+  messageRates: {
     type: Object,
     required: true
   }
@@ -300,6 +305,9 @@ const formatAccuracy = (meters) => {
           </div>
         </div>
         
+        <!-- UBX Message Rates Subsection -->
+        <MessageRatesPanel :messageRates="messageRates" />
+
         <!-- Hardware & Environment Subsection -->
         <div class="bg-slate-100 rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
           <div class="flex items-center space-x-3 mb-4">

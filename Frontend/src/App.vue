@@ -118,6 +118,10 @@ const dataRates = ref({
   kbpsGnssOut: null
 })
 
+const messageRates = ref({
+  messageRates: {},
+  timestamp: null
+})
 
 const encoderData = ref({
   rawCount: null,
@@ -342,6 +346,11 @@ onMounted(async () => {
     dataRates.value.kbpsGnssOut = data.kbpsGnssOut
   })
 
+  connection.on("MessageRatesUpdate", (data) => {
+    messageRates.value.messageRates = data.messageRates
+    messageRates.value.timestamp = data.timestamp
+  })
+
   connection.on("FileLoggingStatusUpdate", (data) => {
     fileLoggingStatus.value.driveAvailable = data.driveAvailable
     fileLoggingStatus.value.drivePath = data.drivePath
@@ -407,7 +416,7 @@ onUnmounted(async () => {
     <main class="px-4 py-6 max-w-7xl mx-auto">
       <!-- GNSS System - Aligned with columns below -->
       <div class="mb-6 max-w-7xl mx-auto">
-        <GnssPanel :gnssData="gnssData" :dataRates="dataRates" />
+        <GnssPanel :gnssData="gnssData" :dataRates="dataRates" :messageRates="messageRates" />
       </div>
       
       <!-- Other Panels - Centered Two Column Masonry Layout -->

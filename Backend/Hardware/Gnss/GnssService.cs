@@ -19,9 +19,10 @@ public class GnssService : BackgroundService
     private long _bytesSent = 0;
     private DateTime _lastRateUpdate = DateTime.UtcNow;
     
-    // UBX message frequency tracking
-    private readonly Dictionary<string, int> _messageCounters = new();
-    private DateTime _lastMessageRateLog = DateTime.UtcNow;
+    // UBX message frequency tracking with 5-second rolling window
+    private readonly Dictionary<string, Queue<DateTime>> _messageTimestamps = new();
+    private DateTime _lastMessageRateSend = DateTime.UtcNow;
+    private const int RollingWindowSeconds = 5;
     private double _currentInRate = 0.0;
     private double _currentOutRate = 0.0;
 
@@ -224,18 +225,22 @@ public class GnssService : BackgroundService
             var messageName = Parsers.GnssParserUtils.GetConstantName(messageId);
             var messageKey = $"{className}.{messageName}";
             
-            // Track message frequency
-            lock (_messageCounters)
+            // Track message frequency with timestamps
+            var now = DateTime.UtcNow;
+            lock (_messageTimestamps)
             {
-                _messageCounters[messageKey] = _messageCounters.GetValueOrDefault(messageKey, 0) + 1;
+                if (!_messageTimestamps.ContainsKey(messageKey))
+                {
+                    _messageTimestamps[messageKey] = new Queue<DateTime>();
+                }
+                _messageTimestamps[messageKey].Enqueue(now);
             }
             
-            // Log message rates every second
-            var now = DateTime.UtcNow;
-            if ((now - _lastMessageRateLog).TotalMilliseconds >= 1000)
+            // Send message rates to frontend every second
+            if ((now - _lastMessageRateSend).TotalMilliseconds >= 1000)
             {
-                LogMessageRates();
-                _lastMessageRateLog = now;
+                await SendMessageRatesToFrontend();
+                _lastMessageRateSend = now;
             }
         }
         catch (Exception ex)
@@ -244,18 +249,39 @@ public class GnssService : BackgroundService
         }
     }
 
-    private void LogMessageRates()
+    private async Task SendMessageRatesToFrontend()
     {
-        Dictionary<string, int> currentCounts;
-        lock (_messageCounters)
+        var now = DateTime.UtcNow;
+        var cutoffTime = now.AddSeconds(-RollingWindowSeconds);
+        var messageRates = new Dictionary<string, double>();
+
+        lock (_messageTimestamps)
         {
-            currentCounts = new Dictionary<string, int>(_messageCounters);
-            _messageCounters.Clear();
+            foreach (var (messageType, timestamps) in _messageTimestamps)
+            {
+                // Remove timestamps older than 5 seconds
+                while (timestamps.Count > 0 && timestamps.Peek() < cutoffTime)
+                {
+                    timestamps.Dequeue();
+                }
+
+                // Calculate rate: messages in last 5 seconds / 5 seconds
+                var rate = timestamps.Count / (double)RollingWindowSeconds;
+                messageRates[messageType] = rate;
+            }
         }
 
-        foreach (var (messageType, count) in currentCounts.OrderBy(x => x.Key))
+        // Send to frontend via SignalR
+        await _hubContext.Clients.All.SendAsync("MessageRatesUpdate", new MessageRatesUpdate
         {
-            _logger.LogInformation("🔍 Receiving UBX message {MessageType} at {Rate} Hz", messageType, count);
+            MessageRates = messageRates,
+            Timestamp = now
+        });
+
+        // Also log for debugging
+        foreach (var (messageType, rate) in messageRates.OrderBy(x => x.Key))
+        {
+            _logger.LogDebug("🔍 UBX message {MessageType} at {Rate:F1} Hz", messageType, rate);
         }
     }
 

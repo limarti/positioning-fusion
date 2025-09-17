@@ -64,6 +64,7 @@ public static class UbxConstants
     public const byte CFG_VALSET = 0x8A; // Write configuration key/values
     public const byte CFG_VALGET = 0x8B; // Read configuration key/values
     public const byte CFG_VALDEL = 0x8C; // Delete configuration key/values
+    public const byte CFG_RST = 0x04;    // Reset receiver / clear configuration
 
     // Legacy messages (avoid on X20P where possible; kept for completeness):
     public const byte CFG_PRT = 0x00;    // Port configuration (legacy)

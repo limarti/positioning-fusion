@@ -358,7 +358,7 @@ public class GnssInitializer
             _logger.LogInformation("ZED-X20P: Using CFG-VALSET for modern UBX configuration");
             _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz", SystemConfiguration.CorrectionsOperation, SystemConfiguration.GnssDataRate);
 
-            // Use CFG-VALSET to enable supported messages
+            // Use CFG-VALSET to configure messages (explicit rates override any defaults)
             await ConfigureMessagesWithValset();
 
             _logger.LogInformation("ZED-X20P UBX configuration completed");
