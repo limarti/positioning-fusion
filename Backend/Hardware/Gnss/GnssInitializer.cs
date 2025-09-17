@@ -369,19 +369,6 @@ public class GnssInitializer
         }
     }
 
-    private static byte[] CreateCfgMsgPayload(byte msgClass, byte msgId, byte uart1Rate = UbxConstants.RATE_1HZ)
-    {
-        return new byte[]
-        {
-            msgClass, msgId, 0x00,                    // Message class, ID, reserved
-            UbxConstants.RATE_DISABLED,               // DDC (I2C) rate
-            uart1Rate,                                // UART1 rate (our target)
-            UbxConstants.RATE_DISABLED,               // UART2 rate
-            UbxConstants.RATE_DISABLED,               // USB rate
-            UbxConstants.RATE_DISABLED                // SPI rate
-        };
-    }
-
     private async Task ConfigureMessagesWithValset()
     {
         try
@@ -389,18 +376,17 @@ public class GnssInitializer
             _logger.LogInformation("Using CFG-VALSET to configure ZED-X20P messages");
 
             // First, set the navigation rate to match desired output frequency
-            var desiredRateHz = SystemConfiguration.GnssDataRate;
-            await SetNavigationRate(desiredRateHz);
+            await SetNavigationRate(SystemConfiguration.GnssDataRate);
 
             // Enable messages to output every navigation solution (rate = 1)
             // Since we set nav rate to match desired frequency, this gives us the correct output rate
             const byte outputEveryNavSolution = 1;
-            await EnableMessageWithValset("MSGOUT-UBX_NAV_PVT_UART1", outputEveryNavSolution);
-            await EnableMessageWithValset("MSGOUT-UBX_NAV_SAT_UART1", outputEveryNavSolution);  // Enable satellite data!
-            await EnableMessageWithValset("MSGOUT-UBX_RXM_RAWX_UART1", outputEveryNavSolution);
-            await EnableMessageWithValset("MSGOUT-UBX_RXM_SFRBX_UART1", outputEveryNavSolution);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, outputEveryNavSolution);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, outputEveryNavSolution);  // Enable satellite data!
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, outputEveryNavSolution);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_SFRBX_UART1, outputEveryNavSolution);
 
-            _logger.LogInformation("CFG-VALSET configuration completed for {DesiredRate}Hz output", desiredRateHz);
+            _logger.LogInformation("CFG-VALSET configuration completed for {DesiredRate}Hz output", SystemConfiguration.GnssDataRate);
         }
         catch (Exception ex)
         {
@@ -442,12 +428,11 @@ public class GnssInitializer
         }
     }
 
-    private async Task EnableMessageWithValset(string keyName, byte rate)
+    private async Task EnableMessageWithValset(uint keyId, byte rate)
     {
         try
         {
             // CFG-VALSET payload: version(1) + layer(1) + transaction(1) + reserved(1) + keyId(4) + value(1)
-            var keyId = GetKeyIdForMessage(keyName);
 
             var payload = new List<byte>
             {
@@ -467,21 +452,10 @@ public class GnssInitializer
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to enable message {KeyName}", keyName);
+            _logger.LogError(ex, "Failed to enable message with key ID {KeyId:X8}", keyId);
         }
     }
 
-    private static uint GetKeyIdForMessage(string keyName)
-    {
-        return keyName switch
-        {
-            "MSGOUT-UBX_NAV_PVT_UART1" => 0x20910007,     // NAV-PVT UART1 output rate
-            "MSGOUT-UBX_NAV_SAT_UART1" => 0x20910016,     // NAV-SAT UART1 output rate
-            "MSGOUT-UBX_RXM_RAWX_UART1" => 0x209102a5,    // RXM-RAWX UART1 output rate
-            "MSGOUT-UBX_RXM_SFRBX_UART1" => 0x20910232,   // RXM-SFRBX UART1 output rate
-            _ => throw new ArgumentException($"Unknown key: {keyName}")
-        };
-    }
 
     private async Task<bool> SendUbxConfigMessageAsync(byte messageClass, byte messageId, byte[] payload)
     {

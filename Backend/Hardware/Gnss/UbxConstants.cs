@@ -80,7 +80,7 @@ public static class UbxConstants
     }
 
     // -------------------------
-    // Port indices (legacy CFG-MSG payload ordering — avoid for X20P)
+    // Port indices (legacy CFG-MSG payload ordering ï¿½ avoid for X20P)
     // -------------------------
     public const int PORT_INDEX_DDC = 0; // I2C
     public const int PORT_INDEX_UART1 = 1; // Primary UART
@@ -123,6 +123,14 @@ public static class UbxConstants
     public const byte CARRIER_SOLUTION_NONE = 0;
     public const byte CARRIER_SOLUTION_FLOAT = 1;
     public const byte CARRIER_SOLUTION_FIXED = 2;
+
+    // -------------------------
+    // CFG-VALSET message output key IDs
+    // -------------------------
+    public const uint MSGOUT_UBX_NAV_PVT_UART1 = 0x20910007;     // NAV-PVT UART1 output rate
+    public const uint MSGOUT_UBX_NAV_SAT_UART1 = 0x20910016;     // NAV-SAT UART1 output rate
+    public const uint MSGOUT_UBX_RXM_RAWX_UART1 = 0x209102a5;    // RXM-RAWX UART1 output rate
+    public const uint MSGOUT_UBX_RXM_SFRBX_UART1 = 0x20910232;   // RXM-SFRBX UART1 output rate
 
     // -------------------------
     // Recommended defaults for X20P UART
