@@ -40,12 +40,24 @@ const getUsageColor = (usage) => {
       <div class="space-y-1">
         <div class="flex justify-between">
           <span class="text-slate-500">Battery:</span>
-          <span :class="powerStatus.batteryLevel !== null ? getBatteryColor(powerStatus.batteryLevel) : 'text-slate-400'">{{ powerStatus.batteryLevel !== null ? powerStatus.batteryLevel + '%' : '—' }}</span>
+          <div class="flex items-center space-x-1">
+            <span :class="powerStatus.batteryLevel !== null ? getBatteryColor(powerStatus.batteryLevel) : 'text-slate-400'">{{ powerStatus.batteryLevel !== null ? powerStatus.batteryLevel.toFixed(1) + '%' : '—' }}</span>
+            <span v-if="powerStatus.isExternalPowerConnected" class="text-green-500 text-xs">🔌</span>
+            <span v-else class="text-orange-500 text-xs">🔋</span>
+          </div>
         </div>
         <div class="w-full bg-slate-200 rounded-full h-1 mb-1">
           <div class="h-1 rounded-full transition-all" 
                :class="powerStatus.batteryLevel !== null ? (powerStatus.batteryLevel > 60 ? 'bg-emerald-500' : powerStatus.batteryLevel > 30 ? 'bg-yellow-500' : 'bg-red-500') : 'bg-slate-300'"
                :style="`width: ${powerStatus.batteryLevel !== null ? powerStatus.batteryLevel : 0}%`"></div>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">Voltage:</span>
+          <span :class="powerStatus.batteryVoltage !== null ? 'font-mono text-blue-600' : 'text-slate-400'">{{ powerStatus.batteryVoltage !== null ? powerStatus.batteryVoltage.toFixed(2) + 'V' : '—' }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">Power:</span>
+          <span :class="powerStatus.isExternalPowerConnected ? 'text-green-600' : 'text-orange-600'">{{ powerStatus.isExternalPowerConnected ? 'Plugged In' : 'Battery Only' }}</span>
         </div>
         <div class="flex justify-between">
           <span class="text-slate-500">Draw:</span>

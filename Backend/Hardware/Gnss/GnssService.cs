@@ -18,6 +18,10 @@ public class GnssService : BackgroundService
     private long _bytesReceived = 0;
     private long _bytesSent = 0;
     private DateTime _lastRateUpdate = DateTime.UtcNow;
+    
+    // UBX message frequency tracking
+    private readonly Dictionary<string, int> _messageCounters = new();
+    private DateTime _lastMessageRateLog = DateTime.UtcNow;
     private double _currentInRate = 0.0;
     private double _currentOutRate = 0.0;
 
@@ -215,10 +219,43 @@ public class GnssService : BackgroundService
                     _logger.LogDebug("UBX message data (first 16 bytes): {SampleData}", sampleData);
                 }
             }
+
+            var className = Parsers.GnssParserUtils.GetConstantName(messageClass);
+            var messageName = Parsers.GnssParserUtils.GetConstantName(messageId);
+            var messageKey = $"{className}.{messageName}";
+            
+            // Track message frequency
+            lock (_messageCounters)
+            {
+                _messageCounters[messageKey] = _messageCounters.GetValueOrDefault(messageKey, 0) + 1;
+            }
+            
+            // Log message rates every second
+            var now = DateTime.UtcNow;
+            if ((now - _lastMessageRateLog).TotalMilliseconds >= 1000)
+            {
+                LogMessageRates();
+                _lastMessageRateLog = now;
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing UBX message Class=0x{Class:X2}, ID=0x{Id:X2}", messageClass, messageId);
+        }
+    }
+
+    private void LogMessageRates()
+    {
+        Dictionary<string, int> currentCounts;
+        lock (_messageCounters)
+        {
+            currentCounts = new Dictionary<string, int>(_messageCounters);
+            _messageCounters.Clear();
+        }
+
+        foreach (var (messageType, count) in currentCounts.OrderBy(x => x.Key))
+        {
+            _logger.LogInformation("🔍 Receiving UBX message {MessageType} at {Rate} Hz", messageType, count);
         }
     }
 

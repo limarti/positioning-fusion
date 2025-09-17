@@ -20,6 +20,7 @@ public static class UbxConstants
     public const byte CLASS_ACK = 0x05;  // ACK-ACK / ACK-NAK
     public const byte CLASS_CFG = 0x06;  // Configuration (VALSET/VALGET/VALDEL)
     public const byte CLASS_MON = 0x0A;  // Monitoring (MON-VER, etc.)
+    public const byte CLASS_TIM = 0x0D;  // Timing messages
 
     // -------------------------
     // ACK messages
@@ -31,12 +32,14 @@ public static class UbxConstants
     // MON messages
     // -------------------------
     public const byte MON_VER = 0x04;    // Receiver / software version
+    public const byte MON_COMMS = 0x36;  // Communication port information
 
     // -------------------------
     // NAV messages (use modern, supported ones)
     // -------------------------
     public const byte NAV_PVT = 0x07;    // Position/Velocity/Time (primary)
     public const byte NAV_SAT = 0x35;    // Satellite info (per-satellite SV state)
+    public const byte NAV_SIG = 0x43;    // Signal information (per-signal data)
     // NOTE: Avoid legacy NAV messages on X20P:
     // - NAV-STATUS (0x03) is deprecated on newer platforms.
     // - NAV-POSLLH (0x02) and NAV-SOL (0x06) are legacy; prefer NAV-PVT.
@@ -45,7 +48,14 @@ public static class UbxConstants
     // RXM messages
     // -------------------------
     public const byte RXM_SFRBX = 0x13;  // Broadcast nav data subframe (multi-GNSS)
-    public const byte RXM_RAWX = 0x15;  // Raw measurement data
+    public const byte RXM_RAWX = 0x15;   // Raw measurement data
+    public const byte RXM_COR = 0x34;    // Differential correction input status
+
+    // -------------------------
+    // TIM messages
+    // -------------------------
+    public const byte TIM_TM2 = 0x03;    // Time mark data
+    public const byte TIM_TP = 0x01;     // Time pulse timedata
 
     // -------------------------
     // CFG messages
@@ -129,8 +139,13 @@ public static class UbxConstants
     // -------------------------
     public const uint MSGOUT_UBX_NAV_PVT_UART1 = 0x20910007;     // NAV-PVT UART1 output rate
     public const uint MSGOUT_UBX_NAV_SAT_UART1 = 0x20910016;     // NAV-SAT UART1 output rate
+    public const uint MSGOUT_UBX_NAV_SIG_UART1 = 0x20910345;     // NAV-SIG UART1 output rate
     public const uint MSGOUT_UBX_RXM_RAWX_UART1 = 0x209102a5;    // RXM-RAWX UART1 output rate
     public const uint MSGOUT_UBX_RXM_SFRBX_UART1 = 0x20910232;   // RXM-SFRBX UART1 output rate
+    public const uint MSGOUT_UBX_RXM_COR_UART1 = 0x209102b6;     // RXM-COR UART1 output rate
+    public const uint MSGOUT_UBX_TIM_TM2_UART1 = 0x20910179;     // TIM-TM2 UART1 output rate
+    public const uint MSGOUT_UBX_TIM_TP_UART1 = 0x2091017a;      // TIM-TP UART1 output rate
+    public const uint MSGOUT_UBX_MON_COMMS_UART1 = 0x2091034f;   // MON-COMMS UART1 output rate
 
     // -------------------------
     // Recommended defaults for X20P UART
@@ -139,4 +154,5 @@ public static class UbxConstants
     // UBX input and NMEA output enabled by default. You can switch
     // to higher rates via CFG-VALSET (UART1_BAUDRATE) then reopen.
     public const int DEFAULT_UART_BAUD = 38400;
+
 }

@@ -1,6 +1,8 @@
 using Backend.Hubs;
 using Microsoft.AspNetCore.SignalR;
 using System.Globalization;
+using System.Device.I2c;
+using System.Device.Gpio;
 
 namespace Backend.System;
 
@@ -13,10 +15,51 @@ public class SystemMonitoringService : BackgroundService
     private long _prevIdleAll = 0;   // idle + iowait
     private long _prevTotal = 0;   // idleAll + nonIdle
 
+    // MAX17040/MAX17041 I2C constants
+    private const byte MAX17040_ADDRESS = 0x36;
+    private const byte VCELL_REG = 0x02;
+    private const byte SOC_REG = 0x04;
+    private const byte CONFIG_REG = 0x0C;
+    private I2cDevice? _i2cDevice;
+
+    // GPIO6 Power Loss Detect (PLD) pin
+    private const int POWER_LOSS_DETECT_PIN = 6;
+    private GpioController? _gpioController;
+
     public SystemMonitoringService(IHubContext<DataHub> hubContext, ILogger<SystemMonitoringService> logger)
     {
         _hubContext = hubContext;
         _logger = logger;
+        InitializeI2c();
+        InitializeGpio();
+    }
+
+    private void InitializeI2c()
+    {
+        try
+        {
+            var settings = new I2cConnectionSettings(1, MAX17040_ADDRESS);
+            _i2cDevice = I2cDevice.Create(settings);
+            _logger.LogInformation("MAX17040 I2C device initialized successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to initialize MAX17040 I2C device - battery monitoring will be unavailable");
+        }
+    }
+
+    private void InitializeGpio()
+    {
+        try
+        {
+            _gpioController = new GpioController();
+            _gpioController.OpenPin(POWER_LOSS_DETECT_PIN, PinMode.Input);
+            _logger.LogInformation("GPIO6 Power Loss Detect pin initialized successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to initialize GPIO6 Power Loss Detect pin - power status detection will be unavailable");
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -33,11 +76,14 @@ public class SystemMonitoringService : BackgroundService
                 {
                     CpuUsage = systemHealth.CpuUsage,
                     MemoryUsage = systemHealth.MemoryUsage,
-                    Temperature = systemHealth.Temperature
+                    Temperature = systemHealth.Temperature,
+                    BatteryLevel = systemHealth.BatteryLevel,
+                    BatteryVoltage = systemHealth.BatteryVoltage,
+                    IsExternalPowerConnected = systemHealth.IsExternalPowerConnected
                 }, stoppingToken);
 
-                _logger.LogDebug("System health update sent: CPU={CpuUsage:F1}%, Memory={MemoryUsage:F1}%, Temp={Temperature:F1}°C",
-                    systemHealth.CpuUsage, systemHealth.MemoryUsage, systemHealth.Temperature);
+                _logger.LogDebug("System health update sent: CPU={CpuUsage:F1}%, Memory={MemoryUsage:F1}%, Temp={Temperature:F1}°C, Battery={BatteryLevel:F1}%, Voltage={BatteryVoltage:F2}V, ExternalPower={IsExternalPowerConnected}",
+                    systemHealth.CpuUsage, systemHealth.MemoryUsage, systemHealth.Temperature, systemHealth.BatteryLevel, systemHealth.BatteryVoltage, systemHealth.IsExternalPowerConnected);
             }
             catch (Exception ex)
             {
@@ -53,12 +99,16 @@ public class SystemMonitoringService : BackgroundService
         var cpuUsage = await GetCpuUsage();
         var memoryUsage = await GetMemoryUsage();
         var temperature = await GetTemperature();
+        var batteryData = GetBatteryData();
 
         return new SystemHealth
         {
             CpuUsage = cpuUsage,
             MemoryUsage = memoryUsage,
-            Temperature = temperature
+            Temperature = temperature,
+            BatteryLevel = batteryData.Level,
+            BatteryVoltage = batteryData.Voltage,
+            IsExternalPowerConnected = batteryData.IsExternalPowerConnected
         };
     }
 
@@ -189,6 +239,66 @@ public class SystemMonitoringService : BackgroundService
             return 0.0;
         }
     }
+
+    private bool ReadPowerLossDetect()
+    {
+        if (_gpioController == null)
+        {
+            return false; // Assume power lost if GPIO not available
+        }
+
+        try
+        {
+            // GPIO6 PLD: LOW = power OK (plugged in), HIGH = power lost
+            var pinValue = _gpioController.Read(POWER_LOSS_DETECT_PIN);
+            return pinValue == PinValue.Low; // Return true if external power connected
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read GPIO6 Power Loss Detect pin");
+            return false; // Assume power lost on error
+        }
+    }
+
+    private (double Level, double Voltage, bool IsExternalPowerConnected) GetBatteryData()
+    {
+        // Read external power status from GPIO6 PLD
+        var isExternalPowerConnected = ReadPowerLossDetect();
+
+        if (_i2cDevice == null)
+        {
+            return (0.0, 0.0, isExternalPowerConnected);
+        }
+
+        try
+        {
+            // Read battery voltage (VCELL register)
+            var voltageBytes = new byte[2];
+            _i2cDevice.WriteRead(new byte[] { VCELL_REG }, voltageBytes);
+            var voltageRaw = (voltageBytes[0] << 8) | voltageBytes[1];
+            var voltage = (voltageRaw >> 4) * 0.00125; // 1.25mV per bit
+
+            // Read State of Charge (SOC register)
+            var socBytes = new byte[2];
+            _i2cDevice.WriteRead(new byte[] { SOC_REG }, socBytes);
+            var socRaw = (socBytes[0] << 8) | socBytes[1];
+            var batteryLevel = socRaw / 256.0; // 1/256% per bit
+
+            return (Math.Clamp(batteryLevel, 0.0, 100.0), voltage, isExternalPowerConnected);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read battery data from MAX17040");
+            return (0.0, 0.0, isExternalPowerConnected);
+        }
+    }
+
+    public override void Dispose()
+    {
+        _i2cDevice?.Dispose();
+        _gpioController?.Dispose();
+        base.Dispose();
+    }
 }
 
 public class SystemHealth
@@ -196,4 +306,7 @@ public class SystemHealth
     public double CpuUsage { get; set; }
     public double MemoryUsage { get; set; }
     public double Temperature { get; set; }
+    public double BatteryLevel { get; set; }
+    public double BatteryVoltage { get; set; }
+    public bool IsExternalPowerConnected { get; set; }
 }

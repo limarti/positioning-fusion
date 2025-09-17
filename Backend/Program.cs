@@ -1,10 +1,24 @@
-using Backend.Hubs;
-using Backend.Hardware.Imu;
 using Backend.Hardware.Gnss;
-using Backend.System;
+using Backend.Hardware.Imu;
+using Backend.Hubs;
 using Backend.Storage;
+using Backend.System;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Console;
 
 var builder = WebApplication.CreateBuilder(args);
+
+
+
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole(options =>
+{
+    options.FormatterName = "inline";
+});
+builder.Services.AddSingleton<ConsoleFormatter, InlineFormatter>();
+
+
 
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -28,6 +42,7 @@ builder.Services.AddHostedService<GnssService>();
 // Add logging services
 builder.Services.AddSingleton<DataFileWriter>(provider =>
     new DataFileWriter("imu.txt", provider.GetRequiredService<ILogger<DataFileWriter>>()));
+
 builder.Services.AddHostedService<DataFileWriter>(provider =>
     provider.GetRequiredService<DataFileWriter>());
 
@@ -104,4 +119,36 @@ app.Run();
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+}
+
+// Local record/class *inside Program.cs*:
+sealed class InlineFormatter : ConsoleFormatter
+{
+    public InlineFormatter() : base("inline") { }
+
+    public override void Write<TState>(
+        in LogEntry<TState> logEntry,
+        IExternalScopeProvider? scopeProvider,
+        TextWriter textWriter)
+    {
+        var msg = logEntry.Formatter?.Invoke(logEntry.State, logEntry.Exception);
+        if (string.IsNullOrEmpty(msg)) return;
+
+        var level = logEntry.LogLevel switch
+        {
+            LogLevel.Trace => "trace",
+            LogLevel.Debug => "dbug",
+            LogLevel.Information => "info",
+            LogLevel.Warning => "warn",
+            LogLevel.Error => "fail",
+            LogLevel.Critical => "crit",
+            _ => "info"
+        };
+
+        textWriter.Write(DateTime.Now.ToString("HH:mm:ss.fff"));
+        textWriter.Write(": ");
+        textWriter.Write(level);
+        textWriter.Write(": ");
+        textWriter.WriteLine(msg);
+    }
 }

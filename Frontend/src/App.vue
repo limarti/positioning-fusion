@@ -96,12 +96,16 @@ const imuData = ref({
 const systemHealth = ref({
   cpuUsage: null,
   memoryUsage: null,
-  temperature: null
+  temperature: null,
+  batteryLevel: null,
+  batteryVoltage: null,
+  isExternalPowerConnected: false
 })
 
 const powerStatus = ref({
   batteryLevel: null,
-  isCharging: false,
+  batteryVoltage: null,
+  isExternalPowerConnected: false,
   powerConsumption: null,
   estimatedRuntime: null
 })
@@ -240,6 +244,14 @@ onMounted(async () => {
     systemHealth.value.cpuUsage = data.cpuUsage
     systemHealth.value.memoryUsage = data.memoryUsage
     systemHealth.value.temperature = data.temperature
+    systemHealth.value.batteryLevel = data.batteryLevel
+    systemHealth.value.batteryVoltage = data.batteryVoltage
+    systemHealth.value.isExternalPowerConnected = data.isExternalPowerConnected
+    
+    // Update powerStatus with battery data for the SystemPanel
+    powerStatus.value.batteryLevel = data.batteryLevel
+    powerStatus.value.batteryVoltage = data.batteryVoltage
+    powerStatus.value.isExternalPowerConnected = data.isExternalPowerConnected
   })
 
   connection.on("SatelliteUpdate", (data) => {

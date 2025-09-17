@@ -124,7 +124,7 @@ public class GnssInitializer
                 // If we're not already at 460800, try to switch to it for optimal performance
                 if (baudRate != 460800)
                 {
-                    _logger.LogInformation("Switching GNSS to 460800 baud for optimal performance");
+                    _logger.LogInformation("Switching GNSS to 460800 baud");
                     if (await SwitchTo460800BaudAsync(testPort, (uint)baudRate, portName))
                     {
                         // Successfully switched - _serialPort is now set to 460800
@@ -383,8 +383,13 @@ public class GnssInitializer
             const byte outputEveryNavSolution = 1;
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, outputEveryNavSolution);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, outputEveryNavSolution);  // Enable satellite data!
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SIG_UART1, outputEveryNavSolution);  // Enable signal data!
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, outputEveryNavSolution);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_SFRBX_UART1, outputEveryNavSolution);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_COR_UART1, outputEveryNavSolution);   // Enable correction status!
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TM2_UART1, outputEveryNavSolution);   // Enable time mark data!
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, outputEveryNavSolution);    // Enable time pulse data!
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, outputEveryNavSolution); // Enable communication monitor!
 
             _logger.LogInformation("CFG-VALSET configuration completed for {DesiredRate}Hz output", SystemConfiguration.GnssDataRate);
         }
@@ -430,8 +435,13 @@ public class GnssInitializer
 
     private async Task EnableMessageWithValset(uint keyId, byte rate)
     {
+        var messageName = Parsers.GnssParserUtils.GetKeyIdConstantName(keyId);
+        
         try
         {
+            _logger.LogInformation("Enabling UBX message {MessageName} (Key ID: 0x{KeyId:X8}) with rate {Rate}", 
+                messageName, keyId, rate);
+
             // CFG-VALSET payload: version(1) + layer(1) + transaction(1) + reserved(1) + keyId(4) + value(1)
 
             var payload = new List<byte>
@@ -448,14 +458,22 @@ public class GnssInitializer
             // Add value (1 byte for message rate)
             payload.Add(rate);
 
-            await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+            var success = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+            
+            if (success)
+            {
+                _logger.LogInformation("✓ ACK", messageName);
+            }
+            else
+            {
+                _logger.LogWarning("✗ UBX message {MessageName} failed to enable (NAK/timeout)", messageName);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to enable message with key ID {KeyId:X8}", keyId);
+            _logger.LogError(ex, "Failed to enable UBX message {MessageName} (Key ID: 0x{KeyId:X8})", messageName, keyId);
         }
     }
-
 
     private async Task<bool> SendUbxConfigMessageAsync(byte messageClass, byte messageId, byte[] payload)
     {
@@ -475,16 +493,124 @@ public class GnssInitializer
             _serialPort.DiscardOutBuffer();
             _serialPort.Write(ubxMessage, 0, ubxMessage.Length);
 
-            // Wait for ACK response and processing
-            await Task.Delay(1000);
-
-            return true;
+            // Wait for and parse ACK/NAK response
+            var response = await WaitForUbxAckResponse(messageClass, messageId);
+            
+            if (response.HasValue)
+            {
+                if (response.Value)
+                {
+                    _logger.LogDebug("UBX config ACK received for Class=0x{Class:X2}, ID=0x{Id:X2}", messageClass, messageId);
+                    return true;
+                }
+                else
+                {
+                    _logger.LogWarning("UBX config NAK received for Class=0x{Class:X2}, ID=0x{Id:X2}", messageClass, messageId);
+                    return false;
+                }
+            }
+            else
+            {
+                _logger.LogWarning("No UBX response received for Class=0x{Class:X2}, ID=0x{Id:X2} (timeout)", messageClass, messageId);
+                return false;
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send UBX config message");
             return false;
         }
+    }
+
+    private async Task<bool?> WaitForUbxAckResponse(byte expectedClass, byte expectedId)
+    {
+        if (_serialPort == null || !_serialPort.IsOpen)
+        {
+            return null;
+        }
+
+        const int timeoutMs = 3000;
+        var buffer = new List<byte>();
+        var endTime = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+
+        while (DateTime.UtcNow < endTime)
+        {
+            try
+            {
+                if (_serialPort.BytesToRead > 0)
+                {
+                    var data = new byte[_serialPort.BytesToRead];
+                    var bytesRead = _serialPort.Read(data, 0, data.Length);
+                    buffer.AddRange(data.Take(bytesRead));
+
+                    // Look for UBX ACK/NAK messages in the buffer
+                    var ackResult = ParseUbxAckFromBuffer(buffer, expectedClass, expectedId);
+                    if (ackResult.HasValue)
+                    {
+                        _logger.LogDebug("UBX response parsed: {Response} for Class=0x{Class:X2}, ID=0x{Id:X2}", 
+                            ackResult.Value ? "ACK" : "NAK", expectedClass, expectedId);
+                        return ackResult.Value;
+                    }
+                }
+
+                await Task.Delay(50); // Small delay to avoid busy waiting
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error reading UBX response");
+                break;
+            }
+        }
+
+        _logger.LogDebug("Timeout waiting for UBX response for Class=0x{Class:X2}, ID=0x{Id:X2}", expectedClass, expectedId);
+        return null;
+    }
+
+    private bool? ParseUbxAckFromBuffer(List<byte> buffer, byte expectedClass, byte expectedId)
+    {
+        // Look for UBX sync pattern (0xB5 0x62)
+        for (int i = 0; i < buffer.Count - 7; i++) // Minimum UBX message is 8 bytes
+        {
+            if (buffer[i] == UbxConstants.SYNC_CHAR_1 && buffer[i + 1] == UbxConstants.SYNC_CHAR_2)
+            {
+                // Check if we have enough bytes for a complete ACK/NAK message
+                if (i + 9 >= buffer.Count) continue; // ACK/NAK is 10 bytes total
+
+                var messageClass = buffer[i + 2];
+                var messageId = buffer[i + 3];
+                var length = BitConverter.ToUInt16(new byte[] { buffer[i + 4], buffer[i + 5] }, 0);
+
+                // Check for ACK class (0x05)
+                if (messageClass == UbxConstants.CLASS_ACK && length == 2)
+                {
+                    var ackClass = buffer[i + 6];
+                    var ackId = buffer[i + 7];
+
+                    // Verify this ACK/NAK is for our message
+                    if (ackClass == expectedClass && ackId == expectedId)
+                    {
+                        if (messageId == UbxConstants.ACK_ACK)
+                        {
+                            // Remove processed bytes from buffer
+                            buffer.RemoveRange(0, i + 10);
+                            return true; // ACK
+                        }
+                        else if (messageId == UbxConstants.ACK_NAK)
+                        {
+                            // Remove processed bytes from buffer
+                            buffer.RemoveRange(0, i + 10);
+                            return false; // NAK
+                        }
+                    }
+                }
+
+                // Remove invalid/processed sync pattern
+                buffer.RemoveRange(0, i + 2);
+                i = -1; // Reset search after buffer modification
+            }
+        }
+
+        return null; // No complete ACK/NAK found yet
     }
 
     private byte[] CreateUbxMessage(byte messageClass, byte messageId, byte[] payload)
