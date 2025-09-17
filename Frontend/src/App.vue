@@ -290,9 +290,6 @@ onMounted(async () => {
 
   connection.on("PvtUpdate", (data) => {
 
-    // Update connection status
-    gnssData.value.connected = data.connected ?? false
-
     // Update position and navigation data from NAV-PVT messages
     gnssData.value.latitude = data.latitude
     gnssData.value.longitude = data.longitude
