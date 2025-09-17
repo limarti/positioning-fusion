@@ -109,7 +109,9 @@ const powerStatus = ref({
 const dataRates = ref({
   gnssRate: null,
   imuRate: null,
-  correctionRate: null
+  correctionRate: null,
+  kbpsGnssIn: null,
+  kbpsGnssOut: null
 })
 
 const fileManagement = ref({
@@ -320,6 +322,11 @@ onMounted(async () => {
 
     gnssData.value.satellitesUsed = data.numSatellites
     gnssData.value.tAcc = data.timeAccuracy
+  })
+
+  connection.on("DataRatesUpdate", (data) => {
+    dataRates.value.kbpsGnssIn = data.kbpsGnssIn
+    dataRates.value.kbpsGnssOut = data.kbpsGnssOut
   })
 
   try {

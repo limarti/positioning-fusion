@@ -33,4 +33,9 @@ public class DataHub : Hub
             Temperature = systemHealth.Temperature
         });
     }
+
+    public async Task SendDataRatesUpdate(DataRatesUpdate dataRates)
+    {
+        await Clients.All.SendAsync("DataRatesUpdate", dataRates);
+    }
 }

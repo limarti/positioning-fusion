@@ -66,3 +66,9 @@ public class VersionUpdate
     public string HardwareVersion { get; set; } = string.Empty;
     public string ReceiverType { get; set; } = string.Empty;
 }
+
+public class DataRatesUpdate
+{
+    public double? KbpsGnssIn { get; set; }
+    public double? KbpsGnssOut { get; set; }
+}

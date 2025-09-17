@@ -14,6 +14,13 @@ public class GnssService : BackgroundService
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
 
+    // Data rate tracking
+    private long _bytesReceived = 0;
+    private long _bytesSent = 0;
+    private DateTime _lastRateUpdate = DateTime.UtcNow;
+    private double _currentInRate = 0.0;
+    private double _currentOutRate = 0.0;
+
     public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer)
     {
         _hubContext = hubContext;
@@ -32,6 +39,14 @@ public class GnssService : BackgroundService
 
             // Send disconnected status to frontend
             await _hubContext.Clients.All.SendAsync("SatelliteUpdate", new SatelliteUpdate { Connected = false }, stoppingToken);
+
+            // Send zero data rates since GNSS is disconnected
+            await _hubContext.Clients.All.SendAsync("DataRatesUpdate", new DataRatesUpdate
+            {
+                KbpsGnssIn = 0.0,
+                KbpsGnssOut = 0.0
+            }, stoppingToken);
+
             return;
         }
 
@@ -43,6 +58,7 @@ public class GnssService : BackgroundService
             try
             {
                 await ReadAndProcessGnssDataAsync(stoppingToken);
+                await UpdateDataRatesAsync(stoppingToken);
                 await Task.Delay(50, stoppingToken);
             }
             catch (Exception ex)
@@ -65,6 +81,9 @@ public class GnssService : BackgroundService
                 var bytesToRead = Math.Min(_serialPort.BytesToRead, 1024);
                 var buffer = new byte[bytesToRead];
                 var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
+
+                // Track bytes received for data rate calculation
+                _bytesReceived += bytesRead;
 
                 _logger.LogDebug("Read {BytesRead} bytes from GNSS", bytesRead);
 
@@ -203,8 +222,40 @@ public class GnssService : BackgroundService
         }
     }
 
+    private async Task UpdateDataRatesAsync(CancellationToken stoppingToken)
+    {
+        var now = DateTime.UtcNow;
+        var timeDelta = (now - _lastRateUpdate).TotalSeconds;
 
+        // Update rates every second
+        if (timeDelta >= 1.0)
+        {
+            // Calculate rates in kbps (kilobits per second)
+            _currentInRate = (_bytesReceived * 8.0) / (timeDelta * 1000.0);
+            _currentOutRate = (_bytesSent * 8.0) / (timeDelta * 1000.0);
 
+            // Reset counters
+            _bytesReceived = 0;
+            _bytesSent = 0;
+            _lastRateUpdate = now;
+
+            // Broadcast data rates
+            await _hubContext.Clients.All.SendAsync("DataRatesUpdate", new DataRatesUpdate
+            {
+                KbpsGnssIn = _currentInRate,
+                KbpsGnssOut = _currentOutRate
+            }, stoppingToken);
+
+            _logger.LogDebug("Data rates updated - In: {InRate:F1} kbps, Out: {OutRate:F1} kbps",
+                _currentInRate, _currentOutRate);
+        }
+    }
+
+    // Method to track outgoing data (e.g., when sending RTCM corrections)
+    public void TrackBytesSent(int bytesSent)
+    {
+        _bytesSent += bytesSent;
+    }
 
     public override void Dispose()
     {

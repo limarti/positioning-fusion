@@ -81,7 +81,7 @@ const formatAccuracy = (meters) => {
       </div>
       
       <!-- Core Health Summary -->
-      <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-center">
+      <div class="grid grid-cols-2 md:grid-cols-8 gap-4 text-center">
         <div>
           <div class="text-xs text-slate-400 mb-1">hAcc</div>
           <div class="text-lg font-bold" :class="gnssData.hAcc !== null ? 'text-emerald-300' : 'text-slate-400'">{{ formatAccuracy(gnssData.hAcc) }}</div>
@@ -105,6 +105,24 @@ const formatAccuracy = (meters) => {
         <div>
           <div class="text-xs text-slate-400 mb-1">Satellites</div>
           <div class="text-lg font-bold" :class="gnssData.satellitesUsed !== null ? 'text-blue-300' : 'text-slate-400'">{{ gnssData.satellitesUsed !== null ? gnssData.satellitesUsed + '/' + gnssData.satellitesTracked : '—' }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-400 mb-1 flex items-center justify-center">
+            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M7,14L12,9L17,14H7Z"/>
+            </svg>
+            Data In
+          </div>
+          <div class="text-lg font-bold" :class="dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined ? 'text-blue-300' : 'text-slate-400'">{{ dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined ? dataRates.kbpsGnssIn.toFixed(1) + ' kbps' : '—' }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-400 mb-1 flex items-center justify-center">
+            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M7,10L12,15L17,10H7Z"/>
+            </svg>
+            Data Out
+          </div>
+          <div class="text-lg font-bold" :class="dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined ? 'text-blue-300' : 'text-slate-400'">{{ dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined ? dataRates.kbpsGnssOut.toFixed(1) + ' kbps' : '—' }}</div>
         </div>
       </div>
     </div>
