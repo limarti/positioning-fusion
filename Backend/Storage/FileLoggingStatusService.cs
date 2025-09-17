@@ -8,21 +8,18 @@ public class FileLoggingStatusService : BackgroundService
 {
     private readonly ILogger<FileLoggingStatusService> _logger;
     private readonly IHubContext<DataHub> _hubContext;
-    private readonly List<DataFileWriter> _fileWriters;
+    private readonly DataFileWriter _dataFileWriter;
 
     public FileLoggingStatusService(
         ILogger<FileLoggingStatusService> logger,
-        IHubContext<DataHub> hubContext)
+        IHubContext<DataHub> hubContext,
+        DataFileWriter dataFileWriter)
     {
         _logger = logger;
         _hubContext = hubContext;
-        _fileWriters = new List<DataFileWriter>();
+        _dataFileWriter = dataFileWriter;
     }
 
-    public void RegisterFileWriter(DataFileWriter writer)
-    {
-        _fileWriters.Add(writer);
-    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -52,9 +49,9 @@ public class FileLoggingStatusService : BackgroundService
     {
         var status = new FileLoggingStatus();
 
-        // Check USB drive availability
-        status.DriveAvailable = CheckDriveAvailability();
-        status.DrivePath = GetDrivePath();
+        // Get USB drive information from DataFileWriter
+        status.DriveAvailable = _dataFileWriter.IsDriveAvailable;
+        status.DrivePath = _dataFileWriter.CurrentDrivePath;
 
         // Get file information for active logging files
         status.ActiveFiles = new List<LoggingFileInfo>();
@@ -63,45 +60,38 @@ public class FileLoggingStatusService : BackgroundService
         {
             try
             {
-                var loggingDir = Path.Combine(status.DrivePath, "Logging");
-                if (Directory.Exists(loggingDir))
+                // Use the current session from DataFileWriter if available
+                var currentSessionPath = _dataFileWriter.CurrentSessionPath;
+                if (!string.IsNullOrEmpty(currentSessionPath) && Directory.Exists(currentSessionPath))
                 {
-                    // Get current session directory (most recent)
-                    var sessionDirs = Directory.GetDirectories(loggingDir)
-                        .OrderByDescending(d => Directory.GetCreationTime(d))
-                        .Take(1);
+                    status.CurrentSession = Path.GetFileName(currentSessionPath);
 
-                    foreach (var sessionDir in sessionDirs)
+                    // Check for active logging files
+                    var files = new[] { "imu.txt", "gnss.raw", "system.txt" };
+
+                    foreach (var fileName in files)
                     {
-                        status.CurrentSession = Path.GetFileName(sessionDir);
-
-                        // Check for active logging files
-                        var files = new[] { "imu.txt", "gnss.raw", "system.txt" };
-
-                        foreach (var fileName in files)
+                        var filePath = Path.Combine(currentSessionPath, fileName);
+                        if (File.Exists(filePath))
                         {
-                            var filePath = Path.Combine(sessionDir, fileName);
-                            if (File.Exists(filePath))
+                            var fileInfo = new FileInfo(filePath);
+                            status.ActiveFiles.Add(new LoggingFileInfo
                             {
-                                var fileInfo = new FileInfo(filePath);
-                                status.ActiveFiles.Add(new LoggingFileInfo
-                                {
-                                    FileName = fileName,
-                                    FilePath = filePath,
-                                    FileSizeBytes = fileInfo.Length,
-                                    LastModified = fileInfo.LastWriteTime,
-                                    IsActive = IsFileBeingWritten(filePath)
-                                });
-                            }
+                                FileName = fileName,
+                                FilePath = filePath,
+                                FileSizeBytes = fileInfo.Length,
+                                LastModified = fileInfo.LastWriteTime,
+                                IsActive = IsFileBeingWritten(filePath)
+                            });
                         }
                     }
-
-                    // Get drive space information
-                    var driveInfo = new DriveInfo(status.DrivePath);
-                    status.TotalSpaceBytes = driveInfo.TotalSize;
-                    status.AvailableSpaceBytes = driveInfo.AvailableFreeSpace;
-                    status.UsedSpaceBytes = status.TotalSpaceBytes - status.AvailableSpaceBytes;
                 }
+
+                // Get drive space information
+                var driveInfo = new DriveInfo(status.DrivePath);
+                status.TotalSpaceBytes = driveInfo.TotalSize;
+                status.AvailableSpaceBytes = driveInfo.AvailableFreeSpace;
+                status.UsedSpaceBytes = status.TotalSpaceBytes - status.AvailableSpaceBytes;
             }
             catch (Exception ex)
             {
@@ -113,39 +103,6 @@ public class FileLoggingStatusService : BackgroundService
         return status;
     }
 
-    private bool CheckDriveAvailability()
-    {
-        try
-        {
-            var mediaDir = "/media";
-            if (!Directory.Exists(mediaDir))
-                return false;
-
-            var drives = Directory.GetDirectories(mediaDir);
-            return drives.Length > 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private string? GetDrivePath()
-    {
-        try
-        {
-            var mediaDir = "/media";
-            if (!Directory.Exists(mediaDir))
-                return null;
-
-            var drives = Directory.GetDirectories(mediaDir);
-            return drives.Length > 0 ? drives[0] : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
 
     private bool IsFileBeingWritten(string filePath)
     {

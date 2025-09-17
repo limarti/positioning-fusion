@@ -17,6 +17,13 @@ public class DataFileWriter : BackgroundService
     private string? _currentSessionPath;
     private string? _currentFilePath;
     private bool _driveAvailable = false;
+    private string? _currentDrivePath;
+
+    // Public properties to expose drive information
+    public string? CurrentDrivePath => _currentDrivePath;
+    public string? CurrentFilePath => _currentFilePath;
+    public string? CurrentSessionPath => _currentSessionPath;
+    public bool IsDriveAvailable => _driveAvailable;
 
     public DataFileWriter(string fileName, ILogger<DataFileWriter> logger)
     {
@@ -179,9 +186,11 @@ public class DataFileWriter : BackgroundService
             if (driveRoot == null)
             {
                 _driveAvailable = false;
+                _currentDrivePath = null;
                 return;
             }
 
+            _currentDrivePath = driveRoot;
             _logger.LogInformation("Using flash drive: {DrivePath}", driveRoot);
             
             var loggingDir = Path.Combine(driveRoot, "Logging");
