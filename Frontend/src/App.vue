@@ -400,24 +400,35 @@ onUnmounted(async () => {
 
     <!-- Main Content -->
     <main class="px-4 py-6 max-w-7xl mx-auto">
-      <!-- GNSS System -->
-      <div class="mb-6">
+      <!-- GNSS System - Aligned with columns below -->
+      <div class="mb-6 max-w-7xl mx-auto">
         <GnssPanel :gnssData="gnssData" :dataRates="dataRates" />
       </div>
       
-      <!-- Sensor Data Row -->
-      <div class="mb-6">
-        <div class="grid gap-4 grid-cols-1 md:grid-cols-4">
+      <!-- Other Panels - Centered Two Column Masonry Layout -->
+      <div class="columns-1 lg:columns-2 gap-6 space-y-6 max-w-7xl mx-auto">
+        <!-- IMU Panel -->
+        <div class="break-inside-avoid mb-6">
           <ImuPanel :imuData="imuData" :dataRates="dataRates" />
+        </div>
+        
+        <!-- Camera Panel -->
+        <div class="break-inside-avoid mb-6">
           <CameraPanel />
+        </div>
+        
+        <!-- Encoder Panel -->
+        <div class="break-inside-avoid mb-6">
           <EncoderPanel :encoderData="encoderData" />
+        </div>
+        
+        <!-- File Logging Panel -->
+        <div class="break-inside-avoid mb-6">
           <FileLoggingPanel :fileLoggingStatus="fileLoggingStatus" />
         </div>
-      </div>
-
-      <!-- System Status Row -->
-      <div class="mb-6">
-        <div class="grid gap-4 grid-cols-1">
+        
+        <!-- System Panel -->
+        <div class="break-inside-avoid mb-6">
           <SystemPanel :systemHealth="systemHealth" :powerStatus="powerStatus" :fileManagement="fileManagement" />
         </div>
       </div>

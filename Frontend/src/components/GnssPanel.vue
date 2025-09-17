@@ -118,9 +118,10 @@ const formatAccuracy = (meters) => {
     
     <!-- GNSS Subsections -->
     <div class="space-y-4">
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <!-- Centered Masonry Layout for All GNSS Cards -->
+      <div class="columns-1 lg:columns-2 gap-6 space-y-6 mx-auto">
         <!-- Satellite Health Subsection -->
-        <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="bg-white rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
           <div class="flex items-center space-x-3 mb-4">
             <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
@@ -152,8 +153,61 @@ const formatAccuracy = (meters) => {
           <!-- Satellite Health Chart -->
           <SatelliteHealthChart :satellites="gnssData.satellites" />
         </div>
+        
+        <!-- RTK Quality Section -->
+        <div v-if="gnssData.rtk.active" class="bg-white rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center space-x-3">
+              <svg class="w-6 h-6 text-emerald-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z"/>
+              </svg>
+              <h2 class="text-lg font-bold text-slate-800">RTK Quality</h2>
+              <div class="text-sm font-semibold" :class="dataRates.correctionRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.correctionRate !== null ? dataRates.correctionRate : '—' }}</div>
+            </div>
+            <span class="text-sm font-bold px-3 py-1 rounded-lg" 
+                  :class="gnssData.rtkMode === 'Fixed' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'">
+              {{ gnssData.rtkMode }}
+            </span>
+          </div>
+          
+          <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="text-center p-4 bg-emerald-50 rounded-xl">
+              <div class="text-sm text-slate-600 mb-1">AR Ratio</div>
+              <div class="text-lg font-bold" :class="gnssData.rtk.arRatio !== null ? 'text-emerald-700' : 'text-slate-400'">{{ gnssData.rtk.arRatio !== null ? gnssData.rtk.arRatio.toFixed(1) : '—' }}</div>
+            </div>
+            <div class="text-center p-4 bg-blue-50 rounded-xl">
+              <div class="text-sm text-slate-600 mb-1">Correction Age</div>
+              <div class="text-lg font-bold" :class="gnssData.rtk.correctionAge !== null ? 'text-blue-700' : 'text-slate-400'">{{ gnssData.rtk.correctionAge !== null ? gnssData.rtk.correctionAge.toFixed(1) + 's' : '—' }}</div>
+            </div>
+          </div>
+          
+          <div class="space-y-2">
+            <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
+              <span class="text-slate-600">Baseline Length:</span>
+              <span class="font-bold" :class="gnssData.rtk.baselineLength !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.baselineLength !== null ? gnssData.rtk.baselineLength.toFixed(0) + 'm' : '—' }}</span>
+            </div>
+            <div class="p-3 bg-slate-50 rounded-lg">
+              <div class="text-sm text-slate-600 mb-2">Relative Accuracy</div>
+              <div class="grid grid-cols-3 gap-2 text-sm">
+                <div class="text-center">
+                  <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.north !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.north !== null ? gnssData.rtk.relativeAccuracy.north.toFixed(3) + 'm' : '—' }}</div>
+                  <div class="text-slate-500">North</div>
+                </div>
+                <div class="text-center">
+                  <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.east !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.east !== null ? gnssData.rtk.relativeAccuracy.east.toFixed(3) + 'm' : '—' }}</div>
+                  <div class="text-slate-500">East</div>
+                </div>
+                <div class="text-center">
+                  <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.down !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.down !== null ? gnssData.rtk.relativeAccuracy.down.toFixed(3) + 'm' : '—' }}</div>
+                  <div class="text-slate-500">Down</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
         <!-- Corrections Subsection (Conditional) -->
-        <div v-if="gnssData.corrections?.active" class="bg-white/90 backdrop-blur-sm rounded-2xl border-2 border-slate-200 p-4">
+        <div v-if="gnssData.corrections?.active" class="bg-white/90 backdrop-blur-sm rounded-2xl border-2 border-slate-200 p-4 break-inside-avoid mb-6">
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center space-x-3">
               <svg class="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
@@ -205,7 +259,7 @@ const formatAccuracy = (meters) => {
         </div>
 
         <!-- If Corrections not active, show basic status in its place -->
-        <div v-else class="bg-slate-100 rounded-xl border border-slate-200 p-4">
+        <div v-else class="bg-slate-100 rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
           <div class="flex items-center space-x-3 mb-4">
             <svg class="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
               <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
@@ -224,66 +278,9 @@ const formatAccuracy = (meters) => {
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- RTK Quality Section -->
-      <div v-if="gnssData.rtk.active" class="mb-6">
-        <div class="bg-white rounded-xl border border-slate-200 p-4">
-        <div class="flex items-center justify-between mb-4">
-          <div class="flex items-center space-x-3">
-            <svg class="w-6 h-6 text-emerald-600" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z"/>
-            </svg>
-            <h2 class="text-lg font-bold text-slate-800">RTK Quality</h2>
-            <div class="text-sm font-semibold" :class="dataRates.correctionRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.correctionRate !== null ? dataRates.correctionRate : '—' }}</div>
-          </div>
-          <span class="text-sm font-bold px-3 py-1 rounded-lg" 
-                :class="gnssData.rtkMode === 'Fixed' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'">
-            {{ gnssData.rtkMode }}
-          </span>
-        </div>
         
-        <div class="grid grid-cols-2 gap-4 mb-6">
-          <div class="text-center p-4 bg-emerald-50 rounded-xl">
-            <div class="text-sm text-slate-600 mb-1">AR Ratio</div>
-            <div class="text-lg font-bold" :class="gnssData.rtk.arRatio !== null ? 'text-emerald-700' : 'text-slate-400'">{{ gnssData.rtk.arRatio !== null ? gnssData.rtk.arRatio.toFixed(1) : '—' }}</div>
-          </div>
-          <div class="text-center p-4 bg-blue-50 rounded-xl">
-            <div class="text-sm text-slate-600 mb-1">Correction Age</div>
-            <div class="text-lg font-bold" :class="gnssData.rtk.correctionAge !== null ? 'text-blue-700' : 'text-slate-400'">{{ gnssData.rtk.correctionAge !== null ? gnssData.rtk.correctionAge.toFixed(1) + 's' : '—' }}</div>
-          </div>
-        </div>
-        
-        <div class="space-y-2">
-          <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
-            <span class="text-slate-600">Baseline Length:</span>
-            <span class="font-bold" :class="gnssData.rtk.baselineLength !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.baselineLength !== null ? gnssData.rtk.baselineLength.toFixed(0) + 'm' : '—' }}</span>
-          </div>
-          <div class="p-3 bg-slate-50 rounded-lg">
-            <div class="text-sm text-slate-600 mb-2">Relative Accuracy</div>
-            <div class="grid grid-cols-3 gap-2 text-sm">
-              <div class="text-center">
-                <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.north !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.north !== null ? gnssData.rtk.relativeAccuracy.north.toFixed(3) + 'm' : '—' }}</div>
-                <div class="text-slate-500">North</div>
-              </div>
-              <div class="text-center">
-                <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.east !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.east !== null ? gnssData.rtk.relativeAccuracy.east.toFixed(3) + 'm' : '—' }}</div>
-                <div class="text-slate-500">East</div>
-              </div>
-              <div class="text-center">
-                <div class="font-mono font-semibold" :class="gnssData.rtk.relativeAccuracy.down !== null ? '' : 'text-slate-400'">{{ gnssData.rtk.relativeAccuracy.down !== null ? gnssData.rtk.relativeAccuracy.down.toFixed(3) + 'm' : '—' }}</div>
-                <div class="text-slate-500">Down</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        </div>
-      </div>
-      
-      <!-- Additional GNSS Subsections -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
         <!-- Timing & Integrity Subsection -->
-        <div class="bg-slate-100 rounded-xl border border-slate-200 p-4">
+        <div class="bg-slate-100 rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
           <div class="flex items-center space-x-3 mb-4">
             <svg class="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12,20A7,7 0 0,1 5,13A7,7 0 0,1 12,6A7,7 0 0,1 19,13A7,7 0 0,1 12,20M19.03,7.39L20.45,5.97C20,5.46 19.55,5 19.04,4.56L17.62,6C16.07,4.74 14.12,4 12,4A9,9 0 0,0 3,13A9,9 0 0,0 12,22C17,22 21,17.97 21,13C21,10.88 20.26,8.93 19.03,7.39M11,14H13V8H11M15,1H9V3H15V1Z"/>
@@ -304,7 +301,7 @@ const formatAccuracy = (meters) => {
         </div>
         
         <!-- Hardware & Environment Subsection -->
-        <div class="bg-slate-100 rounded-xl border border-slate-200 p-4">
+        <div class="bg-slate-100 rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
           <div class="flex items-center space-x-3 mb-4">
             <svg class="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
               <path d="M11,15H13V17H11V15M11,7H13V13H11V7M12,2C6.47,2 2,6.5 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20Z"/>
