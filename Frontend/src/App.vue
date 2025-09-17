@@ -1,14 +1,22 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { HubConnectionBuilder } from '@microsoft/signalr'
+import { HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr'
 import GnssPanel from './components/GnssPanel.vue'
 import ImuPanel from './components/ImuPanel.vue'
 import CameraPanel from './components/CameraPanel.vue'
 import EncoderPanel from './components/EncoderPanel.vue'
 import SystemPanel from './components/SystemPanel.vue'
+import ConnectionStatus from './components/ConnectionStatus.vue'
 
 // SignalR connection
 let connection = null
+
+// Connection status tracking
+const connectionStatus = ref('Disconnected')
+const retryAttempt = ref(0)
+const nextRetryIn = ref(0)
+let retryTimer = null
+let retryCountdown = null
 
 // Comprehensive GNSS data model
 const gnssData = ref({
@@ -124,13 +132,89 @@ const getSignalColor = (strength) => {
   return 'text-red-500'
 }
 
+// Connection management functions
+const updateConnectionStatus = () => {
+  if (!connection) {
+    connectionStatus.value = 'Disconnected'
+    return
+  }
+
+  switch (connection.state) {
+    case HubConnectionState.Connected:
+      connectionStatus.value = 'Connected'
+      retryAttempt.value = 0
+      clearRetryTimer()
+      break
+    case HubConnectionState.Connecting:
+      connectionStatus.value = 'Connecting'
+      break
+    case HubConnectionState.Disconnected:
+      connectionStatus.value = 'Disconnected'
+      // Only start our custom retry after SignalR has given up
+      scheduleRetry()
+      break
+  }
+}
+
+const clearRetryTimer = () => {
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+  if (retryCountdown) {
+    clearInterval(retryCountdown)
+    retryCountdown = null
+  }
+  nextRetryIn.value = 0
+}
+
+const scheduleRetry = () => {
+  if (retryTimer) return // Already scheduled
+
+  retryAttempt.value++
+  const delay = 5000 // Fixed 5 second retry interval
+  nextRetryIn.value = Math.ceil(delay / 1000)
+
+  // Countdown timer
+  retryCountdown = setInterval(() => {
+    nextRetryIn.value--
+    if (nextRetryIn.value <= 0) {
+      clearInterval(retryCountdown)
+      retryCountdown = null
+    }
+  }, 1000)
+
+  // Actual retry
+  retryTimer = setTimeout(async () => {
+    retryTimer = null
+    if (connection && connection.state === HubConnectionState.Disconnected) {
+      try {
+        connectionStatus.value = 'Connecting'
+        await connection.start()
+        updateConnectionStatus() // Update status after successful connection
+      } catch (err) {
+        console.error(`SignalR Retry attempt ${retryAttempt.value} failed:`, err)
+        updateConnectionStatus()
+      }
+    }
+  }, delay)
+}
+
 // SignalR connection setup
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
       .withUrl("http://raspberrypi-rover.local:5312/datahub")
-    .withAutomaticReconnect()
+    // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
+
+  // Connection state change handlers
+  connection.onclose((error) => {
+    console.log('SignalR connection closed', error)
+    updateConnectionStatus()
+  })
+
+  // No need for onreconnecting/onreconnected since we disabled automatic reconnect
 
   // PositionUpdate removed - now using PvtUpdate for real GNSS position data
 
@@ -245,14 +329,18 @@ onMounted(async () => {
   })
 
   try {
+    connectionStatus.value = 'Connecting'
     await connection.start()
     console.log("SignalR Connected successfully!")
+    updateConnectionStatus()
   } catch (err) {
     console.error("SignalR Connection Error: ", err)
+    updateConnectionStatus()
   }
 })
 
 onUnmounted(async () => {
+  clearRetryTimer()
   if (connection) {
     await connection.stop()
   }
@@ -264,17 +352,28 @@ onUnmounted(async () => {
     <!-- Header -->
     <header class="bg-gradient-to-r from-slate-800 to-slate-900 text-white border-b-2 border-slate-700">
       <div class="px-4 py-6">
-        <div class="flex items-center space-x-3">
-          <div class="w-12 h-12 bg-gradient-to-br from-teal-400 to-blue-500 rounded-xl flex items-center justify-center">
-            <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
-            </svg>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="w-12 h-12 bg-gradient-to-br from-teal-400 to-blue-500 rounded-xl flex items-center justify-center">
+              <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
+              </svg>
+            </div>
+            <div>
+              <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white to-slate-200 bg-clip-text text-transparent">
+                GNSS Data Collection System
+              </h1>
+              <p class="text-slate-300 font-medium">Real-time monitoring and administration</p>
+            </div>
           </div>
-          <div>
-            <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white to-slate-200 bg-clip-text text-transparent">
-              GNSS Data Collection System
-            </h1>
-            <p class="text-slate-300 font-medium">Real-time monitoring and administration</p>
+          <div class="flex items-center space-x-4">
+            <div class="bg-slate-700/50 backdrop-blur-sm rounded-lg px-4 py-2 border border-slate-600">
+              <ConnectionStatus
+                :connection-status="connectionStatus"
+                :retry-attempt="retryAttempt"
+                :next-retry-in="nextRetryIn"
+              />
+            </div>
           </div>
         </div>
       </div>
