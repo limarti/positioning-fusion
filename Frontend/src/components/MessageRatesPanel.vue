@@ -22,6 +22,10 @@ const sortedMessageTypes = computed(() => {
 
 // Get color based on message type
 const getMessageColor = (messageType) => {
+  // NMEA messages
+  if (messageType.startsWith('NMEA.')) return 'text-teal-600 bg-teal-50'
+  
+  // UBX messages
   if (messageType.includes('NAV')) return 'text-blue-600 bg-blue-50'
   if (messageType.includes('RXM')) return 'text-green-600 bg-green-50'
   if (messageType.includes('TIM')) return 'text-purple-600 bg-purple-50'
@@ -44,11 +48,11 @@ const getRateColor = (rate) => {
       <svg class="w-6 h-6 text-indigo-600" fill="currentColor" viewBox="0 0 24 24">
         <path d="M3,3H21V5H3V3M3,7H15V9H3V7M3,11H21V13H3V11M3,15H15V17H3V15M3,19H21V21H3V19Z"/>
       </svg>
-      <h2 class="text-lg font-bold text-slate-800">UBX Message Rates</h2>
+      <h2 class="text-lg font-bold text-slate-800">Message Rates</h2>
     </div>
 
     <div v-if="sortedMessageTypes.length === 0" class="text-center py-8 text-slate-500">
-      No UBX messages received
+      No messages received
     </div>
 
     <div v-else class="space-y-1">

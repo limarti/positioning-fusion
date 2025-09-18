@@ -149,6 +149,9 @@ public class GnssService : BackgroundService
                             {
                                 //_logger.LogInformation("📡 NMEA: {Sentence}", line);
                                 
+                                // Track NMEA message frequency
+                                TrackNmeaMessage(line);
+                                
                                 // Send NMEA sentence via Bluetooth
                                 await SendNmeaViaBluetooth(line);
                             }
@@ -287,6 +290,36 @@ public class GnssService : BackgroundService
         }
     }
 
+    private void TrackNmeaMessage(string nmeaSentence)
+    {
+        try
+        {
+            // Extract message type from NMEA sentence (e.g., "$GPGGA" -> "GPGGA")
+            if (nmeaSentence.Length >= 6)
+            {
+                var messageType = nmeaSentence.Substring(1, 5); // Skip $ and take next 5 characters
+                var messageKey = $"NMEA.{messageType}";
+                
+                // Track message frequency with timestamps
+                var now = DateTime.UtcNow;
+                lock (_messageTimestamps)
+                {
+                    if (!_messageTimestamps.ContainsKey(messageKey))
+                    {
+                        _messageTimestamps[messageKey] = new Queue<DateTime>();
+                    }
+                    _messageTimestamps[messageKey].Enqueue(now);
+                }
+                
+                _logger.LogDebug("🔍 NMEA message {MessageType} tracked", messageType);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error tracking NMEA message: {Sentence}", nmeaSentence);
+        }
+    }
+
     private async Task SendMessageRatesToFrontend()
     {
         var now = DateTime.UtcNow;
@@ -319,7 +352,8 @@ public class GnssService : BackgroundService
         // Also log for debugging
         foreach (var (messageType, rate) in messageRates.OrderBy(x => x.Key))
         {
-            _logger.LogDebug("🔍 UBX message {MessageType} at {Rate:F1} Hz", messageType, rate);
+            var logPrefix = messageType.StartsWith("NMEA.") ? "NMEA" : "UBX";
+            _logger.LogDebug("🔍 {LogPrefix} message {MessageType} at {Rate:F1} Hz", logPrefix, messageType, rate);
         }
     }
 
