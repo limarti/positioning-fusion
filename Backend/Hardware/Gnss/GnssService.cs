@@ -1,7 +1,9 @@
 using Backend.Hubs;
+using Backend.Hardware.Bluetooth;
 using Backend.Hardware.Gnss;
 using Backend.Hardware.Gnss.Parsers;
 using Backend.Storage;
+using Backend.Configuration;
 using Microsoft.AspNetCore.SignalR;
 using System.IO.Ports;
 
@@ -13,6 +15,7 @@ public class GnssService : BackgroundService
     private readonly ILogger<GnssService> _logger;
     private readonly GnssInitializer _gnssInitializer;
     private readonly DataFileWriter _dataFileWriter;
+    private readonly BluetoothStreamingService _bluetoothService;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
 
@@ -27,13 +30,17 @@ public class GnssService : BackgroundService
     private const int RollingWindowSeconds = 5;
     private double _currentInRate = 0.0;
     private double _currentOutRate = 0.0;
-
+    
+    // Bluetooth streaming
+    private DateTime _lastBluetoothSend = DateTime.UtcNow;
+    
     public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory)
     {
         _hubContext = hubContext;
         _logger = logger;
         _gnssInitializer = gnssInitializer;
         _dataFileWriter = new DataFileWriter("GNSS.raw", loggerFactory.CreateLogger<DataFileWriter>());
+        _bluetoothService = new BluetoothStreamingService(loggerFactory.CreateLogger<BluetoothStreamingService>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -42,6 +49,9 @@ public class GnssService : BackgroundService
 
         // Start the data file writer
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
+
+        // Start the Bluetooth streaming service
+        _ = Task.Run(() => _bluetoothService.StartAsync(stoppingToken), stoppingToken);
 
         _serialPort = _gnssInitializer.GetSerialPort();
         if (_serialPort == null || !_serialPort.IsOpen)
@@ -60,6 +70,7 @@ public class GnssService : BackgroundService
 
             return;
         }
+
 
         _logger.LogInformation("GNSS Service connected to {PortName} at {BaudRate} baud",
             _serialPort.PortName, _serialPort.BaudRate);
@@ -190,6 +201,9 @@ public class GnssService : BackgroundService
 
             // Log raw GNSS UBX message data to file (complete UBX frame)
             _dataFileWriter.WriteData(completeMessage);
+
+            // Stream to Bluetooth if enabled and message is in filter
+            await StreamToBluetoothIfEnabled(completeMessage, messageClass, messageId);
 
             if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_SAT)
             {
@@ -336,10 +350,39 @@ public class GnssService : BackgroundService
         _bytesSent += bytesSent;
     }
 
+    private async Task StreamToBluetoothIfEnabled(byte[] completeMessage, byte messageClass, byte messageId)
+    {
+        if (!SystemConfiguration.BluetoothStreamingEnabled)
+            return;
+
+        // Check if this message type should be streamed
+        bool shouldStream = SystemConfiguration.BluetoothMessageFilter.Any(filter => 
+            filter.messageClass == messageClass && filter.messageId == messageId);
+
+        if (!shouldStream)
+            return;
+
+        // Apply rate limiting
+        var now = DateTime.UtcNow;
+        var throttleInterval = TimeSpan.FromMilliseconds(1000.0 / SystemConfiguration.BluetoothDataRate);
+        if (now - _lastBluetoothSend < throttleInterval)
+            return;
+
+        _lastBluetoothSend = now;
+
+        // Send to Bluetooth service
+        await _bluetoothService.SendData(completeMessage);
+        
+        _logger.LogDebug("Filtered UBX message Class=0x{Class:X2}, ID=0x{Id:X2} for Bluetooth streaming",
+            messageClass, messageId);
+    }
+
+
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Stopping GNSS Service");
         await _dataFileWriter.StopAsync(cancellationToken);
+        await _bluetoothService.StopAsync(cancellationToken);
         await base.StopAsync(cancellationToken);
     }
 
@@ -347,6 +390,7 @@ public class GnssService : BackgroundService
     {
         _logger.LogInformation("GNSS Service disposing");
         _dataFileWriter.Dispose();
+        _bluetoothService.Dispose();
         base.Dispose();
     }
 }
