@@ -66,6 +66,22 @@ const gnssData = ref({
     baselineLength: null,
     relativeAccuracy: { north: null, east: null, down: null }
   },
+
+  // Survey-In status (for base station mode)
+  surveyIn: {
+    active: false,
+    valid: false,
+    duration: null,
+    observations: null,
+    accuracyMm: null,
+    position: { x: null, y: null, z: null }
+  },
+
+  // Corrections mode and status
+  corrections: {
+    mode: 'Disabled', // 'Disabled', 'Receive', 'Send'
+    active: false
+  },
   
   // Timing and integrity
   tAcc: null,
@@ -359,6 +375,20 @@ onMounted(async () => {
     fileLoggingStatus.value.availableSpaceBytes = data.availableSpaceBytes
     fileLoggingStatus.value.usedSpaceBytes = data.usedSpaceBytes
     fileLoggingStatus.value.activeFiles = data.activeFiles || []
+  })
+
+  connection.on("SurveyInStatus", (data) => {
+    gnssData.value.surveyIn.active = data.active
+    gnssData.value.surveyIn.valid = data.valid
+    gnssData.value.surveyIn.duration = data.duration
+    gnssData.value.surveyIn.observations = data.observations
+    gnssData.value.surveyIn.accuracyMm = data.accuracyMm
+    gnssData.value.surveyIn.position = data.position
+  })
+
+  connection.on("CorrectionsStatusUpdate", (data) => {
+    gnssData.value.corrections.mode = data.mode
+    gnssData.value.corrections.active = data.active
   })
 
   try {

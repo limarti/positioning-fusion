@@ -1,4 +1,5 @@
 using Backend.Hubs;
+using Backend.Configuration;
 using Microsoft.AspNetCore.SignalR;
 using System.Globalization;
 using System.Device.I2c;
@@ -80,6 +81,13 @@ public class SystemMonitoringService : BackgroundService
                     BatteryLevel = systemHealth.BatteryLevel,
                     BatteryVoltage = systemHealth.BatteryVoltage,
                     IsExternalPowerConnected = systemHealth.IsExternalPowerConnected
+                }, stoppingToken);
+
+                // Send corrections status update
+                await _hubContext.Clients.All.SendAsync("CorrectionsStatusUpdate", new CorrectionsStatusUpdate
+                {
+                    Mode = SystemConfiguration.CorrectionsOperation.ToString(),
+                    Active = SystemConfiguration.CorrectionsOperation != SystemConfiguration.CorrectionsMode.Disabled
                 }, stoppingToken);
 
                 _logger.LogDebug("System health update sent: CPU={CpuUsage:F1}%, Memory={MemoryUsage:F1}%, Temp={Temperature:F1}°C, Battery={BatteryLevel:F1}%, Voltage={BatteryVoltage:F2}V, ExternalPower={IsExternalPowerConnected}",

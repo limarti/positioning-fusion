@@ -159,7 +159,7 @@ const formatAccuracy = (meters) => {
           <SatelliteHealthChart :satellites="gnssData.satellites" />
         </div>
         
-        <!-- RTK Quality Section -->
+        <!-- RTK Quality Section (Rover Mode Only) -->
         <div v-if="gnssData.rtk.active" class="bg-white rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center space-x-3">
@@ -211,75 +211,62 @@ const formatAccuracy = (meters) => {
           </div>
         </div>
         
-        <!-- Corrections Subsection (Conditional) -->
-        <div v-if="gnssData.corrections?.active" class="bg-white/90 backdrop-blur-sm rounded-2xl border-2 border-slate-200 p-4 break-inside-avoid mb-6">
+        <!-- Corrections Panel -->
+        <div v-if="gnssData.corrections.mode !== 'Disabled'" class="bg-white rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center space-x-3">
-              <svg class="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+              <svg class="w-6 h-6" :class="gnssData.corrections.mode === 'Send' ? 'text-blue-600' : 'text-purple-600'" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12,3L14,8H10L12,3M12,8V22H11V8H10L12,3L14,8H13V22H12M4,12L6,9V15L4,12M20,12L18,9V15L20,12M8,14L9,11V17L8,14M16,14L15,11V17L16,14"/>
               </svg>
               <h2 class="text-lg font-bold text-slate-800">Corrections</h2>
-              <div class="text-sm font-semibold" :class="dataRates.correctionRate !== null ? 'text-purple-600' : 'text-slate-400'">{{ dataRates.correctionRate !== null ? dataRates.correctionRate : '—' }}</div>
+              <div class="text-sm font-semibold" :class="dataRates.correctionRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.correctionRate !== null ? dataRates.correctionRate : '—' }}</div>
             </div>
+            
+            <!-- Mode Badge -->
             <span class="text-sm font-bold px-3 py-1 rounded-lg"
-                  :class="gnssData.corrections?.connected ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'">
-              {{ gnssData.corrections?.connected ? 'ACTIVE' : 'OFFLINE' }}
+                  :class="gnssData.corrections.mode === 'Send' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'">
+              {{ gnssData.corrections.mode === 'Send' ? 'SENDING' : 'RECEIVING' }}
             </span>
           </div>
 
-          <div class="grid grid-cols-2 gap-4 mb-6">
-            <div class="text-center p-4 bg-purple-50 rounded-xl">
-              <div class="text-sm text-slate-600 mb-1">Source Type</div>
-              <div class="text-base font-bold" :class="gnssData.corrections?.sourceType !== null ? 'text-purple-700' : 'text-slate-400'">{{ gnssData.corrections?.sourceType !== null ? gnssData.corrections?.sourceType : '—' }}</div>
-            </div>
-            <div class="text-center p-4 bg-indigo-50 rounded-xl">
-              <div class="text-sm text-slate-600 mb-1">Data Age</div>
-              <div class="text-base font-bold" :class="gnssData.corrections?.dataAge !== null ? 'text-indigo-700' : 'text-slate-400'">{{ gnssData.corrections?.dataAge !== null ? gnssData.corrections?.dataAge.toFixed(1) + 's' : '—' }}</div>
-            </div>
-          </div>
-
-          <div class="space-y-2">
-            <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
-              <span class="text-slate-600">Base Station ID:</span>
-              <span class="font-bold font-mono" :class="gnssData.corrections?.baseStationId !== null ? '' : 'text-slate-400'">{{ gnssData.corrections?.baseStationId !== null ? gnssData.corrections?.baseStationId : '—' }}</span>
-            </div>
-            <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
-              <span class="text-slate-600">Message Types:</span>
-              <span class="font-bold font-mono text-sm" :class="gnssData.corrections?.messageTypes !== null ? '' : 'text-slate-400'">{{ gnssData.corrections?.messageTypes !== null ? gnssData.corrections?.messageTypes.join(', ') : '—' }}</span>
-            </div>
-            <div class="p-3 bg-slate-50 rounded-lg">
-              <div class="text-sm text-slate-600 mb-2">Signal Quality</div>
-              <div class="grid grid-cols-2 gap-2 text-sm">
+          <!-- Survey-In Status (Base Station Mode) -->
+          <div v-if="gnssData.corrections.mode === 'Send'" class="mb-4">
+            <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-sm font-semibold text-blue-800">Survey-In Status</div>
+                <span class="text-xs font-bold px-2 py-1 rounded-lg"
+                      :class="gnssData.surveyIn.valid ? 'bg-emerald-100 text-emerald-700' : 
+                             gnssData.surveyIn.active ? 'bg-yellow-100 text-yellow-700' : 
+                             'bg-slate-100 text-slate-700'">
+                  {{ gnssData.surveyIn.valid ? '✅ COMPLETED' : 
+                     gnssData.surveyIn.active ? '📍 ACTIVE' : '❌ INACTIVE' }}
+                </span>
+              </div>
+              
+              <div class="grid grid-cols-3 gap-3">
                 <div class="text-center">
-                  <div class="font-mono font-semibold" :class="gnssData.corrections?.signalStrength !== null ? '' : 'text-slate-400'">{{ gnssData.corrections?.signalStrength !== null ? gnssData.corrections?.signalStrength + 'dBm' : '—' }}</div>
-                  <div class="text-slate-500">Signal</div>
+                  <div class="text-xs text-blue-600 mb-1">Duration</div>
+                  <div class="font-bold text-blue-800">{{ gnssData.surveyIn.duration !== null ? gnssData.surveyIn.duration + 's' : '—' }}</div>
                 </div>
                 <div class="text-center">
-                  <div class="font-mono font-semibold" :class="gnssData.corrections?.throughput !== null ? '' : 'text-slate-400'">{{ gnssData.corrections?.throughput !== null ? gnssData.corrections?.throughput + ' bps' : '—' }}</div>
-                  <div class="text-slate-500">Throughput</div>
+                  <div class="text-xs text-blue-600 mb-1">Observations</div>
+                  <div class="font-bold text-blue-800">{{ gnssData.surveyIn.observations !== null ? gnssData.surveyIn.observations : '—' }}</div>
+                </div>
+                <div class="text-center">
+                  <div class="text-xs text-blue-600 mb-1">Accuracy</div>
+                  <div class="font-bold text-blue-800">{{ gnssData.surveyIn.accuracyMm !== null ? gnssData.surveyIn.accuracyMm.toFixed(1) + 'mm' : '—' }}</div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- If Corrections not active, show basic status in its place -->
-        <div v-else class="bg-slate-100 rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
-          <div class="flex items-center space-x-3 mb-4">
-            <svg class="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
-            </svg>
-            <h2 class="text-lg font-bold text-slate-800">No Corrections</h2>
-          </div>
-
-          <div class="grid grid-cols-1 gap-4">
-            <div class="flex justify-between p-3 bg-white rounded-lg border">
-              <span class="text-slate-600">Status:</span>
-              <span class="font-bold text-slate-800">Standalone Mode</span>
-            </div>
-            <div class="flex justify-between p-3 bg-white rounded-lg border">
-              <span class="text-slate-600">Precision:</span>
-              <span class="font-bold font-mono text-slate-600">Standard GNSS</span>
+          <!-- Connection Status -->
+          <div class="grid grid-cols-1 gap-3">
+            <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
+              <span class="text-slate-600">Mode:</span>
+              <span class="font-bold" :class="gnssData.corrections.mode === 'Send' ? 'text-blue-700' : 'text-purple-700'">
+                {{ gnssData.corrections.mode === 'Send' ? 'Base Station (Sending)' : 'Rover (Receiving)' }}
+              </span>
             </div>
           </div>
         </div>

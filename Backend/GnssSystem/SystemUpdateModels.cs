@@ -9,3 +9,9 @@ public class SystemHealthUpdate
     public double BatteryVoltage { get; set; }
     public bool IsExternalPowerConnected { get; set; }
 }
+
+public class CorrectionsStatusUpdate
+{
+    public string Mode { get; set; } = "Disabled"; // "Disabled", "Receive", "Send"
+    public bool Active { get; set; }
+}

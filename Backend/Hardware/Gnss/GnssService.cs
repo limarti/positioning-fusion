@@ -16,6 +16,7 @@ public class GnssService : BackgroundService
     private readonly GnssInitializer _gnssInitializer;
     private readonly DataFileWriter _dataFileWriter;
     private readonly BluetoothStreamingService _bluetoothService;
+    private readonly GnssFrameParser _frameParser;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
 
@@ -44,6 +45,7 @@ public class GnssService : BackgroundService
         _gnssInitializer = gnssInitializer;
         _dataFileWriter = new DataFileWriter("GNSS.raw", loggerFactory.CreateLogger<DataFileWriter>());
         _bluetoothService = new BluetoothStreamingService(loggerFactory.CreateLogger<BluetoothStreamingService>());
+        _frameParser = new GnssFrameParser(loggerFactory.CreateLogger<GnssFrameParser>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -160,7 +162,7 @@ public class GnssService : BackgroundService
         while (!stoppingToken.IsCancellationRequested && processed < maxMessagesPerLoop)
         {
             // Try to locate earliest valid frame among UBX / RTCM3 / NMEA
-            if (!TryFindNextFrame(out var kind, out int start, out int totalLen, out int partialNeeded))
+            if (!_frameParser.TryFindNextFrame(_dataBuffer, out var kind, out int start, out int totalLen, out int partialNeeded))
             { 
                 // If we saw a plausible, but partial frame, wait for more data.
                 if (partialNeeded > 0)
@@ -204,41 +206,16 @@ public class GnssService : BackgroundService
                 switch (kind)
                 {
                     case FrameKind.Ubx:
-                        //_logger.LogInformation("📦 Processing UBX frame: Length={Len} bytes", frame.Length);
-                        await ProcessUbxMessage(frame, stoppingToken);
+                        await ProcessUbx(frame, stoppingToken);
                         break;
 
                     case FrameKind.Rtcm3:
-                        // Decode message type (first 12 bits of payload)
-                        if (frame.Length >= 5)
-                        {
-                            ushort msgType = (ushort)((frame[3] << 4) | (frame[4] >> 4));
-                            
-                            // Validate RTCM3 message type - standard types are typically 1000-1300 range
-                            var isValidRtcmType = (msgType >= 1000 && msgType <= 1300) || 
-                                                  (msgType >= 4000 && msgType <= 4100); // Some extended types
-                            
-                            if (isValidRtcmType)
-                            {
-                                await ProcessRtcm3Message(frame, stoppingToken);
-                            }
-                            else
-                            {
-                                _logger.LogWarning("⚠️ RTCM3 frame with invalid message type {Type} (Length={Len}) - skipping", msgType, frame.Length);
-                            }
-                        }
-                        else
-                        {
-                            _logger.LogWarning("⚠️ RTCM3 frame too short to extract message type (Length={Len})", frame.Length);
-                        }
+                        await ProcessRtcm3(frame, stoppingToken);
                         break;
 
                     case FrameKind.Nmea:
-                        // frame is ASCII including trailing \r\n; validate already done.
                         string nmea = System.Text.Encoding.ASCII.GetString(frame).TrimEnd('\r', '\n');
-                        //_logger.LogInformation("🛰️ Processing NMEA frame: {Sentence}", nmea.Length > 20 ? nmea.Substring(0, 20) + "..." : nmea);
-                        TrackNmeaMessage(nmea);
-                        await SendNmeaViaBluetooth(nmea);
+                        await ProcessNmea(nmea);
                         break;
                 }
             }
@@ -251,241 +228,8 @@ public class GnssService : BackgroundService
         }
     }
 
-    // ===== local helpers =====
 
-    enum FrameKind { Ubx, Rtcm3, Nmea }
-
-    bool TryFindNextFrame(out FrameKind kind, out int start, out int totalLen, out int partialNeeded)
-    {
-        kind = default;
-        start = -1;
-        totalLen = -1;
-        partialNeeded = 0;
-
-        var ubx = FindUbxCandidate();
-        var rtcm = FindRtcm3Candidate();
-        var nmea = FindNmeaCandidate();
-
-        (FrameKind k, int s, int t, int partial)? winner = null;
-
-        void Consider((FrameKind k, int s, int t, int partial)? c)
-        {
-            if (c is { } x && x.s >= 0)
-                winner = winner is null || x.s < winner.Value.s ? x : winner;
-        }
-
-        Consider(ubx);
-        Consider(rtcm);
-        Consider(nmea);
-
-        if (winner is null)
-            return false;
-
-        (kind, start, totalLen, partialNeeded) = winner.Value;
-        return true;
-    }
-
-    (FrameKind k, int s, int t, int partial)? FindUbxCandidate()
-    {
-        // UBX: 0xB5 0x62 [cls][id][lenL][lenH] payload ... [CK_A][CK_B]
-        for (int i = 0; i + 5 < _dataBuffer.Count; i++)
-        {
-            if (_dataBuffer[i] != 0xB5 || _dataBuffer[i + 1] != 0x62) continue;
-
-            // need at least header to read length
-            if (i + 6 > _dataBuffer.Count) 
-            {
-                _logger.LogDebug("⏳ UBX partial header at {Pos}: need {Need} more bytes", i, 6 - (i + 6 - _dataBuffer.Count));
-                return (FrameKind.Ubx, i, 6, 6 - _dataBuffer.Count + i);
-            }
-
-            int len = _dataBuffer[i + 4] | (_dataBuffer[i + 5] << 8);
-            if (len < 0 || len > 1024) 
-            {
-                _logger.LogDebug("🚫 UBX candidate at {Pos}: invalid length {Len}", i, len);
-                continue;
-            }
-
-            int total = 6 + len + 2;
-            if (i + total > _dataBuffer.Count)
-            {
-                _logger.LogDebug("⏳ UBX partial frame at {Pos}: need {Need} more bytes (payload={PayloadLen}, total={Total})", 
-                    i, (i + total) - _dataBuffer.Count, len, total);
-                return (FrameKind.Ubx, i, total, (i + total) - _dataBuffer.Count);
-            }
-
-            if (ValidateUbxChecksum(i, total))
-            {
-                _logger.LogDebug("✅ Valid UBX frame found at {Pos}: payload={PayloadLen}, total={Total}", i, len, total);
-                return (FrameKind.Ubx, i, total, 0);
-            }
-            else
-            {
-                _logger.LogDebug("❌ UBX candidate at {Pos}: checksum validation failed (payload={PayloadLen})", i, len);
-            }
-
-            // bad checksum — skip this sync and keep scanning
-        }
-        return null;
-    }
-
-    (FrameKind k, int s, int t, int partial)? FindRtcm3Candidate()
-    {
-        // RTCM3: 0xD3 [Rsv(6b)|Len(10b)] payload CRC24Q (3 bytes)
-        for (int i = 0; i + 2 < _dataBuffer.Count; i++)
-        {
-            if (_dataBuffer[i] != 0xD3) continue;
-
-            byte b1 = _dataBuffer[i + 1];
-            byte b2 = _dataBuffer[i + 2];
-
-            // Upper 6 bits of b1 must be 0
-            if ((b1 & 0xFC) != 0)
-            {
-                _logger.LogDebug("🚫 RTCM3 candidate at {Pos}: invalid reserved bits in b1=0x{B1:X2}", i, b1);
-                continue;
-            }
-
-            int payloadLen = ((b1 & 0x03) << 8) | b2;
-            if (payloadLen <= 0 || payloadLen > 1024)
-            {
-                _logger.LogDebug("🚫 RTCM3 candidate at {Pos}: invalid payload length {Len}", i, payloadLen);
-                continue;
-            }
-
-            int total = 3 + payloadLen + 3;
-            if (i + total > _dataBuffer.Count)
-            {
-                _logger.LogDebug("⏳ RTCM3 partial frame at {Pos}: need {Need} more bytes (payload={PayloadLen}, total={Total})", 
-                    i, (i + total) - _dataBuffer.Count, payloadLen, total);
-                return (FrameKind.Rtcm3, i, total, (i + total) - _dataBuffer.Count);
-            }
-
-            if (ValidateRtcmCrc24Q(i, total))
-            {
-                return (FrameKind.Rtcm3, i, total, 0);
-            }
-            else
-            {
-                _logger.LogDebug("❌ RTCM3 candidate at {Pos}: CRC validation failed (payload={PayloadLen})", i, payloadLen);
-            }
-            // bad CRC — keep scanning
-        }
-        return null;
-    }
-
-    (FrameKind k, int s, int t, int partial)? FindNmeaCandidate()
-    {
-        // NMEA: '$' ... *hh \r\n  — ASCII only, checksum validated.
-        // We only try this if there is clearly a '$' in view.
-        int dollar = _dataBuffer.IndexOf((byte)'$');
-        if (dollar < 0) return null;
-
-        // Must end with CRLF to be complete
-        int cr = _dataBuffer.IndexOf((byte)'\r', dollar + 1);
-        if (cr < 0 || cr + 1 >= _dataBuffer.Count) return (FrameKind.Nmea, dollar, 0, 1); // partial; need at least CRLF
-
-        if (_dataBuffer[cr + 1] != (byte)'\n') return null;
-
-        int end = cr + 2;
-        int len = end - dollar;
-        if (len < 9) return null; // too short to be valid
-
-        // Validate ASCII and checksum
-        var span = _dataBuffer.GetRange(dollar, len).ToArray();
-        if (!IsAscii(span)) return null;
-        if (!ValidateNmeaChecksum(span)) return null;
-
-        return (FrameKind.Nmea, dollar, len, 0);
-    }
-
-    bool ValidateUbxChecksum(int start, int total)
-    {
-        byte ckA = 0, ckB = 0;
-        int payloadLen = _dataBuffer[start + 4] | (_dataBuffer[start + 5] << 8);
-        int end = start + 6 + payloadLen;
-        for (int j = start + 2; j < end; j++)
-        {
-            ckA = (byte)(ckA + _dataBuffer[j]);
-            ckB = (byte)(ckB + ckA);
-        }
-        return ckA == _dataBuffer[end] && ckB == _dataBuffer[end + 1];
-    }
-
-    bool ValidateRtcmCrc24Q(int start, int total)
-    {
-        // CRC over header(3) + payload, excluding the 3 CRC bytes at the end
-        int crcLen = total - 3;
-        uint calc = Crc24Q(_dataBuffer, start, crcLen);
-        uint got = (uint)(_dataBuffer[start + total - 3] << 16 | _dataBuffer[start + total - 2] << 8 | _dataBuffer[start + total - 1]);
-        return calc == got;
-    }
-
-    static bool IsAscii(byte[] bytes)
-    {
-        foreach (var b in bytes)
-        {
-            if (b is < 0x09 or > 0x7E && b != 0x0D && b != 0x0A) return false;
-        }
-        return true;
-    }
-
-    static bool ValidateNmeaChecksum(byte[] asciiWithCrlf)
-    {
-        // Expect: $XXXX*HH\r\n
-        // Find '*'
-        int star = Array.LastIndexOf(asciiWithCrlf, (byte)'*');
-        if (star <= 0) return false;
-        if (star + 2 >= asciiWithCrlf.Length) return false; // need two hex chars + CRLF
-
-        byte cs = 0;
-        for (int i = 1; i < star; i++)
-            cs ^= asciiWithCrlf[i];
-
-        bool hexOk = TryHexByte(asciiWithCrlf[star + 1], asciiWithCrlf[star + 2], out byte got);
-        if (!hexOk) return false;
-
-        return cs == got;
-    }
-
-    static bool TryHexByte(byte hi, byte lo, out byte val)
-    {
-        val = 0;
-        int h = FromHex(hi);
-        int l = FromHex(lo);
-        if (h < 0 || l < 0) return false;
-        val = (byte)((h << 4) | l);
-        return true;
-
-        static int FromHex(byte c)
-        {
-            if (c >= '0' && c <= '9') return c - '0';
-            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-            return -1;
-        }
-    }
-
-    static uint Crc24Q(List<byte> buf, int start, int length)
-    {
-        // Polynomial 0x1864CFB, init 0x000000 (per RTCM standard)
-        const uint poly = 0x1864CFB;
-        uint crc = 0;
-        for (int i = 0; i < length; i++)
-        {
-            crc ^= (uint)buf[start + i] << 16;
-            for (int b = 0; b < 8; b++)
-            {
-                crc <<= 1;
-                if ((crc & 0x1000000) != 0)
-                    crc ^= poly;
-            }
-            crc &= 0xFFFFFF;
-        }
-        return crc & 0xFFFFFF;
-    }
-
-    private async Task ProcessRtcm3Message(byte[] completeMessage, CancellationToken stoppingToken)
+    private async Task ProcessRtcm3(byte[] completeMessage, CancellationToken stoppingToken)
     {
         try
         {
@@ -538,7 +282,7 @@ public class GnssService : BackgroundService
 
     // NMEA fallback removed - UBX binary messages only
 
-    private async Task ProcessUbxMessage(byte[] completeMessage, CancellationToken stoppingToken)
+    private async Task ProcessUbx(byte[] completeMessage, CancellationToken stoppingToken)
     {
         try
         {
@@ -651,35 +395,6 @@ public class GnssService : BackgroundService
         }
     }
 
-    private void TrackNmeaMessage(string nmeaSentence)
-    {
-        try
-        {
-            // Extract message type from NMEA sentence (e.g., "$GPGGA" -> "GPGGA")
-            if (nmeaSentence.Length >= 6)
-            {
-                var messageType = nmeaSentence.Substring(1, 5); // Skip $ and take next 5 characters
-                var messageKey = $"NMEA.{messageType}";
-                
-                // Track message frequency with timestamps
-                var now = DateTime.UtcNow;
-                lock (_messageTimestamps)
-                {
-                    if (!_messageTimestamps.ContainsKey(messageKey))
-                    {
-                        _messageTimestamps[messageKey] = new Queue<DateTime>();
-                    }
-                    _messageTimestamps[messageKey].Enqueue(now);
-                }
-               
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error tracking NMEA message: {Sentence}", nmeaSentence);
-        }
-    }
-
     private async Task SendMessageRatesToFrontend()
     {
         var now = DateTime.UtcNow;
@@ -745,8 +460,34 @@ public class GnssService : BackgroundService
         _bytesSent += bytesSent;
     }
 
-    private async Task SendNmeaViaBluetooth(string nmeaSentence)
+    private async Task ProcessNmea(string nmeaSentence)
     {
+        try
+        {
+            // Extract message type from NMEA sentence (e.g., "$GPGGA" -> "GPGGA")
+            if (nmeaSentence.Length >= 6)
+            {
+                var messageType = nmeaSentence.Substring(1, 5); // Skip $ and take next 5 characters
+                var messageKey = $"NMEA.{messageType}";
+
+                // Track message frequency with timestamps
+                var now = DateTime.UtcNow;
+                lock (_messageTimestamps)
+                {
+                    if (!_messageTimestamps.ContainsKey(messageKey))
+                    {
+                        _messageTimestamps[messageKey] = new Queue<DateTime>();
+                    }
+                    _messageTimestamps[messageKey].Enqueue(now);
+                }
+
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error tracking NMEA message: {Sentence}", nmeaSentence);
+        }
+
         try
         {
             // Convert NMEA sentence to bytes with proper line endings
