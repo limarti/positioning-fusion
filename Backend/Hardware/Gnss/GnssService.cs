@@ -137,11 +137,19 @@ public class GnssService : BackgroundService
                     var asciiData = string.Join("", _dataBuffer.Take(10).Select(b => b >= 32 && b <= 126 ? (char)b : '.'));
                     _logger.LogDebug("❌ No UBX sync found. First 10 bytes: {SampleData} (ASCII: '{AsciiData}')", sampleData, asciiData);
 
-                    // Log non-UBX data for debugging
+                    // Log NMEA data to console
                     var bufferString = global::System.Text.Encoding.ASCII.GetString(_dataBuffer.ToArray());
                     if (bufferString.Contains("$"))
                     {
-                        _logger.LogDebug("📡 Ignoring NMEA data - UBX configuration in progress");
+                        // Look for complete NMEA sentences (ending with \r\n)
+                        var lines = bufferString.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in lines)
+                        {
+                            if (line.StartsWith("$") && line.Contains("*"))
+                            {
+                                _logger.LogInformation("📡 NMEA: {Sentence}", line);
+                            }
+                        }
                     }
                 }
                 _dataBuffer.Clear();

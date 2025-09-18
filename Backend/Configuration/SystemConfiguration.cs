@@ -30,6 +30,18 @@ public static class SystemConfiguration
         (UbxConstants.CLASS_NAV, UbxConstants.NAV_SAT)  // NAV-SAT (Satellite Information)
     };
 
+    // NMEA sentence subscription configuration
+    public static Dictionary<string, int> NmeaSentenceRates { get; set; } = new()
+    {
+        { UbxConstants.NMEA_GGA, 1 },  // Global Positioning System Fix Data - 1 Hz
+        { UbxConstants.NMEA_RMC, 1 },  // Recommended Minimum - 1 Hz
+        { UbxConstants.NMEA_GSV, 1 },  // GNSS Satellites in View - 1 Hz
+        { UbxConstants.NMEA_GSA, 1 },  // GNSS DOP and Active Satellites - 1 Hz
+        { UbxConstants.NMEA_VTG, 1 },  // Track Made Good and Ground Speed - 1 Hz
+        { UbxConstants.NMEA_GLL, 0 },  // Geographic Position - Latitude/Longitude - Disabled
+        { UbxConstants.NMEA_ZDA, 0 }   // Time & Date - Disabled
+    };
+
     // Logging configuration
     public static int LoggingFlushIntervalSeconds { get; set; } = 10;
     public static int LoggingMaxBufferSizeBytes { get; set; } = 1048576; // 1MB

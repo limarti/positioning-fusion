@@ -136,6 +136,17 @@ public static class UbxConstants
     public const byte CARRIER_SOLUTION_FIXED = 2;
 
     // -------------------------
+    // NMEA message identifiers
+    // -------------------------
+    public const string NMEA_GGA = "GGA";  // Global Positioning System Fix Data
+    public const string NMEA_RMC = "RMC";  // Recommended Minimum Specific GNSS Data
+    public const string NMEA_GSV = "GSV";  // GNSS Satellites in View
+    public const string NMEA_GSA = "GSA";  // GNSS DOP and Active Satellites
+    public const string NMEA_VTG = "VTG";  // Track Made Good and Ground Speed
+    public const string NMEA_GLL = "GLL";  // Geographic Position - Latitude/Longitude
+    public const string NMEA_ZDA = "ZDA";  // Time & Date
+
+    // -------------------------
     // CFG-VALSET message output key IDs
     // -------------------------
     public const uint MSGOUT_UBX_NAV_PVT_UART1 = 0x20910007;     // NAV-PVT UART1 output rate

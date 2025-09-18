@@ -360,6 +360,9 @@ public class GnssInitializer
 
             // Use CFG-VALSET to configure messages (explicit rates override any defaults)
             await ConfigureMessagesWithValset();
+            
+            // Configure NMEA sentence rates
+            await ConfigureNmeaSentenceRates();
 
             _logger.LogInformation("ZED-X20P UBX configuration completed");
         }
@@ -462,7 +465,7 @@ public class GnssInitializer
             
             if (success)
             {
-                _logger.LogInformation("✓ ACK", messageName);
+                _logger.LogInformation("✓ {MessageName} ACK", messageName);
             }
             else
             {
@@ -668,6 +671,64 @@ public class GnssInitializer
         }
 
         return (ck_a, ck_b);
+    }
+
+    private async Task ConfigureNmeaSentenceRates()
+    {
+        try
+        {
+            _logger.LogInformation("Configuring NMEA sentence rates");
+            
+            foreach (var nmeaConfig in SystemConfiguration.NmeaSentenceRates)
+            {
+                var sentence = nmeaConfig.Key;
+                var rateHz = nmeaConfig.Value;
+                
+                if (rateHz == 0)
+                {
+                    _logger.LogInformation("Disabling NMEA sentence: {Sentence}", sentence);
+                }
+                else
+                {
+                    var actualRate = Math.Max(1, SystemConfiguration.GnssDataRate / rateHz);
+                    _logger.LogInformation("Setting NMEA sentence {Sentence} to {Rate}Hz (divisor: {Divisor})", sentence, rateHz, actualRate);
+                }
+                
+                await ConfigureNmeaSentenceRate(sentence, rateHz);
+            }
+            
+            _logger.LogInformation("NMEA sentence configuration completed");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to configure NMEA sentence rates");
+        }
+    }
+
+    private async Task ConfigureNmeaSentenceRate(string sentence, int rateHz)
+    {
+        try
+        {
+            // Use PUBX,40 command to configure NMEA message rates
+            // Format: $PUBX,40,<msgId>,<rddc>,<rus1>,<rus2>,<rusb>,<rspi>*<checksum>
+            // where rates are: 0=off, 1=on every fix, 2=on every 2nd fix, etc.
+            
+            // Calculate the divisor: if we want 1Hz and GNSS is running at 10Hz, we need rate=10
+            // If we want 5Hz and GNSS is running at 10Hz, we need rate=2
+            var rate = rateHz == 0 ? 0 : Math.Max(1, SystemConfiguration.GnssDataRate / rateHz);
+            var pubxCommand = $"PUBX,40,{sentence},0,{rate},0,0,0";
+            var checksum = CalculateNmeaChecksum(pubxCommand);
+            var fullCommand = $"${pubxCommand}*{checksum:X2}\r\n";
+            
+            _logger.LogDebug("Sending NMEA rate command: {Command}", fullCommand.Trim());
+            _serialPort?.Write(fullCommand);
+            
+            await Task.Delay(100); // Brief delay between commands
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to configure NMEA sentence {Sentence} rate", sentence);
+        }
     }
 
     public void Dispose()
