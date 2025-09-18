@@ -13,6 +13,9 @@ public class GnssInitializer
     private const int DefaultDataBits = 8;
     private const StopBits DefaultStopBits = StopBits.One;
     private const int ResponseTimeoutMs = 3000;
+    private const int PortStabilizationDelayMs = 500;
+    private const int CommandDelayMs = 200;
+    private const int BaudRateDelayMs = 3000;
 
     // ZED-X20P specific baud rates - default is 38400
     private readonly int[] _baudRatesToScan = new int[]
@@ -81,72 +84,68 @@ public class GnssInitializer
         return false;
     }
 
+    private SerialPort CreateSerialPort(string portName, int baudRate)
+    {
+        return new SerialPort(portName, baudRate, DefaultParity, DefaultDataBits, DefaultStopBits)
+        {
+            ReadTimeout = ResponseTimeoutMs,
+            WriteTimeout = ResponseTimeoutMs,
+            RtsEnable = true,
+            DtrEnable = true
+        };
+    }
+
+    private async Task<string> TestGnssCommunicationAsync(SerialPort serialPort)
+    {
+        // Allow port to stabilize
+        await Task.Delay(PortStabilizationDelayMs);
+
+        // Clear any existing data
+        serialPort.DiscardInBuffer();
+        serialPort.DiscardOutBuffer();
+
+        // Send standard NMEA query for position data
+        var pollCommand = "$PUBX,00*33\r\n";
+        _logger.LogDebug("Sending GNSS position query: {Command}", pollCommand.Trim());
+        serialPort.Write(pollCommand);
+
+        // Wait before checking for response to allow device to process
+        await Task.Delay(CommandDelayMs);
+
+        // Wait for response
+        return await WaitForGnssResponseAsync(serialPort);
+    }
+
     private async Task<bool> TryBaudRateAsync(string portName, int baudRate)
     {
         SerialPort? testPort = null;
 
         try
         {
-            testPort = new SerialPort(portName, baudRate, DefaultParity, DefaultDataBits, DefaultStopBits)
-            {
-                ReadTimeout = ResponseTimeoutMs,
-                WriteTimeout = ResponseTimeoutMs,
-                RtsEnable = true,
-                DtrEnable = true
-            };
-
+            testPort = CreateSerialPort(portName, baudRate);
             testPort.Open();
             _logger.LogDebug("Serial port {PortName} opened at {BaudRate} baud", portName, baudRate);
 
-            // Allow port to stabilize
-            await Task.Delay(500);
-
-            // Clear any existing data
-            testPort.DiscardInBuffer();
-            testPort.DiscardOutBuffer();
-
-            // Send standard NMEA query for position data
-            var pollCommand = "$PUBX,00*33\r\n";
-            _logger.LogDebug("Sending GNSS position query: {Command}", pollCommand.Trim());
-            testPort.Write(pollCommand);
-
-            // Wait before checking for response to allow device to process
-            await Task.Delay(200);
-
-            // Wait for response
-            var response = await WaitForGnssResponseAsync(testPort);
+            // Test GNSS communication
+            var response = await TestGnssCommunicationAsync(testPort);
 
             if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
             {
                 _logger.LogDebug("GNSS response received at {BaudRate} baud: {Response}",
                     baudRate, response.Trim());
 
-                // If we're not already at 460800, try to switch to it for optimal performance
-                if (baudRate != 460800)
+                // Try to switch to optimal speed (460800) if not already there
+                if (baudRate != 460800 && await TrySwitchToOptimalBaudRate(testPort, baudRate, portName))
                 {
-                    _logger.LogInformation("Switching GNSS to 460800 baud");
-                    if (await SwitchTo460800BaudAsync(testPort, (uint)baudRate, portName))
-                    {
-                        // Successfully switched - _serialPort is now set to 460800
-                        testPort = null; // Prevent disposal
-                        return true;
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Baud rate switch to 460800 failed, keeping {BaudRate} baud", baudRate);
-                        // Keep current connection as fallback
-                        _serialPort = testPort;
-                        testPort = null; // Prevent disposal
-                        return true;
-                    }
-                }
-                else
-                {
-                    // Already at optimal speed
-                    _serialPort = testPort;
+                    // Successfully switched - _serialPort is now set to 460800
                     testPort = null; // Prevent disposal
                     return true;
                 }
+
+                // Use current baud rate (either 460800 already, or switch failed)
+                _serialPort = testPort;
+                testPort = null; // Prevent disposal
+                return true;
             }
             else
             {
@@ -173,6 +172,19 @@ public class GnssInitializer
         return false;
     }
 
+    private async Task<bool> TrySwitchToOptimalBaudRate(SerialPort currentPort, int currentBaudRate, string portName)
+    {
+        _logger.LogInformation("Switching GNSS from {CurrentBaud} to 460800 baud", currentBaudRate);
+        
+        if (await SwitchTo460800BaudAsync(currentPort, (uint)currentBaudRate, portName))
+        {
+            return true;
+        }
+        
+        _logger.LogWarning("Baud rate switch to 460800 failed, keeping {BaudRate} baud", currentBaudRate);
+        return false;
+    }
+
     private async Task<bool> SwitchTo460800BaudAsync(SerialPort currentPort, uint currentBaudRate, string portName)
     {
         try
@@ -188,14 +200,14 @@ public class GnssInitializer
             currentPort.Write(pubxBaudCommand);
 
             // Wait for command to be processed
-            await Task.Delay(3000);
+            await Task.Delay(BaudRateDelayMs);
 
             // Close current connection
             currentPort.Close();
             currentPort.Dispose();
 
             // Wait for device to reconfigure
-            await Task.Delay(3000);
+            await Task.Delay(BaudRateDelayMs);
 
             // Test reconnection at 460800 baud
             return await TestAndSetConnection(portName, 460800);
@@ -213,27 +225,10 @@ public class GnssInitializer
 
         try
         {
-            testPort = new SerialPort(portName, baudRate, DefaultParity, DefaultDataBits, DefaultStopBits)
-            {
-                ReadTimeout = ResponseTimeoutMs,
-                WriteTimeout = ResponseTimeoutMs,
-                RtsEnable = true,
-                DtrEnable = true
-            };
-
+            testPort = CreateSerialPort(portName, baudRate);
             testPort.Open();
-            await Task.Delay(500);
 
-            testPort.DiscardInBuffer();
-            testPort.DiscardOutBuffer();
-
-            var pollCommand = "$PUBX,00*33\r\n";
-            testPort.Write(pollCommand);
-
-            // Wait before checking for response
-            await Task.Delay(200);
-
-            var response = await WaitForGnssResponseAsync(testPort);
+            var response = await TestGnssCommunicationAsync(testPort);
 
             if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
             {
@@ -732,161 +727,6 @@ public class GnssInitializer
         {
             _logger.LogError(ex, "Failed to configure NMEA sentence rates using CFG-VALSET");
         }
-    }
-
-    private async Task ConfigureNmeaSentenceRates()
-    {
-        try
-        {
-            _logger.LogInformation("Configuring NMEA sentence rates");
-            
-            foreach (var nmeaConfig in SystemConfiguration.NmeaSentenceRates)
-            {
-                var sentence = nmeaConfig.Key;
-                var rateHz = nmeaConfig.Value;
-                
-                if (rateHz == 0)
-                {
-                    _logger.LogInformation("Disabling NMEA sentence: {Sentence}", sentence);
-                }
-                else
-                {
-                    var actualRate = Math.Max(1, SystemConfiguration.GnssDataRate / rateHz);
-                    _logger.LogInformation("Setting NMEA sentence {Sentence} to {Rate}Hz (divisor: {Divisor})", sentence, rateHz, actualRate);
-                }
-                
-                await ConfigureNmeaSentenceRate(sentence, rateHz);
-            }
-            
-            _logger.LogInformation("NMEA sentence configuration completed");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to configure NMEA sentence rates");
-        }
-    }
-
-    private async Task ConfigureNmeaSentenceRate(string sentence, int rateHz)
-    {
-        try
-        {
-            // Use PUBX,40 command to configure NMEA message rates
-            // Format: $PUBX,40,<msgId>,<rddc>,<rus1>,<rus2>,<rusb>,<rspi>*<checksum>
-            // where rates are: 0=off, 1=on every fix, 2=on every 2nd fix, etc.
-            
-            // Calculate the divisor: if we want 1Hz and GNSS is running at 10Hz, we need rate=10
-            // If we want 5Hz and GNSS is running at 10Hz, we need rate=2
-            var rate = rateHz == 0 ? 0 : Math.Max(1, SystemConfiguration.GnssDataRate / rateHz);
-            var pubxCommand = $"PUBX,40,{sentence},0,{rate},0,0,0";
-            var checksum = CalculateNmeaChecksum(pubxCommand);
-            var fullCommand = $"${pubxCommand}*{checksum:X2}\r\n";
-            
-            _logger.LogDebug("Sending NMEA rate command: {Command}", fullCommand.Trim());
-            
-            if (_serialPort == null || !_serialPort.IsOpen)
-            {
-                _logger.LogWarning("Cannot send NMEA command - serial port not available");
-                return;
-            }
-            
-            // Clear buffers before sending command
-            _serialPort.DiscardInBuffer();
-            _serialPort.DiscardOutBuffer();
-            
-            // Send the PUBX command
-            _serialPort.Write(fullCommand);
-            
-            // Wait for and check response
-            var response = await WaitForNmeaResponse(sentence, fullCommand.Trim());
-            
-            if (response.HasValue)
-            {
-                if (response.Value)
-                {
-                    _logger.LogInformation("✅ NMEA {Sentence} rate configuration ACK", sentence);
-                }
-                else
-                {
-                    _logger.LogWarning("❌ NMEA {Sentence} rate configuration NAK", sentence);
-                }
-            }
-            else
-            {
-                _logger.LogWarning("⏱️ NMEA {Sentence} rate configuration timeout (no response)", sentence);
-            }
-            
-            await Task.Delay(200); // Brief delay between commands
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to configure NMEA sentence {Sentence} rate", sentence);
-        }
-    }
-
-    private async Task<bool?> WaitForNmeaResponse(string sentence, string command)
-    {
-        if (_serialPort == null || !_serialPort.IsOpen)
-        {
-            return null;
-        }
-
-        const int timeoutMs = 2000;
-        var buffer = new List<byte>();
-        var endTime = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-
-        while (DateTime.UtcNow < endTime)
-        {
-            try
-            {
-                if (_serialPort.BytesToRead > 0)
-                {
-                    var data = new byte[_serialPort.BytesToRead];
-                    var bytesRead = _serialPort.Read(data, 0, data.Length);
-                    buffer.AddRange(data.Take(bytesRead));
-
-                    // Convert buffer to string and look for NMEA responses
-                    var bufferString = global::System.Text.Encoding.ASCII.GetString(buffer.ToArray());
-                    
-                    // Look for PUBX,40 ACK: $PUBX,40,<msgId>,<status>*<checksum>
-                    // Status: 1 = success, 0 = failure
-                    if (bufferString.Contains("$PUBX,40"))
-                    {
-                        var lines = bufferString.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                        foreach (var line in lines)
-                        {
-                            if (line.StartsWith("$PUBX,40") && line.Contains(sentence))
-                            {
-                                _logger.LogDebug("NMEA response received: {Response}", line);
-                                
-                                // Parse PUBX,40 response: $PUBX,40,<msgId>,<status>*<checksum>
-                                var parts = line.Split(',');
-                                if (parts.Length >= 3)
-                                {
-                                    var statusPart = parts[2].Split('*')[0]; // Remove checksum
-                                    if (int.TryParse(statusPart, out var status))
-                                    {
-                                        return status == 1; // 1 = ACK, 0 = NAK
-                                    }
-                                }
-                                
-                                // If we can't parse status, assume it's an ACK if we got a response
-                                return true;
-                            }
-                        }
-                    }
-                }
-
-                await Task.Delay(50); // Small delay to avoid busy waiting
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Error reading NMEA response for {Sentence}", sentence);
-                break;
-            }
-        }
-
-        _logger.LogDebug("Timeout waiting for NMEA response for {Sentence}", sentence);
-        return null;
     }
 
     public void Dispose()

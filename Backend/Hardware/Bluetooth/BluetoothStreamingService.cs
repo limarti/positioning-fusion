@@ -1,9 +1,13 @@
 using System.IO.Ports;
+using Backend.Configuration;
 
 namespace Backend.Hardware.Bluetooth;
 
 public class BluetoothStreamingService : BackgroundService
 {
+    private const string BLUETOOTH_PORT = "/dev/rfcomm0";
+    private const int BLUETOOTH_BAUD_RATE = 9600;
+    
     private readonly ILogger<BluetoothStreamingService> _logger;
     private SerialPort? _bluetoothPort;
     private long _bluetoothBytesSent = 0;
@@ -17,9 +21,7 @@ public class BluetoothStreamingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Bluetooth Streaming Service started");
-
-        await InitializeBluetoothPort();
+        _logger.LogInformation("Bluetooth Streaming Service started - will connect on first data send");
 
         // Keep service running and monitor connection
         while (!stoppingToken.IsCancellationRequested)
@@ -41,21 +43,52 @@ public class BluetoothStreamingService : BackgroundService
     {
         try
         {
-            _bluetoothPort = new SerialPort("/dev/rfcomm0", 9600, Parity.None, 8, StopBits.One);
+            _logger.LogDebug("📡 Bluetooth: Creating SerialPort for {Port} at {BaudRate} baud", BLUETOOTH_PORT, BLUETOOTH_BAUD_RATE);
+            _bluetoothPort = new SerialPort(BLUETOOTH_PORT, BLUETOOTH_BAUD_RATE, Parity.None, 8, StopBits.One);
+            
+            _logger.LogDebug("📡 Bluetooth: Opening port connection...");
             _bluetoothPort.Open();
-            _logger.LogInformation("Bluetooth streaming enabled on /dev/rfcomm0");
+            
+            _logger.LogInformation("📡 Bluetooth: Successfully connected to {Port}", BLUETOOTH_PORT);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to open Bluetooth port /dev/rfcomm0 - will retry connection attempts");
+            _logger.LogWarning(ex, "📡 Bluetooth: Failed to open port {Port} - will retry on next data send. Check if device is paired and rfcomm port is bound.", BLUETOOTH_PORT);
             _bluetoothPort = null;
         }
     }
 
     public async Task SendData(byte[] data)
     {
-        if (_bluetoothPort == null || !_bluetoothPort.IsOpen)
+        _logger.LogDebug("📡 Bluetooth: SendData called with {Length} bytes", data.Length);
+
+        // Check if Bluetooth streaming is enabled
+        if (!SystemConfiguration.BluetoothStreamingEnabled)
+        {
+            _logger.LogDebug("📡 Bluetooth: Streaming disabled in configuration");
             return;
+        }
+
+        // Check if Bluetooth port exists
+        if (!File.Exists(BLUETOOTH_PORT))
+        {
+            _logger.LogDebug("📡 Bluetooth: Port {Port} does not exist - no device connected", BLUETOOTH_PORT);
+            return;
+        }
+
+        _logger.LogDebug("📡 Bluetooth: Port {Port} exists, checking connection", BLUETOOTH_PORT);
+
+        // Initialize connection if needed
+        if (_bluetoothPort == null || !_bluetoothPort.IsOpen)
+        {
+            _logger.LogInformation("📡 Bluetooth: Initializing connection to {Port}", BLUETOOTH_PORT);
+            await InitializeBluetoothPort();
+            if (_bluetoothPort == null || !_bluetoothPort.IsOpen)
+            {
+                _logger.LogWarning("📡 Bluetooth: Failed to establish connection");
+                return;
+            }
+        }
 
         try
         {
@@ -64,11 +97,11 @@ public class BluetoothStreamingService : BackgroundService
             _bluetoothBytesSent += data.Length;
             _totalBluetoothBytesSent += data.Length;
 
-            //_logger.LogInformation("📡 Bluetooth: Sent {Length} bytes - Session Total: {TotalBytes} bytes", data.Length, _totalBluetoothBytesSent);
+            _logger.LogDebug("📡 Bluetooth: Successfully sent {Length} bytes - Session Total: {TotalBytes} bytes", data.Length, _totalBluetoothBytesSent);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send data to Bluetooth. Will attempt to reconnect.");
+            _logger.LogWarning(ex, "📡 Bluetooth: Failed to send data. Will attempt to reconnect.");
             
             // Try to reconnect
             await TryReconnectBluetoothPort();
@@ -79,14 +112,16 @@ public class BluetoothStreamingService : BackgroundService
     {
         try
         {
+            _logger.LogInformation("📡 Bluetooth: Attempting to reconnect...");
             _bluetoothPort?.Close();
             _bluetoothPort?.Dispose();
+            _logger.LogDebug("📡 Bluetooth: Waiting 2 seconds before reconnection attempt");
             await Task.Delay(2000); // Wait before reconnecting
             await InitializeBluetoothPort();
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Bluetooth reconnection failed");
+            _logger.LogWarning(ex, "📡 Bluetooth: Reconnection attempt failed");
         }
     }
 
