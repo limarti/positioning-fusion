@@ -35,7 +35,7 @@ dotnet run --project Backend --launch-profile http
 ### Target Hardware Requirements
 - Backend runs on `http://0.0.0.0:5312` in development
 - SignalR hub available at `/datahub`
-- Requires actual hardware: UBlox GNSS receiver, IM19 IMU, USB camera, LoRa radio
+- Requires actual hardware: UBlox ZED-F9P (ZED-XP) GNSS receiver, IM19 IMU, USB camera, LoRa radio
 - Serial ports `/dev/ttyAMA0` and `/dev/ttyAMA2` must be available
 
 ## Architecture Overview
@@ -60,7 +60,7 @@ dotnet run --project Backend --launch-profile http
 - `Hardware/Gnss/UbxCommunication.cs` - UBlox communication handling
 
 ### Hardware Configuration
-- **UBlox GNSS**: `/dev/ttyAMA0` (bidirectional - data input and RTCM3 correction injection)
+- **UBlox ZED-F9P (ZED-XP) GNSS**: `/dev/ttyAMA0` (bidirectional - data input and RTCM3 correction injection)
 - **IMU Sensor**: `/dev/ttyAMA2` (IM19 IMU data input)
 - **USB Camera**: Video capture for recording
 - **LoRa Radio**: RTCM3 correction transmission (Base mode) or reception (Rover mode)

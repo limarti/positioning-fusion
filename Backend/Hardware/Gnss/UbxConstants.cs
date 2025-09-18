@@ -140,17 +140,23 @@ public static class UbxConstants
     public const uint MSGOUT_NMEA_GLL_UART1 = 0x209100C5;
     public const uint MSGOUT_NMEA_ZDA_UART1 = 0x209100D5;
 
-    // --- RTCM 3.x outputs (UART1)
+    // --- RTCM 3.x outputs (UART1) ---
     // Recommended base set on X20P: 1005 + 1074 + 1094 + 1124 (same rate for all observations).
     public const uint MSGOUT_RTCM3_REF_STATION_ARP_UART1 = 0x209102BE; // 1005
 
     public const uint MSGOUT_RTCM3_GPS_MSM4_UART1 = 0x2091035F; // 1074
-    public const uint MSGOUT_RTCM3_GALILEO_MSM4_UART1 = 0x20910369; // 1094
-    public const uint MSGOUT_RTCM3_BEIDOU_MSM4_UART1 = 0x2091036E; // 1124
+    public const uint MSGOUT_RTCM3_GPS_MSM7_UART1 = 0x209102cd; // 1077
 
-    // Optional (use only if your stream/rover requires them):
-    public const uint MSGOUT_RTCM3_GLONASS_MSM4_UART1 = 0x20910364; // 1084
+    public const uint MSGOUT_RTCM3_GALILEO_MSM4_UART1 = 0x20910369; // 1094
+    public const uint MSGOUT_RTCM3_GALILEO_MSM7_UART1 = 0x20910319; // 1097
+
+    public const uint MSGOUT_RTCM3_BEIDOU_MSM4_UART1 = 0x2091036E; // 1124
+    public const uint MSGOUT_RTCM3_BEIDOU_MSM7_UART1 = 0x209102d7; // 1127
+
+    // Optional / compatibility (use only if rover or stream requires them):
+    public const uint MSGOUT_RTCM3_GLONASS_MSM4_UART1 = 0x20910364; // 1084 (not in base recommendation, but often needed)
     public const uint MSGOUT_RTCM3_GLONASS_CODE_PHASE_BIASES_UART1 = 0x20910304; // 1230
+
 
     // --- Defaults
     public const int DEFAULT_UART_BAUD = 38400;

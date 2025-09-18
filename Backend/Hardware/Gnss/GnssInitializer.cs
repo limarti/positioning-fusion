@@ -387,12 +387,12 @@ public class GnssInitializer
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 1);  // 1Hz for reference station position
 
                 //10hz corrections
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM4_UART1, 10);
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM4_UART1, 10);
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM4_UART1, 10);
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 5);
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 5);
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 5);
 
                 // unsupported as output:
-                // await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GLONASS_MSM4_UART1, 10);
+                // await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GLONASS_MSM7_UART1, 10);
                 // await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GLONASS_CODE_PHASE_BIASES_UART1, 1);
 
                 // Enable Survey-In status monitoring
