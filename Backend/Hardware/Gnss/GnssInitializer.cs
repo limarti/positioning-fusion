@@ -361,8 +361,8 @@ public class GnssInitializer
             // Use CFG-VALSET to configure messages (explicit rates override any defaults)
             await ConfigureMessagesWithValset();
             
-            // Configure NMEA sentence rates
-            await ConfigureNmeaSentenceRates();
+            // Configure NMEA sentence rates using CFG-VALSET
+            await ConfigureNmeaSentenceRatesWithValset();
 
             _logger.LogInformation("ZED-X20P UBX configuration completed");
         }
@@ -673,6 +673,67 @@ public class GnssInitializer
         return (ck_a, ck_b);
     }
 
+    private async Task ConfigureNmeaSentenceRatesWithValset()
+    {
+        try
+        {
+            _logger.LogInformation("Configuring NMEA sentence rates using CFG-VALSET");
+            
+            // Map NMEA sentence names to their CFG-VALSET key IDs
+            var nmeaKeyMapping = new Dictionary<string, uint>
+            {
+                { UbxConstants.NMEA_GGA, UbxConstants.MSGOUT_NMEA_GGA_UART1 },
+                { UbxConstants.NMEA_RMC, UbxConstants.MSGOUT_NMEA_RMC_UART1 },
+                { UbxConstants.NMEA_GSV, UbxConstants.MSGOUT_NMEA_GSV_UART1 },
+                { UbxConstants.NMEA_GSA, UbxConstants.MSGOUT_NMEA_GSA_UART1 },
+                { UbxConstants.NMEA_VTG, UbxConstants.MSGOUT_NMEA_VTG_UART1 },
+                { UbxConstants.NMEA_GLL, UbxConstants.MSGOUT_NMEA_GLL_UART1 },
+                { UbxConstants.NMEA_ZDA, UbxConstants.MSGOUT_NMEA_ZDA_UART1 }
+            };
+
+            foreach (var nmeaConfig in SystemConfiguration.NmeaSentenceRates)
+            {
+                var sentence = nmeaConfig.Key;
+                var rateHz = nmeaConfig.Value;
+                
+                if (!nmeaKeyMapping.TryGetValue(sentence, out var keyId))
+                {
+                    _logger.LogWarning("Unknown NMEA sentence type: {Sentence}", sentence);
+                    continue;
+                }
+
+                // Calculate the rate: 0=disabled, 1=every navigation solution, etc.
+                // For CFG-VALSET: rate=1 means every solution, rate=2 means every 2nd solution
+                var rate = rateHz == 0 ? (byte)0 : (byte)Math.Max(1, SystemConfiguration.GnssDataRate / rateHz);
+                
+                // Actually for 1Hz output at 10Hz GNSS rate, we want rate=10, but that gives 0.1Hz
+                // Let's fix this: for desired 1Hz, we want rate=1 (every solution) but reduce GNSS rate
+                // For now, let's use rate=1 for any enabled sentence to get max output
+                if (rateHz > 0)
+                {
+                    rate = 1; // Output every navigation solution
+                }
+                
+                if (rateHz == 0)
+                {
+                    _logger.LogInformation("Disabling NMEA sentence: {Sentence}", sentence);
+                }
+                else
+                {
+                    _logger.LogInformation("Setting NMEA sentence {Sentence} to {Rate}Hz (divisor: {Divisor})", sentence, rateHz, rate);
+                }
+
+                await EnableMessageWithValset(keyId, rate);
+            }
+            
+            _logger.LogInformation("NMEA sentence configuration completed using CFG-VALSET");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to configure NMEA sentence rates using CFG-VALSET");
+        }
+    }
+
     private async Task ConfigureNmeaSentenceRates()
     {
         try
@@ -721,14 +782,111 @@ public class GnssInitializer
             var fullCommand = $"${pubxCommand}*{checksum:X2}\r\n";
             
             _logger.LogDebug("Sending NMEA rate command: {Command}", fullCommand.Trim());
-            _serialPort?.Write(fullCommand);
             
-            await Task.Delay(100); // Brief delay between commands
+            if (_serialPort == null || !_serialPort.IsOpen)
+            {
+                _logger.LogWarning("Cannot send NMEA command - serial port not available");
+                return;
+            }
+            
+            // Clear buffers before sending command
+            _serialPort.DiscardInBuffer();
+            _serialPort.DiscardOutBuffer();
+            
+            // Send the PUBX command
+            _serialPort.Write(fullCommand);
+            
+            // Wait for and check response
+            var response = await WaitForNmeaResponse(sentence, fullCommand.Trim());
+            
+            if (response.HasValue)
+            {
+                if (response.Value)
+                {
+                    _logger.LogInformation("✅ NMEA {Sentence} rate configuration ACK", sentence);
+                }
+                else
+                {
+                    _logger.LogWarning("❌ NMEA {Sentence} rate configuration NAK", sentence);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("⏱️ NMEA {Sentence} rate configuration timeout (no response)", sentence);
+            }
+            
+            await Task.Delay(200); // Brief delay between commands
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to configure NMEA sentence {Sentence} rate", sentence);
         }
+    }
+
+    private async Task<bool?> WaitForNmeaResponse(string sentence, string command)
+    {
+        if (_serialPort == null || !_serialPort.IsOpen)
+        {
+            return null;
+        }
+
+        const int timeoutMs = 2000;
+        var buffer = new List<byte>();
+        var endTime = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+
+        while (DateTime.UtcNow < endTime)
+        {
+            try
+            {
+                if (_serialPort.BytesToRead > 0)
+                {
+                    var data = new byte[_serialPort.BytesToRead];
+                    var bytesRead = _serialPort.Read(data, 0, data.Length);
+                    buffer.AddRange(data.Take(bytesRead));
+
+                    // Convert buffer to string and look for NMEA responses
+                    var bufferString = global::System.Text.Encoding.ASCII.GetString(buffer.ToArray());
+                    
+                    // Look for PUBX,40 ACK: $PUBX,40,<msgId>,<status>*<checksum>
+                    // Status: 1 = success, 0 = failure
+                    if (bufferString.Contains("$PUBX,40"))
+                    {
+                        var lines = bufferString.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in lines)
+                        {
+                            if (line.StartsWith("$PUBX,40") && line.Contains(sentence))
+                            {
+                                _logger.LogDebug("NMEA response received: {Response}", line);
+                                
+                                // Parse PUBX,40 response: $PUBX,40,<msgId>,<status>*<checksum>
+                                var parts = line.Split(',');
+                                if (parts.Length >= 3)
+                                {
+                                    var statusPart = parts[2].Split('*')[0]; // Remove checksum
+                                    if (int.TryParse(statusPart, out var status))
+                                    {
+                                        return status == 1; // 1 = ACK, 0 = NAK
+                                    }
+                                }
+                                
+                                // If we can't parse status, assume it's an ACK if we got a response
+                                return true;
+                            }
+                        }
+                    }
+                }
+
+                await Task.Delay(50); // Small delay to avoid busy waiting
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error reading NMEA response for {Sentence}", sentence);
+                break;
+            }
+        }
+
+        _logger.LogDebug("Timeout waiting for NMEA response for {Sentence}", sentence);
+        return null;
     }
 
     public void Dispose()

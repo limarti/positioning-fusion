@@ -159,6 +159,15 @@ public static class UbxConstants
     public const uint MSGOUT_UBX_TIM_TP_UART1 = 0x2091017a;      // TIM-TP UART1 output rate
     public const uint MSGOUT_UBX_MON_COMMS_UART1 = 0x2091034f;   // MON-COMMS UART1 output rate
 
+    // NMEA message output key IDs for CFG-VALSET
+    public const uint MSGOUT_NMEA_GGA_UART1 = 0x209100bb;        // NMEA GGA UART1 output rate
+    public const uint MSGOUT_NMEA_RMC_UART1 = 0x209100ac;        // NMEA RMC UART1 output rate
+    public const uint MSGOUT_NMEA_GSV_UART1 = 0x209100c9;        // NMEA GSV UART1 output rate
+    public const uint MSGOUT_NMEA_GSA_UART1 = 0x209100bf;        // NMEA GSA UART1 output rate
+    public const uint MSGOUT_NMEA_VTG_UART1 = 0x209100b1;        // NMEA VTG UART1 output rate
+    public const uint MSGOUT_NMEA_GLL_UART1 = 0x209100c5;        // NMEA GLL UART1 output rate
+    public const uint MSGOUT_NMEA_ZDA_UART1 = 0x209100d5;        // NMEA ZDA UART1 output rate
+
     // -------------------------
     // Recommended defaults for X20P UART
     // -------------------------

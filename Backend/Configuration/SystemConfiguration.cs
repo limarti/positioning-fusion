@@ -19,18 +19,8 @@ public static class SystemConfiguration
     public static CorrectionsMode CorrectionsOperation { get; set; } = CorrectionsMode.Disabled;
     public static int GnssDataRate { get; set; } = 10; //1, 5 o 10 Hz
     
-    // Bluetooth NMEA output rate for mobile apps (SW Maps, etc.)
-    public static int BluetoothDataRate { get; set; } = 1; // Hz - typically 1-5 Hz for mobile apps
-    
-    // Bluetooth streaming configuration
+    // NMEA sentences to sent via bluetooth
     public static bool BluetoothStreamingEnabled { get; set; } = true;
-    public static List<(byte messageClass, byte messageId)> BluetoothMessageFilter { get; set; } = new()
-    {
-        (UbxConstants.CLASS_NAV, UbxConstants.NAV_PVT), // NAV-PVT (Position Velocity Time)
-        (UbxConstants.CLASS_NAV, UbxConstants.NAV_SAT)  // NAV-SAT (Satellite Information)
-    };
-
-    // NMEA sentence subscription configuration
     public static Dictionary<string, int> NmeaSentenceRates { get; set; } = new()
     {
         { UbxConstants.NMEA_GGA, 1 },  // Global Positioning System Fix Data - 1 Hz

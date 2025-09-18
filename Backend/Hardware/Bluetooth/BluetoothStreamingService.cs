@@ -108,8 +108,8 @@ public class BluetoothStreamingService : BackgroundService
 
             if (bluetoothRate > 0)
             {
-                _logger.LogInformation("📊 Bluetooth Rate: {BluetoothRate:F1} kbps ({PeriodBytes} bytes in {Period:F1}s) - Session Total: {SessionTotal} bytes",
-                    bluetoothRate, totalBytesInPeriod, timeDelta, _totalBluetoothBytesSent);
+                //_logger.LogInformation("📊 Bluetooth Rate: {BluetoothRate:F1} kbps ({PeriodBytes} bytes in {Period:F1}s) - Session Total: {SessionTotal} bytes",
+                //    bluetoothRate, totalBytesInPeriod, timeDelta, _totalBluetoothBytesSent);
             }
         }
     }

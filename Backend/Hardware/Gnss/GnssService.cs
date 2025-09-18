@@ -147,7 +147,10 @@ public class GnssService : BackgroundService
                         {
                             if (line.StartsWith("$") && line.Contains("*"))
                             {
-                                _logger.LogInformation("📡 NMEA: {Sentence}", line);
+                                //_logger.LogInformation("📡 NMEA: {Sentence}", line);
+                                
+                                // Send NMEA sentence via Bluetooth
+                                await SendNmeaViaBluetooth(line);
                             }
                         }
                     }
@@ -209,9 +212,6 @@ public class GnssService : BackgroundService
 
             // Log raw GNSS UBX message data to file (complete UBX frame)
             _dataFileWriter.WriteData(completeMessage);
-
-            // Stream to Bluetooth if enabled and message is in filter
-            await StreamToBluetoothIfEnabled(completeMessage, messageClass, messageId);
 
             if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_SAT)
             {
@@ -358,33 +358,33 @@ public class GnssService : BackgroundService
         _bytesSent += bytesSent;
     }
 
-    private async Task StreamToBluetoothIfEnabled(byte[] completeMessage, byte messageClass, byte messageId)
+    private async Task SendNmeaViaBluetooth(string nmeaSentence)
     {
         if (!SystemConfiguration.BluetoothStreamingEnabled)
+        {
+            _logger.LogDebug("📤 Bluetooth streaming disabled, not sending NMEA: {Sentence}", nmeaSentence);
             return;
+        }
 
-        // Check if this message type should be streamed
-        bool shouldStream = SystemConfiguration.BluetoothMessageFilter.Any(filter => 
-            filter.messageClass == messageClass && filter.messageId == messageId);
-
-        if (!shouldStream)
-            return;
-
-        // Apply rate limiting
-        var now = DateTime.UtcNow;
-        var throttleInterval = TimeSpan.FromMilliseconds(1000.0 / SystemConfiguration.BluetoothDataRate);
-        if (now - _lastBluetoothSend < throttleInterval)
-            return;
-
-        _lastBluetoothSend = now;
-
-        // Send to Bluetooth service
-        await _bluetoothService.SendData(completeMessage);
-        
-        _logger.LogDebug("Filtered UBX message Class=0x{Class:X2}, ID=0x{Id:X2} for Bluetooth streaming",
-            messageClass, messageId);
+        try
+        {
+            // Convert NMEA sentence to bytes with proper line endings
+            var nmeaBytes = global::System.Text.Encoding.ASCII.GetBytes(nmeaSentence + "\r\n");
+            
+            // Log hex dump for debugging
+            var hexDump = string.Join(" ", nmeaBytes.Select(b => $"{b:X2}"));
+            
+            // Log attempt to send
+            //_logger.LogInformation("📤 Attempting to send NMEA via Bluetooth ({Bytes} bytes): {Sentence}", nmeaBytes.Length, nmeaSentence);
+            
+            // Send via Bluetooth service
+            await _bluetoothService.SendData(nmeaBytes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Failed to send NMEA sentence via Bluetooth: {Sentence}", nmeaSentence);
+        }
     }
-
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
