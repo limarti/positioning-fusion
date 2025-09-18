@@ -350,31 +350,12 @@ public class GnssInitializer
 
         try
         {
+            const int UBX_MESSAGES_RATE_HZ = 10;
+
             _logger.LogInformation("ZED-X20P: Using CFG-VALSET for modern UBX configuration");
-            _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz", SystemConfiguration.CorrectionsOperation, SystemConfiguration.GnssDataRate);
+            _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz", SystemConfiguration.CorrectionsOperation, UBX_MESSAGES_RATE_HZ);
 
-            // Use CFG-VALSET to configure messages (explicit rates override any defaults)
-            await ConfigureMessagesWithValset();
-            
-            // Configure NMEA sentence rates using CFG-VALSET
-            await ConfigureNmeaSentenceRatesWithValset();
-
-            _logger.LogInformation("ZED-X20P UBX configuration completed");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to configure GNSS for satellite data");
-        }
-    }
-
-    private async Task ConfigureMessagesWithValset()
-    {
-        try
-        {
-            _logger.LogInformation("Using CFG-VALSET to configure ZED-X20P messages");
-
-            // First, set the navigation rate to match desired output frequency
-            await SetNavigationRate(SystemConfiguration.GnssDataRate);
+            await SetNavigationRate(UBX_MESSAGES_RATE_HZ);
 
             // Enable messages to output every navigation solution (rate = 1)
             // Since we set nav rate to match desired frequency, this gives us the correct output rate
@@ -389,13 +370,24 @@ public class GnssInitializer
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, outputEveryNavSolution);    // Enable time pulse data!
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, outputEveryNavSolution); // Enable communication monitor!
 
-            _logger.LogInformation("CFG-VALSET configuration completed for {DesiredRate}Hz output", SystemConfiguration.GnssDataRate);
+            const byte nmeaOutputRate = 10;
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GGA_UART1, nmeaOutputRate);  // Essential positioning data
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_RMC_UART1, nmeaOutputRate);  // Recommended minimum data
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GSV_UART1, nmeaOutputRate);  // Satellites in view
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GSA_UART1, nmeaOutputRate);  // DOP and active satellites
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_VTG_UART1, nmeaOutputRate);  // Track made good and ground speed
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GLL_UART1, nmeaOutputRate);  // Geographic position
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_ZDA_UART1, nmeaOutputRate);  // Time and date
+            
+            _logger.LogInformation("NMEA sentence configuration completed using CFG-VALSET");
+            _logger.LogInformation("ZED-X20P UBX configuration completed");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to configure messages with CFG-VALSET");
+            _logger.LogError(ex, "Failed to configure GNSS for satellite data");
         }
     }
+
 
     private async Task SetNavigationRate(int rateHz)
     {
@@ -668,66 +660,6 @@ public class GnssInitializer
         return (ck_a, ck_b);
     }
 
-    private async Task ConfigureNmeaSentenceRatesWithValset()
-    {
-        try
-        {
-            _logger.LogInformation("Configuring NMEA sentence rates using CFG-VALSET");
-            
-            // Map NMEA sentence names to their CFG-VALSET key IDs
-            var nmeaKeyMapping = new Dictionary<string, uint>
-            {
-                { UbxConstants.NMEA_GGA, UbxConstants.MSGOUT_NMEA_GGA_UART1 },
-                { UbxConstants.NMEA_RMC, UbxConstants.MSGOUT_NMEA_RMC_UART1 },
-                { UbxConstants.NMEA_GSV, UbxConstants.MSGOUT_NMEA_GSV_UART1 },
-                { UbxConstants.NMEA_GSA, UbxConstants.MSGOUT_NMEA_GSA_UART1 },
-                { UbxConstants.NMEA_VTG, UbxConstants.MSGOUT_NMEA_VTG_UART1 },
-                { UbxConstants.NMEA_GLL, UbxConstants.MSGOUT_NMEA_GLL_UART1 },
-                { UbxConstants.NMEA_ZDA, UbxConstants.MSGOUT_NMEA_ZDA_UART1 }
-            };
-
-            foreach (var nmeaConfig in SystemConfiguration.NmeaSentenceRates)
-            {
-                var sentence = nmeaConfig.Key;
-                var rateHz = nmeaConfig.Value;
-                
-                if (!nmeaKeyMapping.TryGetValue(sentence, out var keyId))
-                {
-                    _logger.LogWarning("Unknown NMEA sentence type: {Sentence}", sentence);
-                    continue;
-                }
-
-                // Calculate the rate: 0=disabled, 1=every navigation solution, etc.
-                // For CFG-VALSET: rate=1 means every solution, rate=2 means every 2nd solution
-                var rate = rateHz == 0 ? (byte)0 : (byte)Math.Max(1, SystemConfiguration.GnssDataRate / rateHz);
-                
-                // Actually for 1Hz output at 10Hz GNSS rate, we want rate=10, but that gives 0.1Hz
-                // Let's fix this: for desired 1Hz, we want rate=1 (every solution) but reduce GNSS rate
-                // For now, let's use rate=1 for any enabled sentence to get max output
-                if (rateHz > 0)
-                {
-                    rate = 1; // Output every navigation solution
-                }
-                
-                if (rateHz == 0)
-                {
-                    _logger.LogInformation("Disabling NMEA sentence: {Sentence}", sentence);
-                }
-                else
-                {
-                    _logger.LogInformation("Setting NMEA sentence {Sentence} to {Rate}Hz (divisor: {Divisor})", sentence, rateHz, rate);
-                }
-
-                await EnableMessageWithValset(keyId, rate);
-            }
-            
-            _logger.LogInformation("NMEA sentence configuration completed using CFG-VALSET");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to configure NMEA sentence rates using CFG-VALSET");
-        }
-    }
 
     public void Dispose()
     {
