@@ -62,13 +62,6 @@ public class BluetoothStreamingService : BackgroundService
     {
         _logger.LogDebug("📡 Bluetooth: SendData called with {Length} bytes", data.Length);
 
-        // Check if Bluetooth streaming is enabled
-        if (!SystemConfiguration.BluetoothStreamingEnabled)
-        {
-            _logger.LogDebug("📡 Bluetooth: Streaming disabled in configuration");
-            return;
-        }
-
         // Check if Bluetooth port exists
         if (!File.Exists(BLUETOOTH_PORT))
         {

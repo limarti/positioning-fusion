@@ -3,6 +3,14 @@ using Backend.Configuration;
 
 namespace Backend.Hardware.Gnss;
 
+public enum UbxResponseType
+{
+    Ack,
+    Nak,
+    Timeout,
+    Error
+}
+
 public class GnssInitializer
 {
     private readonly ILogger<GnssInitializer> _logger;
@@ -338,6 +346,7 @@ public class GnssInitializer
         return _serialPort;
     }
 
+    const int UBX_MESSAGES_RATE_HZ = 10;    //1, 5, 10 or 20
     private async Task ConfigureForSatelliteDataAsync()
     {
         if (_serialPort == null || !_serialPort.IsOpen)
@@ -350,34 +359,62 @@ public class GnssInitializer
 
         try
         {
-            const int UBX_MESSAGES_RATE_HZ = 10;
-
             _logger.LogInformation("ZED-X20P: Using CFG-VALSET for modern UBX configuration");
             _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz", SystemConfiguration.CorrectionsOperation, UBX_MESSAGES_RATE_HZ);
 
             await SetNavigationRate(UBX_MESSAGES_RATE_HZ);
 
-            // Enable messages to output every navigation solution (rate = 1)
-            // Since we set nav rate to match desired frequency, this gives us the correct output rate
-            const byte outputEveryNavSolution = 1;
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, outputEveryNavSolution);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, outputEveryNavSolution);  // Enable satellite data!
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SIG_UART1, outputEveryNavSolution);  // Enable signal data!
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, outputEveryNavSolution);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_SFRBX_UART1, outputEveryNavSolution);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_COR_UART1, outputEveryNavSolution);   // Enable correction status!
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TM2_UART1, outputEveryNavSolution);   // Enable time mark data!
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, outputEveryNavSolution);    // Enable time pulse data!
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, outputEveryNavSolution); // Enable communication monitor!
+            // Enable messages at full rate (10Hz) - every navigation solution
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SIG_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_SFRBX_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_COR_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TM2_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, 10);
 
-            const byte nmeaOutputRate = 10;
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GGA_UART1, nmeaOutputRate);  // Essential positioning data
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_RMC_UART1, nmeaOutputRate);  // Recommended minimum data
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GSV_UART1, nmeaOutputRate);  // Satellites in view
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GSA_UART1, nmeaOutputRate);  // DOP and active satellites
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_VTG_UART1, nmeaOutputRate);  // Track made good and ground speed
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GLL_UART1, nmeaOutputRate);  // Geographic position
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_ZDA_UART1, nmeaOutputRate);  // Time and date
+            if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Send)
+            {
+                _logger.LogInformation("Configuring Base Station mode - Survey-In with RTCM3 output");
+
+                //await EnableMessageWithValset(UbxConstants.UART1_PROTOCOL_UBX, 1);
+                //await EnableMessageWithValset(UbxConstants.UART1_PROTOCOL_NMEA, 1);
+                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3, true);
+
+                // Configure RTCM3 message rates
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 1);  // 1Hz for reference station position
+
+                //10hz corrections
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM4_UART1, 10);
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM4_UART1, 10);
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM4_UART1, 10);
+
+                // unsupported as output:
+                // await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GLONASS_MSM4_UART1, 10);
+                // await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GLONASS_CODE_PHASE_BIASES_UART1, 1);
+
+                // Enable Survey-In status monitoring
+                await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SVIN_UART1, 1);
+
+                // Start Survey-In mode after RTCM3 configuration
+                await SetSurveyInMode(UbxConstants.SURVEY_IN_DURATION_SECONDS, UbxConstants.SURVEY_IN_ACCURACY_LIMIT_0P1MM);
+
+                _logger.LogInformation("Base Station mode configuration completed");
+            }
+            else if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Receive)
+            {
+
+            }
+
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GGA_UART1, 1);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_RMC_UART1, 1);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GSV_UART1, 1);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GSA_UART1, 1);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_VTG_UART1, 1);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GLL_UART1, 1);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_ZDA_UART1, 1);
             
             _logger.LogInformation("NMEA sentence configuration completed using CFG-VALSET");
             _logger.LogInformation("ZED-X20P UBX configuration completed");
@@ -388,6 +425,53 @@ public class GnssInitializer
         }
     }
 
+
+    private async Task SetSurveyInMode(uint durationSeconds, uint accuracyLimit)
+    {
+        try
+        {
+            _logger.LogInformation("Setting Survey-In mode: {Duration}s duration, {Accuracy}mm accuracy limit",
+                durationSeconds, accuracyLimit * 0.1);
+
+            var payload = new List<byte>
+            {
+                UbxConstants.VAL_VERSION,                      // 0x01
+                (byte)(UbxConstants.VAL_LAYER_RAM             // bitmask for VALSET
+                     /* | UbxConstants.VAL_LAYER_BBR */),     // add if you want persistence across warm boots
+                (byte)UbxConstants.ValTransaction.None,       // single-message apply (atomic in one packet)
+                0x00,                                         // reserved
+            };
+
+            // Step 1: ensure we transition cleanly by disabling in the same transaction
+            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_MODE));
+            payload.Add(UbxConstants.TMODE_DISABLED);
+
+            // Step 2: immediately set Survey-In + parameters
+            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_MODE));
+            payload.Add(UbxConstants.TMODE_SURVEY_IN);
+
+            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_SVIN_MIN_DUR));
+            payload.AddRange(BitConverter.GetBytes(durationSeconds));
+
+            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_SVIN_ACC_LIMIT));
+            payload.AddRange(BitConverter.GetBytes(accuracyLimit));
+
+            var response = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+
+            if (response == UbxResponseType.Ack)
+                _logger.LogInformation("Survey-In mode configured successfully");
+            else if (response == UbxResponseType.Nak)
+                _logger.LogWarning("Survey-In mode configuration NAK");
+            else if (response == UbxResponseType.Timeout)
+                _logger.LogWarning("Survey-In mode configuration timeout");
+            else
+                _logger.LogError("Survey-In mode configuration error");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to set Survey-In mode");
+        }
+    }
 
     private async Task SetNavigationRate(int rateHz)
     {
@@ -413,9 +497,23 @@ public class GnssInitializer
             // Add measurement period value (2 bytes, little endian)
             payload.AddRange(BitConverter.GetBytes(measurementPeriodMs));
 
-            await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+            var response = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
 
-            _logger.LogInformation("Navigation rate set to {Period}ms ({RateHz}Hz)", measurementPeriodMs, rateHz);
+            switch (response)
+            {
+                case UbxResponseType.Ack:
+                    _logger.LogInformation("Navigation rate set to {Period}ms ({RateHz}Hz)", measurementPeriodMs, rateHz);
+                    break;
+                case UbxResponseType.Nak:
+                    _logger.LogWarning("Navigation rate configuration NAK");
+                    break;
+                case UbxResponseType.Timeout:
+                    _logger.LogWarning("Navigation rate configuration timeout");
+                    break;
+                case UbxResponseType.Error:
+                    _logger.LogError("Navigation rate configuration error");
+                    break;
+            }
         }
         catch (Exception ex)
         {
@@ -423,14 +521,41 @@ public class GnssInitializer
         }
     }
 
-    private async Task EnableMessageWithValset(uint keyId, byte rate)
+    private async Task SetBoolWithValset(uint keyId, bool enable)
+    {
+        var payload = new List<byte>
+    {
+        UbxConstants.VAL_VERSION,
+        UbxConstants.VAL_LAYER_RAM,
+        (byte)UbxConstants.ValTransaction.None,
+        0x00,
+    };
+        payload.AddRange(BitConverter.GetBytes(keyId));
+        payload.Add((byte)(enable ? 1 : 0)); // strictly 0/1 for boolean keys
+        await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+    }
+
+
+    private async Task EnableMessageWithValset(uint keyId, int desiredRateHz)
     {
         var messageName = Parsers.GnssParserUtils.GetKeyIdConstantName(keyId);
         
         try
         {
-            _logger.LogInformation("Enabling UBX message {MessageName} (Key ID: 0x{KeyId:X8}) with rate {Rate}", 
-                messageName, keyId, rate);
+            // Calculate rate divisor: 0=disabled, 1=every solution, 2=every 2nd solution, etc.
+            byte rate;
+            if (desiredRateHz == 0)
+            {
+                rate = 0; // Disabled
+            }
+            else
+            {
+                // Calculate divisor: UBX_MESSAGES_RATE_HZ / desiredRateHz
+                rate = (byte)Math.Max(1, UBX_MESSAGES_RATE_HZ / desiredRateHz);
+            }
+
+            _logger.LogInformation("Enabling UBX message {MessageName} (Key ID: 0x{KeyId:X8}) at {DesiredHz}Hz (rate divisor: {Rate})", 
+                messageName, keyId, desiredRateHz, rate);
 
             // CFG-VALSET payload: version(1) + layer(1) + transaction(1) + reserved(1) + keyId(4) + value(1)
 
@@ -448,15 +573,22 @@ public class GnssInitializer
             // Add value (1 byte for message rate)
             payload.Add(rate);
 
-            var success = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+            var response = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
             
-            if (success)
+            switch (response)
             {
-                _logger.LogInformation("✓ {MessageName} ACK", messageName);
-            }
-            else
-            {
-                _logger.LogWarning("✗ UBX message {MessageName} failed to enable (NAK/timeout)", messageName);
+                case UbxResponseType.Ack:
+                    _logger.LogInformation("✅ {MessageName} ACK", messageName);
+                    break;
+                case UbxResponseType.Nak:
+                    _logger.LogWarning("❌ {MessageName} NAK", messageName);
+                    break;
+                case UbxResponseType.Timeout:
+                    _logger.LogWarning("❌ {MessageName} timeout", messageName);
+                    break;
+                case UbxResponseType.Error:
+                    _logger.LogError("❌ {MessageName} error", messageName);
+                    break;
             }
         }
         catch (Exception ex)
@@ -465,11 +597,11 @@ public class GnssInitializer
         }
     }
 
-    private async Task<bool> SendUbxConfigMessageAsync(byte messageClass, byte messageId, byte[] payload)
+    private async Task<UbxResponseType> SendUbxConfigMessageAsync(byte messageClass, byte messageId, byte[] payload)
     {
         if (_serialPort == null || !_serialPort.IsOpen)
         {
-            return false;
+            return UbxResponseType.Error;
         }
 
         try
@@ -491,24 +623,24 @@ public class GnssInitializer
                 if (response.Value)
                 {
                     _logger.LogDebug("UBX config ACK received for Class=0x{Class:X2}, ID=0x{Id:X2}", messageClass, messageId);
-                    return true;
+                    return UbxResponseType.Ack;
                 }
                 else
                 {
                     _logger.LogWarning("UBX config NAK received for Class=0x{Class:X2}, ID=0x{Id:X2}", messageClass, messageId);
-                    return false;
+                    return UbxResponseType.Nak;
                 }
             }
             else
             {
                 _logger.LogWarning("No UBX response received for Class=0x{Class:X2}, ID=0x{Id:X2} (timeout)", messageClass, messageId);
-                return false;
+                return UbxResponseType.Timeout;
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send UBX config message");
-            return false;
+            return UbxResponseType.Error;
         }
     }
 

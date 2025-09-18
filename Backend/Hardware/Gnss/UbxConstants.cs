@@ -1,115 +1,66 @@
 namespace Backend.Hardware.Gnss;
 
 /// <summary>
-/// UBX protocol constants tailored for u-blox ZED-X20P.
-/// Focuses on modern CFG-VALSET/GET/DEL and messages the X20P actually supports.
+/// UBX / NMEA / RTCM constants for u-blox ZED-X20P (CFG-VAL* oriented).
 /// </summary>
 public static class UbxConstants
 {
-    // -------------------------
-    // UBX protocol sync bytes
-    // -------------------------
+    // --- UBX sync bytes
     public const byte SYNC_CHAR_1 = 0xB5;
     public const byte SYNC_CHAR_2 = 0x62;
 
-    // -------------------------
-    // Message classes
-    // -------------------------
-    public const byte CLASS_NAV = 0x01;  // Navigation results
-    public const byte CLASS_RXM = 0x02;  // Receiver manager (RAWX/SFRBX etc.)
-    public const byte CLASS_ACK = 0x05;  // ACK-ACK / ACK-NAK
-    public const byte CLASS_CFG = 0x06;  // Configuration (VALSET/VALGET/VALDEL)
-    public const byte CLASS_MON = 0x0A;  // Monitoring (MON-VER, etc.)
-    public const byte CLASS_TIM = 0x0D;  // Timing messages
+    // --- RTCM sync
+    public const byte RTCM3_PREAMBLE = 0xD3;
+    public const int RTCM3_MIN_LENGTH = 6;
 
-    // -------------------------
-    // ACK messages
-    // -------------------------
-    public const byte ACK_NAK = 0x00;    // Not acknowledged
-    public const byte ACK_ACK = 0x01;    // Acknowledged
+    // --- UBX classes
+    public const byte CLASS_NAV = 0x01;   // NAV-*
+    public const byte CLASS_RXM = 0x02;   // RXM-*
+    public const byte CLASS_ACK = 0x05;   // ACK-ACK / ACK-NAK
+    public const byte CLASS_CFG = 0x06;   // CFG-*
+    public const byte CLASS_MON = 0x0A;   // MON-*
+    public const byte CLASS_TIM = 0x0D;   // TIM-*
 
-    // -------------------------
-    // MON messages
-    // -------------------------
-    public const byte MON_VER = 0x04;    // Receiver / software version
-    public const byte MON_COMMS = 0x36;  // Communication port information
+    // --- ACK ids
+    public const byte ACK_NAK = 0x00;
+    public const byte ACK_ACK = 0x01;
 
-    // -------------------------
-    // NAV messages (use modern, supported ones)
-    // -------------------------
-    public const byte NAV_PVT = 0x07;    // Position/Velocity/Time (primary)
-    public const byte NAV_SAT = 0x35;    // Satellite info (per-satellite SV state)
-    public const byte NAV_SIG = 0x43;    // Signal information (per-signal data)
-    // NOTE: Avoid legacy NAV messages on X20P:
-    // - NAV-STATUS (0x03) is deprecated on newer platforms.
-    // - NAV-POSLLH (0x02) and NAV-SOL (0x06) are legacy; prefer NAV-PVT.
+    // --- MON ids
+    public const byte MON_VER = 0x04;
+    public const byte MON_COMMS = 0x36;
 
-    // -------------------------
-    // RXM messages
-    // -------------------------
-    public const byte RXM_SFRBX = 0x13;  // Broadcast nav data subframe (multi-GNSS)
-    public const byte RXM_RAWX = 0x15;   // Raw measurement data
-    public const byte RXM_COR = 0x34;    // Differential correction input status
+    // --- NAV ids (use modern ones)
+    public const byte NAV_PVT = 0x07;
+    public const byte NAV_SAT = 0x35;
+    public const byte NAV_SIG = 0x43;
+    public const byte NAV_SVIN = 0x3B;
 
-    // -------------------------
-    // TIM messages
-    // -------------------------
-    public const byte TIM_TM2 = 0x03;    // Time mark data
-    public const byte TIM_TP = 0x01;     // Time pulse timedata
+    // --- RXM ids
+    public const byte RXM_SFRBX = 0x13;
+    public const byte RXM_RAWX = 0x15;
+    public const byte RXM_COR = 0x34;
 
-    // -------------------------
-    // CFG messages
-    // -------------------------
-    // Modern key/value API (use these):
-    public const byte CFG_VALSET = 0x8A; // Write configuration key/values
-    public const byte CFG_VALGET = 0x8B; // Read configuration key/values
-    public const byte CFG_VALDEL = 0x8C; // Delete configuration key/values
-    public const byte CFG_RST = 0x04;    // Reset receiver / clear configuration
+    // --- TIM ids
+    public const byte TIM_TM2 = 0x03;
+    public const byte TIM_TP = 0x01;
 
-    // Legacy messages (avoid on X20P where possible; kept for completeness):
-    public const byte CFG_PRT = 0x00;    // Port configuration (legacy)
-    public const byte CFG_MSG = 0x01;    // Message rate config (legacy, per-port)
+    // --- CFG ids (modern + a few legacy for completeness)
+    public const byte CFG_VALSET = 0x8A;
+    public const byte CFG_VALGET = 0x8B;
+    public const byte CFG_VALDEL = 0x8C;
+    public const byte CFG_RST = 0x04; // reset
+    public const byte CFG_PRT = 0x00; // legacy port cfg (avoid; prefer VALSET)
+    public const byte CFG_MSG = 0x01; // legacy per-port rates (avoid)
 
-    // -------------------------
-    // CFG-VAL* helpers
-    // -------------------------
-    // Version for VALSET/GET/DEL
+    // --- CFG-VAL* header fields
     public const byte VAL_VERSION = 0x01;
+    public const byte VAL_LAYER_RAM = 0x01; // apply at runtime
+    public const byte VAL_LAYER_BBR = 0x02;
+    public const byte VAL_LAYER_FLASH = 0x04;
 
-    // Layers bitmask for VALSET/DEL (choose RAM unless you know you need persistence)
-    public const byte VAL_LAYER_RAM = 0x01; // Volatile, applies immediately
-    public const byte VAL_LAYER_BBR = 0x02; // Battery-backed RAM (if supported)
-    public const byte VAL_LAYER_FLASH = 0x04; // Non-volatile (use cautiously)
+    public enum ValTransaction : byte { None = 0x00, New = 0x01, Continue = 0x02, Commit = 0x03 }
 
-    // Transaction modes for VALSET (0x06 0x8A)
-    public enum ValTransaction : byte
-    {
-        None = 0x00, // Single message, no transaction
-        New = 0x01, // Start new transaction
-        Continue = 0x02, // Continue existing transaction
-        Commit = 0x03  // Commit transaction
-    }
-
-    // -------------------------
-    // Port indices (legacy CFG-MSG payload ordering � avoid for X20P)
-    // -------------------------
-    public const int PORT_INDEX_DDC = 0; // I2C
-    public const int PORT_INDEX_UART1 = 1; // Primary UART
-    public const int PORT_INDEX_UART2 = 2; // Secondary UART
-    public const int PORT_INDEX_USB = 3; // USB
-    public const int PORT_INDEX_SPI = 4; // SPI
-
-    // -------------------------
-    // Message output rates (generic)
-    // -------------------------
-    public const byte RATE_DISABLED = 0x00;
-    public const byte RATE_1HZ = 0x01;
-    public const byte RATE_2HZ = 0x02;
-    public const byte RATE_5HZ = 0x05;
-
-    // -------------------------
-    // GNSS system IDs (for parsing NAV-SAT etc.)
-    // -------------------------
+    // --- GNSS ids (for parsing)
     public const byte GNSS_ID_GPS = 0;
     public const byte GNSS_ID_SBAS = 1;
     public const byte GNSS_ID_GALILEO = 2;
@@ -118,9 +69,7 @@ public static class UbxConstants
     public const byte GNSS_ID_QZSS = 5;
     public const byte GNSS_ID_GLONASS = 6;
 
-    // -------------------------
-    // Fix types (from NAV-PVT)
-    // -------------------------
+    // --- Fix types (NAV-PVT)
     public const byte FIX_TYPE_NO_FIX = 0;
     public const byte FIX_TYPE_DEAD_RECKONING = 1;
     public const byte FIX_TYPE_2D = 2;
@@ -128,52 +77,81 @@ public static class UbxConstants
     public const byte FIX_TYPE_GNSS_DR = 4;
     public const byte FIX_TYPE_TIME_ONLY = 5;
 
-    // -------------------------
-    // Carrier solution (from NAV-PVT)
-    // -------------------------
+    // --- Carrier solution (NAV-PVT.carrSoln)
     public const byte CARRIER_SOLUTION_NONE = 0;
     public const byte CARRIER_SOLUTION_FLOAT = 1;
     public const byte CARRIER_SOLUTION_FIXED = 2;
 
-    // -------------------------
-    // NMEA message identifiers
-    // -------------------------
-    public const string NMEA_GGA = "GGA";  // Global Positioning System Fix Data
-    public const string NMEA_RMC = "RMC";  // Recommended Minimum Specific GNSS Data
-    public const string NMEA_GSV = "GSV";  // GNSS Satellites in View
-    public const string NMEA_GSA = "GSA";  // GNSS DOP and Active Satellites
-    public const string NMEA_VTG = "VTG";  // Track Made Good and Ground Speed
-    public const string NMEA_GLL = "GLL";  // Geographic Position - Latitude/Longitude
-    public const string NMEA_ZDA = "ZDA";  // Time & Date
+    // --- NMEA tags
+    public const string NMEA_GGA = "GGA";
+    public const string NMEA_RMC = "RMC";
+    public const string NMEA_GSV = "GSV";
+    public const string NMEA_GSA = "GSA";
+    public const string NMEA_VTG = "VTG";
+    public const string NMEA_GLL = "GLL";
+    public const string NMEA_ZDA = "ZDA";
 
-    // -------------------------
-    // CFG-VALSET message output key IDs
-    // -------------------------
-    public const uint MSGOUT_UBX_NAV_PVT_UART1 = 0x20910007;     // NAV-PVT UART1 output rate
-    public const uint MSGOUT_UBX_NAV_SAT_UART1 = 0x20910016;     // NAV-SAT UART1 output rate
-    public const uint MSGOUT_UBX_NAV_SIG_UART1 = 0x20910345;     // NAV-SIG UART1 output rate
-    public const uint MSGOUT_UBX_RXM_RAWX_UART1 = 0x209102a5;    // RXM-RAWX UART1 output rate
-    public const uint MSGOUT_UBX_RXM_SFRBX_UART1 = 0x20910232;   // RXM-SFRBX UART1 output rate
-    public const uint MSGOUT_UBX_RXM_COR_UART1 = 0x209102b6;     // RXM-COR UART1 output rate
-    public const uint MSGOUT_UBX_TIM_TM2_UART1 = 0x20910179;     // TIM-TM2 UART1 output rate
-    public const uint MSGOUT_UBX_TIM_TP_UART1 = 0x2091017a;      // TIM-TP UART1 output rate
-    public const uint MSGOUT_UBX_MON_COMMS_UART1 = 0x2091034f;   // MON-COMMS UART1 output rate
+    // --- Message output rate helpers (value byte written via VALSET)
+    public const byte RATE_DISABLED = 0x00; // off
+    public const byte RATE_1X = 0x01; // every epoch
+    // Higher divisors are 2,3,... (every Nth epoch). Your code computes this for NAV epoch=10 Hz.
 
-    // NMEA message output key IDs for CFG-VALSET
-    public const uint MSGOUT_NMEA_GGA_UART1 = 0x209100bb;        // NMEA GGA UART1 output rate
-    public const uint MSGOUT_NMEA_RMC_UART1 = 0x209100ac;        // NMEA RMC UART1 output rate
-    public const uint MSGOUT_NMEA_GSV_UART1 = 0x209100c9;        // NMEA GSV UART1 output rate
-    public const uint MSGOUT_NMEA_GSA_UART1 = 0x209100bf;        // NMEA GSA UART1 output rate
-    public const uint MSGOUT_NMEA_VTG_UART1 = 0x209100b1;        // NMEA VTG UART1 output rate
-    public const uint MSGOUT_NMEA_GLL_UART1 = 0x209100c5;        // NMEA GLL UART1 output rate
-    public const uint MSGOUT_NMEA_ZDA_UART1 = 0x209100d5;        // NMEA ZDA UART1 output rate
+    // --- Common config keys (CFG-VAL* keyIds)
+    // UART1 protocol enables (OUT)
+    public const uint UART1_PROTOCOL_UBX = 0x10740001;
+    public const uint UART1_PROTOCOL_NMEA = 0x10740002;
+    public const uint UART1_PROTOCOL_RTCM3 = 0x10740004;
 
-    // -------------------------
-    // Recommended defaults for X20P UART
-    // -------------------------
-    // According to X20P defaults: UART1 is typically 38400 8N1,
-    // UBX input and NMEA output enabled by default. You can switch
-    // to higher rates via CFG-VALSET (UART1_BAUDRATE) then reopen.
+    // Navigation rate (ms per epoch)
+    public const uint CFG_RATE_MEAS = 0x30210001; // U2 (e.g., 100 → 10 Hz, 200 → 5 Hz, 1000 → 1 Hz)
+
+    // Time mode / survey-in (values below)
+    public const uint TMODE_MODE = 0x20030001; // U1: 0=Disabled,1=Survey-In,2=Fixed
+    public const uint TMODE_SVIN_MIN_DUR = 0x40030010; // U4: seconds
+    public const uint TMODE_SVIN_ACC_LIMIT = 0x40030011; // U4: 0.1 mm units
+
+    public const byte TMODE_DISABLED = 0;
+    public const byte TMODE_SURVEY_IN = 1;
+    public const byte TMODE_FIXED = 2;
+
+    // Fast test defaults (adjust in app code if needed)
+    public const uint SURVEY_IN_DURATION_SECONDS = 10;     // 10 s (fast for testing)
+    public const uint SURVEY_IN_ACCURACY_LIMIT_0P1MM = 1000000; // 100.0 m = 1000000 * 0.1 mm (very loose for testing)
+
+    // --- UBX message outputs (UART1) via CFG-MSGOUT-* key ids (value: U1 rate byte)
+    public const uint MSGOUT_UBX_NAV_PVT_UART1 = 0x20910007;
+    public const uint MSGOUT_UBX_NAV_SAT_UART1 = 0x20910016;
+    public const uint MSGOUT_UBX_NAV_SIG_UART1 = 0x20910345;
+    public const uint MSGOUT_UBX_RXM_RAWX_UART1 = 0x209102A5;
+    public const uint MSGOUT_UBX_RXM_SFRBX_UART1 = 0x20910232;
+    public const uint MSGOUT_UBX_RXM_COR_UART1 = 0x209102B6;
+    public const uint MSGOUT_UBX_TIM_TM2_UART1 = 0x20910179;
+    public const uint MSGOUT_UBX_TIM_TP_UART1 = 0x2091017A;
+    public const uint MSGOUT_UBX_MON_COMMS_UART1 = 0x2091034F;
+    public const uint MSGOUT_UBX_NAV_SVIN_UART1 = 0x2091003B; // NAV-SVIN UART1 output rate
+
+
+    // --- NMEA message outputs (UART1)
+    public const uint MSGOUT_NMEA_GGA_UART1 = 0x209100BB;
+    public const uint MSGOUT_NMEA_RMC_UART1 = 0x209100AC;
+    public const uint MSGOUT_NMEA_GSV_UART1 = 0x209100C9;
+    public const uint MSGOUT_NMEA_GSA_UART1 = 0x209100BF;
+    public const uint MSGOUT_NMEA_VTG_UART1 = 0x209100B1;
+    public const uint MSGOUT_NMEA_GLL_UART1 = 0x209100C5;
+    public const uint MSGOUT_NMEA_ZDA_UART1 = 0x209100D5;
+
+    // --- RTCM 3.x outputs (UART1)
+    // Recommended base set on X20P: 1005 + 1074 + 1094 + 1124 (same rate for all observations).
+    public const uint MSGOUT_RTCM3_REF_STATION_ARP_UART1 = 0x209102BE; // 1005
+
+    public const uint MSGOUT_RTCM3_GPS_MSM4_UART1 = 0x2091035F; // 1074
+    public const uint MSGOUT_RTCM3_GALILEO_MSM4_UART1 = 0x20910369; // 1094
+    public const uint MSGOUT_RTCM3_BEIDOU_MSM4_UART1 = 0x2091036E; // 1124
+
+    // Optional (use only if your stream/rover requires them):
+    public const uint MSGOUT_RTCM3_GLONASS_MSM4_UART1 = 0x20910364; // 1084
+    public const uint MSGOUT_RTCM3_GLONASS_CODE_PHASE_BIASES_UART1 = 0x20910304; // 1230
+
+    // --- Defaults
     public const int DEFAULT_UART_BAUD = 38400;
-
 }
