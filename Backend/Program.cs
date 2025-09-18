@@ -2,7 +2,7 @@ using Backend.Hardware.Gnss;
 using Backend.Hardware.Imu;
 using Backend.Hubs;
 using Backend.Storage;
-using Backend.System;
+using Backend.GnssSystem;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
 

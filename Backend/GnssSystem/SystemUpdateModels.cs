@@ -1,4 +1,4 @@
-namespace Backend.System;
+namespace Backend.GnssSystem;
 
 public class SystemHealthUpdate
 {

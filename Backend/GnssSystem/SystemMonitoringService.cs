@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Device.I2c;
 using System.Device.Gpio;
 
-namespace Backend.System;
+namespace Backend.GnssSystem;
 
 public class SystemMonitoringService : BackgroundService
 {
