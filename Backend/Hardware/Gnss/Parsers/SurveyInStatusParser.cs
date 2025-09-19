@@ -42,18 +42,18 @@ public static class SurveyInStatusParser
             var accuracyMm = meanAcc * 0.1;
 
             // Log Survey-In status
-            if (surveyInActive)
-            {
-                logger.LogInformation("📍 Survey-In ACTIVE: Duration={Duration}s, Observations={Obs}, Accuracy={Accuracy:F1}mm", dur, obs, accuracyMm);
-            }
-            else if (surveyInValid)
-            {
-                //logger.LogInformation("✅ Survey-In COMPLETED: Final accuracy={Accuracy:F1}mm, Total observations={Obs}", accuracyMm, obs);
-            }
-            else
-            {
-                logger.LogInformation("❌ Survey-In INACTIVE: Duration={Duration}s, Observations={Obs}", dur, obs);
-            }
+            //if (surveyInActive)
+            //{
+            //    logger.LogInformation("📍 Survey-In ACTIVE: Duration={Duration}s, Observations={Obs}, Accuracy={Accuracy:F1}mm", dur, obs, accuracyMm);
+            //}
+            //else if (surveyInValid)
+            //{
+            //    logger.LogInformation("✅ Survey-In COMPLETED: Final accuracy={Accuracy:F1}mm, Total observations={Obs}", accuracyMm, obs);
+            //}
+            //else
+            //{
+            //    logger.LogInformation("❌ Survey-In INACTIVE: Duration={Duration}s, Observations={Obs}", dur, obs);
+            //}
 
             // Send Survey-In status to frontend
             await hubContext.Clients.All.SendAsync("SurveyInStatus", new
