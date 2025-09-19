@@ -161,14 +161,13 @@ public class DataFileWriter : BackgroundService
 
         try
         {
-            // Session path should already be established at startup
-            if (!_driveAvailable || string.IsNullOrEmpty(_currentFilePath))
-            {
-                _logger.LogWarning("No USB drive available - dropping {Count} data items for {FileName}",
-                    _dataBuffer.Count, _fileName);
-                _dataBuffer.Clear();
-                return;
-            }
+            //// Session path should already be established at startup
+            //if (!_driveAvailable || string.IsNullOrEmpty(_currentFilePath))
+            //{
+            //    _logger.LogWarning("No USB drive available - dropping {Count} data items for {FileName}", _dataBuffer.Count, _fileName);
+            //    _dataBuffer.Clear();
+            //    return;
+            //}
 
             // Check if we have text or binary data
             bool hasBinaryData = _dataBuffer.Any(item => item is byte[]);
