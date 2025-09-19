@@ -324,6 +324,10 @@ public class GnssService : BackgroundService
             {
                 await PositionVelocityTimeParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
             }
+            else if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_DOP)
+            {
+                await DilutionOfPrecisionParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
+            }
             else if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_SVIN)
             {
                 await SurveyInStatusParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);

@@ -200,11 +200,11 @@ public class LoRaService : BackgroundService
             // Final check before logging
             stoppingToken.ThrowIfCancellationRequested();
 
-            if (CurrentSendRate > 0 || CurrentReceiveRate > 0)
-            {
-                _logger.LogInformation("📊 LoRa Rates - Send: {SendRate:F1} kbps ({SentBytes} bytes), Receive: {ReceiveRate:F1} kbps ({ReceivedBytes} bytes) in {Period:F1}s - Session Totals: {SessionSent} sent, {SessionReceived} received [Cancellation: {Cancelled}]",
-                    CurrentSendRate, totalSentBytesInPeriod, CurrentReceiveRate, totalReceivedBytesInPeriod, timeDelta, _totalLoRaBytesSent, _totalLoRaBytesReceived, stoppingToken.IsCancellationRequested);
-            }
+            //if (CurrentSendRate > 0 || CurrentReceiveRate > 0)
+            //{
+            //    _logger.LogInformation("📊 LoRa Rates - Send: {SendRate:F1} kbps ({SentBytes} bytes), Receive: {ReceiveRate:F1} kbps ({ReceivedBytes} bytes) in {Period:F1}s - Session Totals: {SessionSent} sent, {SessionReceived} received [Cancellation: {Cancelled}]",
+            //        CurrentSendRate, totalSentBytesInPeriod, CurrentReceiveRate, totalReceivedBytesInPeriod, timeDelta, _totalLoRaBytesSent, _totalLoRaBytesReceived, stoppingToken.IsCancellationRequested);
+            //}
         }
         _logger.LogDebug("UpdateDataRatesAsync completed");
     }

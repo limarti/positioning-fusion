@@ -36,6 +36,15 @@ const formatAccuracy = (meters) => {
     return mm.toFixed(0) + 'mm'
   }
 }
+
+const getFixTypeClass = (fixType) => {
+  if (!fixType || fixType === 'No Fix') return 'text-slate-400'
+  if (fixType === 'RTK Fixed') return 'text-emerald-600'
+  if (fixType === 'RTK Float') return 'text-yellow-600'
+  if (fixType === 'GNSS Fixed') return 'text-blue-600'
+  if (fixType === 'Acquiring') return 'text-orange-600'
+  return 'text-slate-600'
+}
 </script>
 
 <template>
@@ -70,6 +79,12 @@ const formatAccuracy = (meters) => {
             <div v-if="gnssData.altitude !== null" class="text-sm text-slate-600 font-mono mt-1">
               Altitude: {{ gnssData.altitude.toFixed(2) }}m
             </div>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-sm text-slate-600">Fix Type</div>
+          <div class="text-base font-bold" :class="getFixTypeClass(gnssData.fixType)">
+            {{ gnssData.fixType || 'No Fix' }}
           </div>
         </div>
       </div>

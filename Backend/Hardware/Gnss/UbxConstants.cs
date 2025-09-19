@@ -31,6 +31,7 @@ public static class UbxConstants
 
     // --- NAV ids (use modern ones)
     public const byte NAV_PVT = 0x07;
+    public const byte NAV_DOP = 0x04;
     public const byte NAV_SAT = 0x35;
     public const byte NAV_SIG = 0x43;
     public const byte NAV_SVIN = 0x3B;
@@ -128,7 +129,8 @@ public static class UbxConstants
     public const uint MSGOUT_UBX_TIM_TM2_UART1 = 0x20910179;
     public const uint MSGOUT_UBX_TIM_TP_UART1 = 0x2091017A;
     public const uint MSGOUT_UBX_MON_COMMS_UART1 = 0x2091034F;
-    public const uint MSGOUT_UBX_NAV_SVIN_UART1 = 0x2091003B; // NAV-SVIN UART1 output rate
+    public const uint MSGOUT_UBX_NAV_SVIN_UART1 = 0x2091003B;
+    public const uint MSGOUT_UBX_NAV_DOP_UART1 = 0x20910039;
 
 
     // --- NMEA message outputs (UART1)

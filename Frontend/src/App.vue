@@ -395,6 +395,13 @@ onMounted(async () => {
     gnssData.value.corrections.active = data.active
   })
 
+  connection.on("DopUpdate", (data) => {
+    gnssData.value.hdop = data.horizontalDop
+    gnssData.value.vdop = data.verticalDop
+    gnssData.value.pdop = data.positionDop
+    gnssData.value.tdop = data.timeDop
+  })
+
   try {
     connectionStatus.value = 'Connecting'
     await connection.start()

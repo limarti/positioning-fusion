@@ -374,6 +374,7 @@ public class GnssInitializer
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TM2_UART1, 10);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, 10);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_DOP_UART1, 10);
 
             if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Send)
             {
