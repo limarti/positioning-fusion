@@ -37,8 +37,6 @@ public class GnssService : BackgroundService
     // Bluetooth streaming
     private DateTime _lastBluetoothSend = DateTime.UtcNow;
     
-    // NAV-SVIN polling
-    private DateTime _lastNavSvinPoll = DateTime.UtcNow;
     
     public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory, IServiceProvider serviceProvider)
     {
@@ -101,7 +99,6 @@ public class GnssService : BackgroundService
             {
                 await ReadAndProcessGnssDataAsync(stoppingToken);
                 await UpdateDataRatesAsync(stoppingToken);
-                await PollNavSvinIfNeeded(stoppingToken);
                 await Task.Delay(50, stoppingToken);
             }
             catch (Exception ex)
@@ -630,26 +627,6 @@ public class GnssService : BackgroundService
         }
     }
 
-    private async Task PollNavSvinIfNeeded(CancellationToken stoppingToken)
-    {
-        var now = DateTime.UtcNow;
-        if ((now - _lastNavSvinPoll).TotalSeconds >= 5.0)
-        {
-            PollNavSvin();
-            _lastNavSvinPoll = now;
-        }
-    }
-
-    // Send a UBX-NAV-SVIN poll (no payload)
-    private void PollNavSvin()
-    {
-        if (_serialPort == null || !_serialPort.IsOpen)
-            return;
-
-        var frame = CreateUbxMessage(UbxConstants.CLASS_NAV, UbxConstants.NAV_SVIN, Array.Empty<byte>());
-        _serialPort.Write(frame, 0, frame.Length);
-        _logger.LogDebug("🔍 Polled UBX-NAV-SVIN");
-    }
 
     private byte[] CreateUbxMessage(byte messageClass, byte messageId, byte[] payload)
     {
