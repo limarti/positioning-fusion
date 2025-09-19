@@ -23,7 +23,7 @@ public class SystemMonitoringService : BackgroundService
     private const byte CONFIG_REG = 0x0C;
     private I2cDevice? _i2cDevice;
 
-    // GPIO6 Power Loss Detect (PLD) pin
+    // GPIO6 Power Loss Detect (PLD) pin - HIGH = power connected, LOW = battery
     private const int POWER_LOSS_DETECT_PIN = 6;
     private GpioController? _gpioController;
 
@@ -54,12 +54,40 @@ public class SystemMonitoringService : BackgroundService
         try
         {
             _gpioController = new GpioController();
-            _gpioController.OpenPin(POWER_LOSS_DETECT_PIN, PinMode.Input);
-            _logger.LogInformation("GPIO6 Power Loss Detect pin initialized successfully");
+            
+            // Check if pin is available before opening
+            if (!_gpioController.IsPinOpen(POWER_LOSS_DETECT_PIN))
+            {
+                _gpioController.OpenPin(POWER_LOSS_DETECT_PIN, PinMode.Input);
+                _logger.LogInformation("GPIO{Pin} Power Loss Detect pin initialized successfully", POWER_LOSS_DETECT_PIN);
+                
+                // Test initial read to verify functionality
+                var testValue = _gpioController.Read(POWER_LOSS_DETECT_PIN);
+                _logger.LogDebug("Initial GPIO{Pin} test read: {Value} ({State})", 
+                    POWER_LOSS_DETECT_PIN, testValue, testValue == PinValue.Low ? "LOW" : "HIGH");
+            }
+            else
+            {
+                _logger.LogWarning("GPIO{Pin} is already open - this may indicate a hardware or driver issue", POWER_LOSS_DETECT_PIN);
+            }
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError(ex, "Access denied to GPIO{Pin} - check permissions and hardware availability", POWER_LOSS_DETECT_PIN);
+            _gpioController?.Dispose();
+            _gpioController = null;
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogError(ex, "GPIO{Pin} is not available on this hardware platform", POWER_LOSS_DETECT_PIN);
+            _gpioController?.Dispose();
+            _gpioController = null;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to initialize GPIO6 Power Loss Detect pin - power status detection will be unavailable");
+            _logger.LogWarning(ex, "Failed to initialize GPIO{Pin} Power Loss Detect pin - power status detection will be unavailable", POWER_LOSS_DETECT_PIN);
+            _gpioController?.Dispose();
+            _gpioController = null;
         }
     }
 
@@ -92,6 +120,12 @@ public class SystemMonitoringService : BackgroundService
 
                 _logger.LogDebug("System health update sent: CPU={CpuUsage:F1}%, Memory={MemoryUsage:F1}%, Temp={Temperature:F1}°C, Battery={BatteryLevel:F1}%, Voltage={BatteryVoltage:F2}V, ExternalPower={IsExternalPowerConnected}",
                     systemHealth.CpuUsage, systemHealth.MemoryUsage, systemHealth.Temperature, systemHealth.BatteryLevel, systemHealth.BatteryVoltage, systemHealth.IsExternalPowerConnected);
+                
+                // Enhanced power detection diagnostics (every 10 seconds to avoid spam)
+                if (DateTime.UtcNow.Second % 10 == 0)
+                {
+                    LogPowerDetectionDiagnostics(systemHealth);
+                }
             }
             catch (Exception ex)
             {
@@ -252,25 +286,32 @@ public class SystemMonitoringService : BackgroundService
     {
         if (_gpioController == null)
         {
+            _logger.LogDebug("GPIO controller not initialized - defaulting to battery power");
             return false; // Assume power lost if GPIO not available
         }
 
         try
         {
-            // GPIO6 PLD: LOW = power OK (plugged in), HIGH = power lost
             var pinValue = _gpioController.Read(POWER_LOSS_DETECT_PIN);
-            return pinValue == PinValue.Low; // Return true if external power connected
+            
+            // GPIO6 PLD: HIGH = power connected, LOW = battery power
+            var isExternalPowerConnected = pinValue == PinValue.High;
+            
+            _logger.LogDebug("GPIO{Pin} Power Loss Detect: {PinValue} ({PinState}) -> External Power: {ExternalPower}", 
+                POWER_LOSS_DETECT_PIN, pinValue, pinValue == PinValue.Low ? "LOW" : "HIGH", isExternalPowerConnected);
+            
+            return isExternalPowerConnected;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to read GPIO6 Power Loss Detect pin");
+            _logger.LogWarning(ex, "Failed to read GPIO{Pin} Power Loss Detect pin", POWER_LOSS_DETECT_PIN);
             return false; // Assume power lost on error
         }
     }
 
     private (double Level, double Voltage, bool IsExternalPowerConnected) GetBatteryData()
     {
-        // Read external power status from GPIO6 PLD
+        // Read external power status from GPIO PLD
         var isExternalPowerConnected = ReadPowerLossDetect();
 
         if (_i2cDevice == null)
@@ -292,6 +333,7 @@ public class SystemMonitoringService : BackgroundService
             var socRaw = (socBytes[0] << 8) | socBytes[1];
             var batteryLevel = socRaw / 256.0; // 1/256% per bit
 
+
             return (Math.Clamp(batteryLevel, 0.0, 100.0), voltage, isExternalPowerConnected);
         }
         catch (Exception ex)
@@ -299,6 +341,39 @@ public class SystemMonitoringService : BackgroundService
             _logger.LogWarning(ex, "Failed to read battery data from MAX17040");
             return (0.0, 0.0, isExternalPowerConnected);
         }
+    }
+
+
+    /// <summary>
+    /// Logs detailed power detection diagnostics for troubleshooting
+    /// </summary>
+    private void LogPowerDetectionDiagnostics(SystemHealth health)
+    {
+        var diagnostics = new List<string>();
+        
+        // Hardware status
+        diagnostics.Add($"GPIO Controller: {(_gpioController != null ? "Available" : "NULL")}");
+        diagnostics.Add($"I2C Device: {(_i2cDevice != null ? "Available" : "NULL")}");
+        
+        // Current readings
+        diagnostics.Add($"Battery Voltage: {health.BatteryVoltage:F3}V");
+        diagnostics.Add($"External Power: {health.IsExternalPowerConnected}");
+        
+        // GPIO pin state if available
+        if (_gpioController != null)
+        {
+            try
+            {
+                var pinValue = _gpioController.Read(POWER_LOSS_DETECT_PIN);
+                diagnostics.Add($"GPIO{POWER_LOSS_DETECT_PIN} Raw State: {pinValue} ({(pinValue == PinValue.Low ? "LOW" : "HIGH")})");
+            }
+            catch (Exception ex)
+            {
+                diagnostics.Add($"GPIO{POWER_LOSS_DETECT_PIN} Read Error: {ex.Message}");
+            }
+        }
+        
+        //_logger.LogInformation("Power Detection Diagnostics: {Diagnostics}", string.Join(" | ", diagnostics));
     }
 
     public override void Dispose()
