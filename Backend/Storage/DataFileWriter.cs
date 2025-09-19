@@ -139,6 +139,12 @@ public class DataFileWriter : BackgroundService
 
     private async Task CheckAndFlushIfNeeded()
     {
+        // Check for USB drive periodically if not available
+        if (!_driveAvailable)
+        {
+            EnsureSessionPathExists();
+        }
+
         if (_dataBuffer.Count == 0)
             return;
 
@@ -161,13 +167,20 @@ public class DataFileWriter : BackgroundService
 
         try
         {
-            //// Session path should already be established at startup
-            //if (!_driveAvailable || string.IsNullOrEmpty(_currentFilePath))
-            //{
-            //    _logger.LogWarning("No USB drive available - dropping {Count} data items for {FileName}", _dataBuffer.Count, _fileName);
-            //    _dataBuffer.Clear();
-            //    return;
-            //}
+            // Check if drive is available before writing
+            if (!_driveAvailable || string.IsNullOrEmpty(_currentFilePath))
+            {
+                _logger.LogWarning("No USB drive available - keeping {Count} data items buffered for {FileName}", _dataBuffer.Count, _fileName);
+                return;
+            }
+
+            // Verify drive is still accessible before writing
+            if (!Directory.Exists(Path.GetDirectoryName(_currentFilePath)))
+            {
+                _logger.LogWarning("USB drive disconnected during operation - buffering data for {FileName}", _fileName);
+                HandleDriveDisconnection();
+                return;
+            }
 
             // Check if we have text or binary data
             bool hasBinaryData = _dataBuffer.Any(item => item is byte[]);
@@ -211,9 +224,46 @@ public class DataFileWriter : BackgroundService
             _dataBuffer.Clear();
             _lastFlush = DateTime.UtcNow;
         }
+        catch (DirectoryNotFoundException)
+        {
+            _logger.LogWarning("USB drive disconnected - directory not found for {FileName}", _fileName);
+            HandleDriveDisconnection();
+        }
+        catch (DriveNotFoundException)
+        {
+            _logger.LogWarning("USB drive disconnected - drive not found for {FileName}", _fileName);
+            HandleDriveDisconnection();
+        }
+        catch (IOException ex) when (ex.Message.Contains("device") || ex.Message.Contains("drive"))
+        {
+            _logger.LogWarning("USB drive disconnected - IO error for {FileName}: {Error}", _fileName, ex.Message);
+            HandleDriveDisconnection();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _logger.LogWarning("USB drive disconnected - access denied for {FileName}", _fileName);
+            HandleDriveDisconnection();
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error flushing data buffer for {FileName}", _fileName);
+        }
+    }
+
+    private void HandleDriveDisconnection()
+    {
+        if (_driveAvailable)
+        {
+            _logger.LogWarning("USB drive disconnected - switching to buffer mode for {FileName}", _fileName);
+            _driveAvailable = false;
+            _currentDrivePath = null;
+            _currentFilePath = null;
+            _currentSessionPath = null;
+
+            // Update shared static properties to reflect disconnection
+            SharedDriveAvailable = false;
+            SharedDrivePath = null;
+            SharedSessionPath = null;
         }
     }
 
@@ -233,7 +283,7 @@ public class DataFileWriter : BackgroundService
                 }
 
                 _currentDrivePath = driveRoot;
-                _logger.LogInformation("Using flash drive: {DrivePath}", driveRoot);
+                _logger.LogInformation("USB drive detected: {DrivePath}", driveRoot);
             }
             
             var loggingDir = Path.Combine(_currentDrivePath, LoggingDirectoryName);
@@ -248,8 +298,16 @@ public class DataFileWriter : BackgroundService
                 _currentSessionPath = sessionPath;
                 _currentFilePath = Path.Combine(sessionPath, _fileName);
 
-                _logger.LogInformation("Created new logging session: {SessionPath}", sessionPath);
-                _logger.LogInformation("Data will be written to: {FilePath}", _currentFilePath);
+                if (!_driveAvailable)
+                {
+                    _logger.LogInformation("USB drive reconnected - resuming logging to: {SessionPath}", sessionPath);
+                    _logger.LogInformation("Buffered data will be written to: {FilePath}", _currentFilePath);
+                }
+                else
+                {
+                    _logger.LogInformation("Created new logging session: {SessionPath}", sessionPath);
+                    _logger.LogInformation("Data will be written to: {FilePath}", _currentFilePath);
+                }
             }
 
             _driveAvailable = true;
@@ -285,43 +343,41 @@ public class DataFileWriter : BackgroundService
     {
         try
         {
-            var mediaDir = "/media";
-            if (!Directory.Exists(mediaDir))
+            // Read /proc/mounts to find actual mounted filesystems
+            var mountsFile = "/proc/mounts";
+            if (!File.Exists(mountsFile))
             {
-                _logger.LogWarning("Media directory {MediaDir} not found - no flash drives available", mediaDir);
+                _logger.LogWarning("Cannot access {MountsFile} - no USB drive detection available", mountsFile);
                 return null;
             }
 
-            var allMountPoints = new List<string>();
-
-            // Look for mounted drives in /media/username/ directories
-            var userDirs = Directory.GetDirectories(mediaDir);
-            foreach (var userDir in userDirs)
-            {
-                if (Directory.Exists(userDir))
-                {
-                    var mountedDrives = Directory.GetDirectories(userDir);
-                    allMountPoints.AddRange(mountedDrives);
-                }
-            }
-
-            // Also check direct mounts in /media (some systems mount directly there)
-            var directMounts = Directory.GetDirectories(mediaDir).Where(d => !Directory.GetDirectories(d).Any() || Directory.GetFiles(d).Any()).ToList();
-            allMountPoints.AddRange(directMounts);
-
-            // Filter out obvious non-USB paths and validate they're actual mount points
+            var mountLines = File.ReadAllLines(mountsFile);
             var validDrives = new List<string>();
-            foreach (var drive in allMountPoints.Distinct())
+
+            foreach (var line in mountLines)
             {
-                if (IsValidUsbMount(drive))
+                var parts = line.Split(' ');
+                if (parts.Length < 3)
+                    continue;
+
+                var device = parts[0];
+                var mountPoint = parts[1];
+                var fileSystem = parts[2];
+
+                // Only consider removable storage devices mounted in /media
+                if (mountPoint.StartsWith("/media/") && IsRemovableStorageDevice(device, fileSystem))
                 {
-                    validDrives.Add(drive);
+                    if (IsValidUsbMount(mountPoint))
+                    {
+                        validDrives.Add(mountPoint);
+                        _logger.LogDebug("Found valid USB mount: {Device} -> {MountPoint} ({FileSystem})", device, mountPoint, fileSystem);
+                    }
                 }
             }
 
             if (validDrives.Count == 0)
             {
-                _logger.LogWarning("No valid USB drives found in {MediaDir}", mediaDir);
+                _logger.LogDebug("No valid USB drives found in /proc/mounts");
                 return null;
             }
 
@@ -338,6 +394,24 @@ public class DataFileWriter : BackgroundService
             _logger.LogError(ex, "Error finding USB drives");
             return null;
         }
+    }
+
+    private bool IsRemovableStorageDevice(string device, string fileSystem)
+    {
+        // Check for common removable storage filesystem types
+        var removableFileSystems = new[] { "vfat", "fat32", "exfat", "ntfs", "ext4", "ext3", "ext2" };
+        if (!removableFileSystems.Contains(fileSystem.ToLower()))
+            return false;
+
+        // Skip obvious system devices
+        if (device.StartsWith("/dev/loop") || 
+            device.StartsWith("/dev/sr") || 
+            device.Contains("snap") ||
+            device.StartsWith("/dev/mapper"))
+            return false;
+
+        // Look for USB/removable storage patterns
+        return device.StartsWith("/dev/sd") || device.StartsWith("/dev/mmcblk") || device.StartsWith("/dev/nvme");
     }
 
     private bool IsValidUsbMount(string path)
