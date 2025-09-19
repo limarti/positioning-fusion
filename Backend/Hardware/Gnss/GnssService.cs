@@ -21,6 +21,7 @@ public class GnssService : BackgroundService
     private readonly GnssFrameParser _frameParser;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
+    private readonly object _dataBufferLock = new();
 
     // Data rate tracking
     private long _bytesReceived = 0;
@@ -93,17 +94,51 @@ public class GnssService : BackgroundService
         // Time mode polling via CFG-VALGET not supported by this module
         // Status will be determined by presence of NAV-SVIN (active) or RTCM3 (completed) messages
 
+        // Subscribe to serial port data received event
+        _serialPort.DataReceived += OnSerialDataReceived;
+        
+        // Start background task for periodic rate updates
+        _ = Task.Run(async () => await RateUpdateLoop(stoppingToken), stoppingToken);
+        
+        // Keep the service running until cancellation
+        try
+        {
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when cancellation is requested
+        }
+    }
+
+    private async void OnSerialDataReceived(object sender, SerialDataReceivedEventArgs e)
+    {
+        try
+        {
+            await ReadAndProcessGnssDataAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in serial data received event handler");
+        }
+    }
+
+    private async Task RateUpdateLoop(CancellationToken stoppingToken)
+    {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await ReadAndProcessGnssDataAsync(stoppingToken);
                 await UpdateDataRatesAsync(stoppingToken);
-                await Task.Delay(50, stoppingToken);
+                await Task.Delay(1000, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in GNSS data processing");
+                _logger.LogError(ex, "Error in rate update loop");
                 await Task.Delay(1000, stoppingToken);
             }
         }
@@ -127,9 +162,12 @@ public class GnssService : BackgroundService
 
                 //_logger.LogInformation("📥 Read {BytesRead} bytes from GNSS, buffer now has {BufferSize} bytes", bytesRead, _dataBuffer.Count + bytesRead);
 
-                for (int i = 0; i < bytesRead; i++)
+                lock (_dataBufferLock)
                 {
-                    _dataBuffer.Add(buffer[i]);
+                    for (int i = 0; i < bytesRead; i++)
+                    {
+                        _dataBuffer.Add(buffer[i]);
+                    }
                 }
 
                 await ProcessBufferedDataAsync(stoppingToken);
@@ -152,26 +190,41 @@ public class GnssService : BackgroundService
         int processed = 0;
 
         // Quick guard: nothing useful to do yet
-        if (_dataBuffer.Count == 0)
+        lock (_dataBufferLock)
         {
-            _logger.LogDebug("📭 ProcessBufferedDataAsync: Buffer is empty");
-            return;
+            if (_dataBuffer.Count == 0)
+            {
+                _logger.LogDebug("📭 ProcessBufferedDataAsync: Buffer is empty");
+                return;
+            }
         }
 
         //_logger.LogInformation("🔄 ProcessBufferedDataAsync: Processing buffer with {Count} bytes", _dataBuffer.Count);
 
         // Trim runaway buffers (drop oldest)
-        if (_dataBuffer.Count > maxBufferBytes)
+        lock (_dataBufferLock)
         {
-            int toDrop = _dataBuffer.Count - maxBufferBytes;
-            _logger.LogWarning("Buffer exceeded {Max} bytes; dropping {Drop} oldest bytes.", maxBufferBytes, toDrop);
-            _dataBuffer.RemoveRange(0, toDrop);
+            if (_dataBuffer.Count > maxBufferBytes)
+            {
+                int toDrop = _dataBuffer.Count - maxBufferBytes;
+                _logger.LogWarning("Buffer exceeded {Max} bytes; dropping {Drop} oldest bytes.", maxBufferBytes, toDrop);
+                _dataBuffer.RemoveRange(0, toDrop);
+            }
         }
 
         while (!stoppingToken.IsCancellationRequested && processed < maxMessagesPerLoop)
         {
             // Try to locate earliest valid frame among UBX / RTCM3 / NMEA
-            if (!_frameParser.TryFindNextFrame(_dataBuffer, out var kind, out int start, out int totalLen, out int partialNeeded))
+            bool frameFound;
+            FrameKind kind;
+            int start, totalLen, partialNeeded;
+            
+            lock (_dataBufferLock)
+            {
+                frameFound = _frameParser.TryFindNextFrame(_dataBuffer, out kind, out start, out totalLen, out partialNeeded);
+            }
+            
+            if (!frameFound)
             { 
                 // If we saw a plausible, but partial frame, wait for more data.
                 if (partialNeeded > 0)
@@ -181,34 +234,42 @@ public class GnssService : BackgroundService
                 }
 
                 // Otherwise drop a single garbage byte (don't clear entire buffer).
-                if (_dataBuffer.Count > 0)
+                lock (_dataBufferLock)
                 {
-                    _logger.LogDebug("🗑️ No valid frames found, dropping 1 garbage byte (0x{Byte:X2})", _dataBuffer[0]);
-                    _dataBuffer.RemoveAt(0);
+                    if (_dataBuffer.Count > 0)
+                    {
+                        _logger.LogDebug("🗑️ No valid frames found, dropping 1 garbage byte (0x{Byte:X2})", _dataBuffer[0]);
+                        _dataBuffer.RemoveAt(0);
+                    }
                 }
                 break; // allow more data to arrive before spinning again
             }
 
             //_logger.LogInformation("✅ Found {Kind} frame at position {Start}, length {Length}", kind, start, totalLen);
 
-            // Drop garbage before the frame
-            if (start > 0)
+            // Extract frame data within lock
+            byte[] frame;
+            lock (_dataBufferLock)
             {
-                _logger.LogDebug("🗑️ Dropping {Count} garbage bytes before {Kind} frame", start, kind);
-                _dataBuffer.RemoveRange(0, start);
-            }
+                // Drop garbage before the frame
+                if (start > 0)
+                {
+                    _logger.LogDebug("🗑️ Dropping {Count} garbage bytes before {Kind} frame", start, kind);
+                    _dataBuffer.RemoveRange(0, start);
+                }
 
-            // If the frame is partial, wait
-            if (_dataBuffer.Count < totalLen)
-            {
-                int need = totalLen - _dataBuffer.Count;
-                _logger.LogDebug("Partial {Kind} frame detected. Need {Need} more bytes.", kind, need);
-                break;
-            }
+                // If the frame is partial, wait
+                if (_dataBuffer.Count < totalLen)
+                {
+                    int need = totalLen - _dataBuffer.Count;
+                    _logger.LogDebug("Partial {Kind} frame detected. Need {Need} more bytes.", kind, need);
+                    break;
+                }
 
-            // Extract and remove frame
-            var frame = _dataBuffer.GetRange(0, totalLen).ToArray();
-            _dataBuffer.RemoveRange(0, totalLen);
+                // Extract and remove frame
+                frame = _dataBuffer.GetRange(0, totalLen).ToArray();
+                _dataBuffer.RemoveRange(0, totalLen);
+            }
 
             try
             {
@@ -664,6 +725,13 @@ public class GnssService : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("GNSS Service StopAsync starting");
+
+        // Unsubscribe from serial port events
+        if (_serialPort != null)
+        {
+            _serialPort.DataReceived -= OnSerialDataReceived;
+            _logger.LogInformation("📡 Unsubscribed from serial port data events");
+        }
 
         // Unsubscribe from LoRa events
         if (_loraService != null)
