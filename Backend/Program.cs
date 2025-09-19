@@ -71,10 +71,21 @@ var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
 var gnssInitializer = app.Services.GetRequiredService<GnssInitializer>();
 
 logger.LogInformation("Initializing IM19 IMU hardware...");
-var imuInitialized = await imuInitializer.InitializeAsync();
-if (!imuInitialized)
+try 
 {
-    logger.LogWarning("IM19 IMU initialization failed - continuing without IMU");
+    var imuInitialized = await imuInitializer.InitializeAsync();
+    if (!imuInitialized)
+    {
+        logger.LogWarning("IM19 IMU initialization failed - continuing without IMU");
+    }
+    else
+    {
+        logger.LogInformation("IM19 IMU initialization completed successfully");
+    }
+}
+catch (Exception ex)
+{
+    logger.LogError(ex, "Exception during IM19 IMU initialization");
 }
 
 logger.LogInformation("Initializing GNSS hardware...");

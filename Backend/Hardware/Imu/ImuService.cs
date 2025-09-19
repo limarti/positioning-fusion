@@ -15,10 +15,12 @@ public class ImuService : BackgroundService
     private SerialPort? _serialPort;
     private readonly byte[] _buffer = new byte[1024];
     private readonly List<byte> _dataBuffer = new();
+    private readonly object _dataBufferLock = new();
     private DateTime _lastSignalRSent = DateTime.MinValue;
     private readonly TimeSpan _signalRThrottleInterval = TimeSpan.FromMilliseconds(1000); // 1Hz = 1000ms interval
     private readonly object _throttleLock = new object();
     private bool _headerWritten = false;
+    private DateTime _lastEventTime = DateTime.UtcNow;
 
     public ImuService(
         IHubContext<DataHub> hubContext,
@@ -51,59 +53,124 @@ public class ImuService : BackgroundService
 
         _logger.LogInformation("IMU Service connected to serial port - listening for MEMS data at 50Hz, sending SignalR updates at 1Hz");
 
-        try
+        // Subscribe to serial port data received event
+        _serialPort.DataReceived += OnSerialDataReceived;
+        _logger.LogInformation("🔗 IMU DataReceived event subscription completed");
+        
+        // Prime the event system with an initial read (fixes Linux DataReceived event issues)
+        _ = Task.Run(async () => 
         {
-            while (!stoppingToken.IsCancellationRequested && _serialPort.IsOpen)
+            await Task.Delay(1000); // Wait for initialization to complete
+            try
             {
-                if (_serialPort.BytesToRead > 0)
+                if (_serialPort != null && _serialPort.IsOpen && _serialPort.BytesToRead > 0)
                 {
+                    _logger.LogInformation("🔧 Priming IMU event system with initial read");
                     int bytesRead = _serialPort.Read(_buffer, 0, _buffer.Length);
                     ProcessIncomingData(_buffer, bytesRead);
                 }
-                
-                // Small delay to prevent excessive CPU usage
-                await Task.Delay(10, stoppingToken);
             }
-        }
-        catch (Exception ex)
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error during IMU event priming");
+            }
+        });
+        
+        // Keep the service running until cancellation
+        try
         {
-            _logger.LogError(ex, "Error in IMU service execution");
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when cancellation is requested
         }
         
         _logger.LogInformation("IMU Service stopped");
     }
 
+
+    private void OnSerialDataReceived(object sender, SerialDataReceivedEventArgs e)
+    {
+        try
+        {
+            _lastEventTime = DateTime.UtcNow; // Track when events fire
+            
+            if (_serialPort == null || !_serialPort.IsOpen)
+            {
+                _logger.LogWarning("IMU serial port is null or not open in event handler");
+                return;
+            }
+
+            if (_serialPort.BytesToRead > 0)
+            {
+                int bytesRead = _serialPort.Read(_buffer, 0, _buffer.Length);
+                ProcessIncomingData(_buffer, bytesRead);
+            }
+            else
+            {
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in IMU serial data received event handler");
+        }
+    }
+
     private void ProcessIncomingData(byte[] newData, int length)
     {
+        
         // Add new data to buffer
-        for (int i = 0; i < length; i++)
+        lock (_dataBufferLock)
         {
-            _dataBuffer.Add(newData[i]);
+            for (int i = 0; i < length; i++)
+            {
+                _dataBuffer.Add(newData[i]);
+            }
         }
 
         // Look for complete packets
-        while (_dataBuffer.Count >= 52) // MEMS packet size
+        while (true)
         {
-            int packetStart = FindPacketStart();
+            byte[]? packetData = null;
             
-            if (packetStart == -1)
+            lock (_dataBufferLock)
             {
-                // No packet header found, remove first byte and continue
-                _dataBuffer.RemoveAt(0);
-                continue;
-            }
+                if (_dataBuffer.Count < 52) // MEMS packet size
+                {
+                    break;
+                }
+                int packetStart = FindPacketStart();
+                
+                if (packetStart == -1)
+                {
+                    // No packet header found, remove first byte and continue
+                    _dataBuffer.RemoveAt(0);
+                    continue;
+                }
+                
 
-            // Remove bytes before packet start
-            if (packetStart > 0)
-            {
-                _dataBuffer.RemoveRange(0, packetStart);
-            }
+                // Remove bytes before packet start
+                if (packetStart > 0)
+                {
+                    _dataBuffer.RemoveRange(0, packetStart);
+                }
 
-            // Check if we have a complete packet
-            if (_dataBuffer.Count >= 52)
+                // Check if we have a complete packet
+                if (_dataBuffer.Count >= 52)
+                {
+                    packetData = _dataBuffer.Take(52).ToArray();
+                    _dataBuffer.RemoveRange(0, 52);
+                }
+                else
+                {
+                    // Not enough data for complete packet yet
+                    break;
+                }
+            }
+            
+            if (packetData != null)
             {
-                var packetData = _dataBuffer.Take(52).ToArray();
-                _dataBuffer.RemoveRange(0, 52);
 
                 // Try to parse the packet
                 var imuData = _imuParser.ParseMemsPacket(packetData);
@@ -154,19 +221,20 @@ public class ImuService : BackgroundService
                         });
                     }
                 }
-            }
-            else
-            {
-                // Not enough data for complete packet yet
-                break;
+                else
+                {
+                }
             }
         }
 
         // Prevent buffer from growing too large
-        if (_dataBuffer.Count > 1024)
+        lock (_dataBufferLock)
         {
-            _logger.LogWarning("IMU data buffer too large, clearing buffer");
-            _dataBuffer.Clear();
+            if (_dataBuffer.Count > 1024)
+            {
+                _logger.LogWarning("IMU data buffer too large, clearing buffer");
+                _dataBuffer.Clear();
+            }
         }
     }
 
@@ -183,12 +251,27 @@ public class ImuService : BackgroundService
                 return i;
             }
         }
+        
+        // Log what we actually found at the start of buffer for debugging
+        if (_dataBuffer.Count >= 4)
+        {
+            var firstFour = string.Join("", _dataBuffer.Take(4).Select(b => (char)b));
+            var firstFourHex = string.Join(" ", _dataBuffer.Take(4).Select(b => $"{b:X2}"));
+        }
         return -1;
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Stopping IMU Service");
+        
+        // Unsubscribe from serial port events
+        if (_serialPort != null)
+        {
+            _serialPort.DataReceived -= OnSerialDataReceived;
+            _logger.LogInformation("📡 Unsubscribed from IMU serial port data events");
+        }
+        
         await _dataFileWriter.StopAsync(cancellationToken);
         await base.StopAsync(cancellationToken);
     }
