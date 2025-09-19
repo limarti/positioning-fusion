@@ -131,7 +131,9 @@ const dataRates = ref({
   imuRate: null,
   correctionRate: null,
   kbpsGnssIn: null,
-  kbpsGnssOut: null
+  kbpsGnssOut: null,
+  kbpsLoRaIn: null,
+  kbpsLoRaOut: null
 })
 
 const messageRates = ref({
@@ -360,6 +362,8 @@ onMounted(async () => {
   connection.on("DataRatesUpdate", (data) => {
     dataRates.value.kbpsGnssIn = data.kbpsGnssIn
     dataRates.value.kbpsGnssOut = data.kbpsGnssOut
+    dataRates.value.kbpsLoRaIn = data.kbpsLoRaIn
+    dataRates.value.kbpsLoRaOut = data.kbpsLoRaOut
   })
 
   connection.on("MessageRatesUpdate", (data) => {

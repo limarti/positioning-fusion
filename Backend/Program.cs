@@ -1,6 +1,7 @@
 using Backend.Hardware.Gnss;
 using Backend.Hardware.Imu;
 using Backend.Hardware.Bluetooth;
+using Backend.Hardware.LoRa;
 using Backend.Hubs;
 using Backend.Storage;
 using Backend.GnssSystem;
@@ -42,6 +43,10 @@ builder.Services.AddHostedService<GnssService>();
 
 // Add Bluetooth services
 builder.Services.AddHostedService<BluetoothStreamingService>();
+
+// Add LoRa services
+builder.Services.AddSingleton<LoRaService>();
+builder.Services.AddHostedService<LoRaService>(provider => provider.GetRequiredService<LoRaService>());
 
 // Add file logging status service
 builder.Services.AddHostedService<FileLoggingStatusService>();

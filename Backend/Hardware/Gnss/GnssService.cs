@@ -1,5 +1,6 @@
 using Backend.Hubs;
 using Backend.Hardware.Bluetooth;
+using Backend.Hardware.LoRa;
 using Backend.Hardware.Gnss;
 using Backend.Hardware.Gnss.Parsers;
 using Backend.Storage;
@@ -16,6 +17,7 @@ public class GnssService : BackgroundService
     private readonly GnssInitializer _gnssInitializer;
     private readonly DataFileWriter _dataFileWriter;
     private readonly BluetoothStreamingService _bluetoothService;
+    private LoRaService? _loraService;
     private readonly GnssFrameParser _frameParser;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
@@ -38,7 +40,7 @@ public class GnssService : BackgroundService
     // NAV-SVIN polling
     private DateTime _lastNavSvinPoll = DateTime.UtcNow;
     
-    public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory)
+    public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory, IServiceProvider serviceProvider)
     {
         _hubContext = hubContext;
         _logger = logger;
@@ -46,6 +48,9 @@ public class GnssService : BackgroundService
         _dataFileWriter = new DataFileWriter("GNSS.raw", loggerFactory.CreateLogger<DataFileWriter>());
         _bluetoothService = new BluetoothStreamingService(loggerFactory.CreateLogger<BluetoothStreamingService>());
         _frameParser = new GnssFrameParser(loggerFactory.CreateLogger<GnssFrameParser>());
+
+        // Get LoRa service from the service provider
+        _loraService = serviceProvider.GetService<LoRaService>();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -267,6 +272,20 @@ public class GnssService : BackgroundService
                 _messageTimestamps[messageKey].Enqueue(now);
             }
 
+            // Send RTCM3 message via LoRa
+            if (_loraService != null)
+            {
+                try
+                {
+                    await _loraService.SendData(completeMessage);
+                    _logger.LogDebug("📡 LoRa: Sent RTCM3 message type {Type} ({Length} bytes)", messageType, completeMessage.Length);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "📡 LoRa: Failed to send RTCM3 message type {Type}", messageType);
+                }
+            }
+
             // Send message rates to frontend every second
             if ((now - _lastMessageRateSend).TotalMilliseconds >= 1000)
             {
@@ -442,15 +461,21 @@ public class GnssService : BackgroundService
             _bytesSent = 0;
             _lastRateUpdate = now;
 
+            // Get LoRa rates if service is available
+            double? loraInRate = _loraService?.CurrentReceiveRate;
+            double? loraOutRate = _loraService?.CurrentSendRate;
+
             // Broadcast data rates
             await _hubContext.Clients.All.SendAsync("DataRatesUpdate", new DataRatesUpdate
             {
                 KbpsGnssIn = _currentInRate,
-                KbpsGnssOut = _currentOutRate
+                KbpsGnssOut = _currentOutRate,
+                KbpsLoRaIn = loraInRate,
+                KbpsLoRaOut = loraOutRate
             }, stoppingToken);
 
-            _logger.LogDebug("Data rates updated - In: {InRate:F1} kbps, Out: {OutRate:F1} kbps",
-                _currentInRate, _currentOutRate);
+            _logger.LogDebug("Data rates updated - GNSS In: {InRate:F1} kbps, GNSS Out: {OutRate:F1} kbps, LoRa In: {LoRaIn:F1} kbps, LoRa Out: {LoRaOut:F1} kbps",
+                _currentInRate, _currentOutRate, loraInRate ?? 0.0, loraOutRate ?? 0.0);
         }
     }
 
@@ -615,10 +640,19 @@ public class GnssService : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Stopping GNSS Service");
+        _logger.LogInformation("GNSS Service StopAsync starting");
+
+        _logger.LogInformation("GNSS Service stopping data file writer");
         await _dataFileWriter.StopAsync(cancellationToken);
+        _logger.LogInformation("GNSS Service data file writer stopped");
+
+        _logger.LogInformation("GNSS Service stopping bluetooth service");
         await _bluetoothService.StopAsync(cancellationToken);
+        _logger.LogInformation("GNSS Service bluetooth service stopped");
+
+        _logger.LogInformation("GNSS Service calling base.StopAsync");
         await base.StopAsync(cancellationToken);
+        _logger.LogInformation("GNSS Service StopAsync completed");
     }
 
     public override void Dispose()

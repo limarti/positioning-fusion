@@ -254,7 +254,34 @@ const formatAccuracy = (meters) => {
                 </div>
                 <div class="text-center">
                   <div class="text-xs text-blue-600 mb-1">Accuracy</div>
-                  <div class="font-bold text-blue-800">{{ gnssData.surveyIn.accuracyMm !== null ? gnssData.surveyIn.accuracyMm.toFixed(1) + 'mm' : '—' }}</div>
+                  <div class="font-bold text-blue-800">{{ gnssData.surveyIn.accuracyMm !== null ? (gnssData.surveyIn.accuracyMm / 1000).toFixed(2) + 'm' : '—' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LoRa Data Rates -->
+          <div class="mb-4">
+            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+              <div class="text-sm font-semibold text-amber-800 mb-3">LoRa Radio</div>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="text-center">
+                  <div class="text-xs text-amber-600 mb-1 flex items-center justify-center">
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M7,14L12,9L17,14H7Z"/>
+                    </svg>
+                    Data In
+                  </div>
+                  <div class="font-bold text-amber-800">{{ dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined ? dataRates.kbpsLoRaIn.toFixed(1) + ' kbps' : '—' }}</div>
+                </div>
+                <div class="text-center">
+                  <div class="text-xs text-amber-600 mb-1 flex items-center justify-center">
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M7,10L12,15L17,10H7Z"/>
+                    </svg>
+                    Data Out
+                  </div>
+                  <div class="font-bold text-amber-800">{{ dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined ? dataRates.kbpsLoRaOut.toFixed(1) + ' kbps' : '—' }}</div>
                 </div>
               </div>
             </div>
