@@ -1,4 +1,5 @@
 <script setup>
+import { ref, watch } from 'vue'
 import Card from './common/Card.vue'
 
 const props = defineProps({
@@ -9,6 +10,33 @@ const props = defineProps({
   powerStatus: {
     type: Object,
     required: true
+  }
+})
+
+// Simple discharge rate tracking
+const batteryHistory = ref([])
+const dischargeRate = ref(null)
+
+watch(() => props.powerStatus.batteryLevel, (newLevel) => {
+  if (newLevel !== null) {
+    const now = Date.now()
+    batteryHistory.value.push({ level: newLevel, timestamp: now })
+    
+    // Keep only last 2 minutes
+    const twoMinutesAgo = now - (1 * 60 * 1000)
+    batteryHistory.value = batteryHistory.value.filter(entry => entry.timestamp > twoMinutesAgo)
+    
+    // Calculate rate as soon as we have 2 data points
+    if (batteryHistory.value.length >= 2) {
+      const oldest = batteryHistory.value[0]
+      const newest = batteryHistory.value[batteryHistory.value.length - 1]
+      const levelDiff = oldest.level - newest.level
+      const timeDiff = (newest.timestamp - oldest.timestamp) / (60 * 1000) // minutes
+      
+      if (timeDiff > 0) {
+        dischargeRate.value = levelDiff / timeDiff // %/minute
+      }
+    }
   }
 })
 
@@ -66,6 +94,10 @@ const getUsageColor = (usage) => {
         <div class="flex justify-between">
           <span class="text-slate-500">Runtime:</span>
           <span :class="powerStatus.estimatedRuntime !== null ? '' : 'text-slate-400'">{{ powerStatus.estimatedRuntime !== null ? powerStatus.estimatedRuntime : '—' }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-500">Rate:</span>
+          <span class="font-mono text-slate-400">{{ dischargeRate !== null ? dischargeRate.toFixed(2) + '%/min' : '—' }}</span>
         </div>
       </div>
       
