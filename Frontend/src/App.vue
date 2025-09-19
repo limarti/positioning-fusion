@@ -414,19 +414,12 @@ onUnmounted(async () => {
   <div class="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
     <!-- Header -->
     <header class="bg-gradient-to-r from-slate-800 to-slate-900 text-white border-b-2 border-slate-700">
-      <div class="px-4 py-6">
+      <div class="p-4">
         <div class="flex items-center justify-between">
-          <div class="flex items-center space-x-3">
-            <div class="w-12 h-12 bg-gradient-to-br from-teal-400 to-blue-500 rounded-xl flex items-center justify-center">
-              <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
-              </svg>
-            </div>
-            <div>
-              <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white to-slate-200 bg-clip-text text-transparent">
-                GNSS Data Collection System
-              </h1>
-              <p class="text-slate-300 font-medium">Real-time monitoring and administration</p>
+          <div class="flex items-start space-x-4">
+            <div class="flex flex-col items-start">
+              <img src="/src/assets/logo.svg" alt="Sierra Logo" class="h-12 w-auto">
+              <p class="text-slate-300">Positioning Data Collection System</p>
             </div>
           </div>
           <div class="flex items-center space-x-4">
