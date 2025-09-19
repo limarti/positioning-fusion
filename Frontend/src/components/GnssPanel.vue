@@ -3,6 +3,7 @@ import GnssStatus from './gnss/GnssStatus.vue'
 import SatelliteHealthPanel from './gnss/SatelliteHealthPanel.vue'
 import RtkQualityPanel from './gnss/RtkQualityPanel.vue'
 import CorrectionsPanel from './gnss/CorrectionsPanel.vue'
+import PositionScatterPlot from './gnss/PositionScatterPlot.vue'
 import MessageRatesPanel from './MessageRatesPanel.vue'
 
 const props = defineProps({
@@ -54,6 +55,9 @@ const props = defineProps({
         
         <!-- Corrections Panel -->
         <CorrectionsPanel :gnssData="gnssData" :dataRates="dataRates" />
+        
+        <!-- Position Scatter Plot -->
+        <PositionScatterPlot :gnssData="gnssData" />
         
         <!-- UBX Message Rates Subsection -->
         <MessageRatesPanel :messageRates="messageRates" />
