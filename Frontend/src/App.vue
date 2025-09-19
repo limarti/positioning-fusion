@@ -7,7 +7,7 @@ import CameraPanel from './components/CameraPanel.vue'
 import EncoderPanel from './components/EncoderPanel.vue'
 import SystemPanel from './components/SystemPanel.vue'
 import FileLoggingPanel from './components/FileLoggingPanel.vue'
-import ConnectionStatus from './components/ConnectionStatus.vue'
+import ConnectionOverlay from './components/ConnectionOverlay.vue'
 
 // SignalR connection
 let connection = null
@@ -423,13 +423,7 @@ onUnmounted(async () => {
             </div>
           </div>
           <div class="flex items-center space-x-4">
-            <div class="bg-slate-700/50 backdrop-blur-sm rounded-lg px-4 py-2 border border-slate-600">
-              <ConnectionStatus
-                :connection-status="connectionStatus"
-                :retry-attempt="retryAttempt"
-                :next-retry-in="nextRetryIn"
-              />
-            </div>
+            <!-- Connection status removed from header -->
           </div>
         </div>
       </div>
@@ -470,6 +464,13 @@ onUnmounted(async () => {
         </div>
       </div>
     </main>
+
+    <!-- Connection Overlay -->
+    <ConnectionOverlay 
+      :connection-status="connectionStatus"
+      :retry-attempt="retryAttempt"
+      :next-retry-in="nextRetryIn"
+    />
   </div>
 </template>
 
