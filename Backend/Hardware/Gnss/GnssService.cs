@@ -51,6 +51,13 @@ public class GnssService : BackgroundService
 
         // Get LoRa service from the service provider
         _loraService = serviceProvider.GetService<LoRaService>();
+
+        // Subscribe to LoRa data events if in Receive mode
+        if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Receive && _loraService != null)
+        {
+            _loraService.DataReceived += OnLoRaDataReceived;
+            _logger.LogInformation("📡 Subscribed to LoRa data events for RTCM forwarding to GNSS");
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -489,6 +496,41 @@ public class GnssService : BackgroundService
         _bytesSent += bytesSent;
     }
 
+    // Method to send RTCM data directly to GNSS port (for Receive mode)
+    public async Task SendRtcmToGnss(byte[] rtcmData)
+    {
+        if (_serialPort == null || !_serialPort.IsOpen)
+        {
+            _logger.LogWarning("Cannot send RTCM to GNSS - serial port not available");
+            return;
+        }
+
+        try
+        {
+            _serialPort.Write(rtcmData, 0, rtcmData.Length);
+            TrackBytesSent(rtcmData.Length);
+            _logger.LogDebug("📤 Sent {Length} bytes of RTCM data to GNSS port", rtcmData.Length);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send RTCM data to GNSS port");
+        }
+    }
+
+    // Event handler for LoRa data received (forwards directly to GNSS)
+    private async void OnLoRaDataReceived(object? sender, byte[] data)
+    {
+        try
+        {
+            _logger.LogDebug("📡 LoRa: Received {Length} bytes, forwarding directly to GNSS", data.Length);
+            await SendRtcmToGnss(data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error forwarding LoRa data to GNSS");
+        }
+    }
+
     private async Task ProcessNmea(string nmeaSentence)
     {
         try
@@ -645,6 +687,13 @@ public class GnssService : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("GNSS Service StopAsync starting");
+
+        // Unsubscribe from LoRa events
+        if (_loraService != null)
+        {
+            _loraService.DataReceived -= OnLoRaDataReceived;
+            _logger.LogInformation("📡 Unsubscribed from LoRa data events");
+        }
 
         _logger.LogInformation("GNSS Service stopping data file writer");
         await _dataFileWriter.StopAsync(cancellationToken);

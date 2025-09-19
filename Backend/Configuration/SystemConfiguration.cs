@@ -16,7 +16,7 @@ public static class SystemConfiguration
 
     public static int GnssDataRateDashboard { get; set; } = 2;  //Hz
 
-    public static CorrectionsMode CorrectionsOperation { get; set; } = CorrectionsMode.Send;
+    public static CorrectionsMode CorrectionsOperation { get; set; } = CorrectionsMode.Receive;
 
     // Logging configuration
     public static int LoggingFlushIntervalSeconds { get; set; } = 10;

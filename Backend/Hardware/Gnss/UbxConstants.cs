@@ -103,6 +103,11 @@ public static class UbxConstants
     public const uint UART1_PROTOCOL_NMEA = 0x10740002;
     public const uint UART1_PROTOCOL_RTCM3 = 0x10740004;
 
+    // UART2 protocol enables (OUT)
+    public const uint UART2_PROTOCOL_UBX = 0x10750001;
+    public const uint UART2_PROTOCOL_NMEA = 0x10750002;
+    public const uint UART2_PROTOCOL_RTCM3 = 0x10750004;
+
     // Navigation rate (ms per epoch)
     public const uint CFG_RATE_MEAS = 0x30210001; // U2 (e.g., 100 → 10 Hz, 200 → 5 Hz, 1000 → 1 Hz)
 

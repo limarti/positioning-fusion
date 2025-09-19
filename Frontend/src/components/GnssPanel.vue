@@ -233,7 +233,7 @@ const getFixTypeClass = (fixType) => {
               <svg class="w-6 h-6" :class="gnssData.corrections.mode === 'Send' ? 'text-blue-600' : 'text-purple-600'" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12,3L14,8H10L12,3M12,8V22H11V8H10L12,3L14,8H13V22H12M4,12L6,9V15L4,12M20,12L18,9V15L20,12M8,14L9,11V17L8,14M16,14L15,11V17L16,14"/>
               </svg>
-              <h2 class="text-lg font-bold text-slate-800">Corrections</h2>
+              <h2 class="text-lg font-bold text-slate-800">RTK</h2>
               <div class="text-sm font-semibold" :class="dataRates.correctionRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.correctionRate !== null ? dataRates.correctionRate : '—' }}</div>
             </div>
             

@@ -406,7 +406,16 @@ public class GnssInitializer
             }
             else if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Receive)
             {
+                //Disable getting RTCM3 messages
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 0);
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 0);
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 0);
+                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 0);
 
+                _logger.LogInformation("Configuring Rover mode - RTCM3 reception on UART1, disabling UART2");
+
+                await SetBoolWithValset(UbxConstants.UART2_PROTOCOL_RTCM3, false);
+                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3, true);
             }
 
             await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GGA_UART1, 1);
