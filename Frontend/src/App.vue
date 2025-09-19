@@ -83,16 +83,6 @@ const gnssData = ref({
     active: false
   },
   
-  // Timing and integrity
-  tAcc: null,
-  solutionLatency: null,
-  
-  // Hardware/environment diagnostics
-  antenna: { status: null, shortDetected: false, openDetected: false },
-  jamming: { detected: false, indicator: null },
-  agc: { level: null },
-  rfNoise: { level: null },
-  temperature: null
 })
 
 const loraData = ref({
@@ -356,7 +346,6 @@ onMounted(async () => {
     }
 
     gnssData.value.satellitesUsed = data.numSatellites
-    gnssData.value.tAcc = data.timeAccuracy
   })
 
   connection.on("DataRatesUpdate", (data) => {

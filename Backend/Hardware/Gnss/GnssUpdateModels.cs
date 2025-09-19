@@ -34,7 +34,6 @@ public class PvtUpdate
     public byte Minute { get; set; }
     public byte Second { get; set; }
     public byte TimeValid { get; set; }
-    public uint TimeAccuracy { get; set; }
     public byte FixType { get; set; }
     public bool GnssFixOk { get; set; }
     public bool DifferentialSolution { get; set; }

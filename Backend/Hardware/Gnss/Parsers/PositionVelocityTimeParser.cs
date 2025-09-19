@@ -26,7 +26,6 @@ public static class PositionVelocityTimeParser
         var min = data[9];
         var sec = data[10];
         var valid = data[11];
-        var tAcc = BitConverter.ToUInt32(data, 12);
         var nano = BitConverter.ToInt32(data, 16);
         var fixType = data[20];
         var flags = data[21];
@@ -79,7 +78,6 @@ public static class PositionVelocityTimeParser
             Minute = min,
             Second = sec,
             TimeValid = valid,
-            TimeAccuracy = tAcc,
             FixType = fixType,
             GnssFixOk = gnssFixOk,
             DifferentialSolution = diffSoln,

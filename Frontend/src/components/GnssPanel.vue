@@ -313,68 +313,10 @@ const getFixTypeClass = (fixType) => {
           </div>
         </div>
         
-        <!-- Timing & Integrity Subsection -->
-        <div class="bg-slate-100 rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
-          <div class="flex items-center space-x-3 mb-4">
-            <svg class="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12,20A7,7 0 0,1 5,13A7,7 0 0,1 12,6A7,7 0 0,1 19,13A7,7 0 0,1 12,20M19.03,7.39L20.45,5.97C20,5.46 19.55,5 19.04,4.56L17.62,6C16.07,4.74 14.12,4 12,4A9,9 0 0,0 3,13A9,9 0 0,0 12,22C17,22 21,17.97 21,13C21,10.88 20.26,8.93 19.03,7.39M11,14H13V8H11M15,1H9V3H15V1Z"/>
-            </svg>
-            <h3 class="text-lg font-bold text-slate-800">Timing & Integrity</h3>
-          </div>
-          
-          <div class="grid grid-cols-1 gap-4">
-            <div class="flex justify-between p-3 bg-white rounded-lg border">
-              <span class="text-slate-600">Time Accuracy:</span>
-              <span class="font-bold font-mono" :class="gnssData.tAcc !== null ? 'text-slate-800' : 'text-slate-400'">{{ gnssData.tAcc !== null ? gnssData.tAcc + 'ns' : '—' }}</span>
-            </div>
-            <div class="flex justify-between p-3 bg-white rounded-lg border">
-              <span class="text-slate-600">Solution Latency:</span>
-              <span class="font-bold font-mono" :class="gnssData.solutionLatency !== null ? 'text-slate-800' : 'text-slate-400'">{{ gnssData.solutionLatency !== null ? gnssData.solutionLatency + 'ms' : '—' }}</span>
-            </div>
-          </div>
-        </div>
         
         <!-- UBX Message Rates Subsection -->
         <MessageRatesPanel :messageRates="messageRates" />
 
-        <!-- Hardware & Environment Subsection -->
-        <div class="bg-slate-100 rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
-          <div class="flex items-center space-x-3 mb-4">
-            <svg class="w-6 h-6 text-slate-600" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M11,15H13V17H11V15M11,7H13V13H11V7M12,2C6.47,2 2,6.5 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20Z"/>
-            </svg>
-            <h3 class="text-lg font-bold text-slate-800">Hardware & Environment</h3>
-          </div>
-          
-          <div class="grid grid-cols-2 gap-3 mb-4">
-            <div class="text-center p-3 rounded-xl" :class="gnssData.antenna.status === 'OK' ? 'bg-emerald-100 border border-emerald-200' : 'bg-red-100 border border-red-200'">
-              <div class="text-sm text-slate-600 mb-1">Antenna</div>
-              <div class="text-sm font-bold" :class="gnssData.antenna.status !== null ? (gnssData.antenna.status === 'OK' ? 'text-emerald-700' : 'text-red-700') : 'text-slate-400'">
-                {{ gnssData.antenna.status !== null ? gnssData.antenna.status : '—' }}
-              </div>
-            </div>
-            <div class="text-center p-3 rounded-xl" :class="gnssData.jamming.detected ? 'bg-red-100 border border-red-200' : 'bg-emerald-100 border border-emerald-200'">
-              <div class="text-sm text-slate-600 mb-1">Jamming</div>
-              <div class="text-sm font-bold" :class="gnssData.jamming.detected ? 'text-red-700' : 'text-emerald-700'">
-                {{ gnssData.jamming.detected ? 'DETECTED' : 'NONE' }}
-              </div>
-            </div>
-          </div>
-          <div class="grid grid-cols-3 gap-3">
-            <div class="text-center p-3 bg-white rounded-lg border">
-              <div class="text-sm text-slate-600 mb-1">AGC</div>
-              <div class="text-sm font-bold" :class="gnssData.agc.level !== null ? 'text-slate-700' : 'text-slate-400'">{{ gnssData.agc.level !== null ? gnssData.agc.level : '—' }}</div>
-            </div>
-            <div class="text-center p-3 bg-white rounded-lg border">
-              <div class="text-sm text-slate-600 mb-1">RF Noise</div>
-              <div class="text-sm font-bold" :class="gnssData.rfNoise.level !== null ? 'text-slate-700' : 'text-slate-400'">{{ gnssData.rfNoise.level !== null ? gnssData.rfNoise.level + 'dBm' : '—' }}</div>
-            </div>
-            <div class="text-center p-3 bg-white rounded-lg border">
-              <div class="text-sm text-slate-600 mb-1">Temp</div>
-              <div class="text-sm font-bold" :class="gnssData.temperature !== null ? 'text-slate-700' : 'text-slate-400'">{{ gnssData.temperature !== null ? gnssData.temperature.toFixed(1) + '°C' : '—' }}</div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
