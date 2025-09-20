@@ -134,7 +134,7 @@ public static class UbxConstants
     public const uint MSGOUT_UBX_TIM_TM2_UART1 = 0x20910179;
     public const uint MSGOUT_UBX_TIM_TP_UART1 = 0x2091017A;
     public const uint MSGOUT_UBX_MON_COMMS_UART1 = 0x2091034F;
-    public const uint MSGOUT_UBX_NAV_SVIN_UART1 = 0x2091003B;
+    public const uint MSGOUT_UBX_NAV_SVIN_UART1 = 0x20910089;
     public const uint MSGOUT_UBX_NAV_DOP_UART1 = 0x20910039;
 
 
