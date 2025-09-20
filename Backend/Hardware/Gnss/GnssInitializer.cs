@@ -387,7 +387,7 @@ public class GnssInitializer
                 // Configure RTCM3 message rates
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 1);  // 1Hz for reference station position
 
-                //10hz corrections
+                //Corrections
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 5);
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 5);
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 5);
@@ -406,16 +406,26 @@ public class GnssInitializer
             }
             else if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Receive)
             {
-                //Disable getting RTCM3 messages
+                _logger.LogInformation("Configuring Rover mode - TMODE3 disabled, RTCM3 reception on UART1");
+
+                // Ensure TMODE3 = Disabled (rover must not be in survey-in/fixed mode)
+                await SetTmodeDisabled();
+
+                // Disable generating RTCM3 messages (rover shouldn't generate them)
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 0);
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 0);
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 0);
                 await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 0);
 
-                _logger.LogInformation("Configuring Rover mode - RTCM3 reception on UART1, disabling UART2");
-
+                // Ensure UBX input/output enabled on UART1 (so we can still send VALSET commands)
+                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_UBX_IN, true);
+                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_UBX, true);
+                
+                // Enable RTCM3 input on UART1 for corrections reception, disable on UART2
                 await SetBoolWithValset(UbxConstants.UART2_PROTOCOL_RTCM3, false);
-                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3, true);
+                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3_IN, true);
+
+                _logger.LogInformation("Rover mode configuration completed - TMODE3 disabled, ready for corrections");
             }
 
             await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GGA_UART1, 1);
@@ -435,6 +445,41 @@ public class GnssInitializer
         }
     }
 
+
+    private async Task SetTmodeDisabled()
+    {
+        try
+        {
+            _logger.LogInformation("Setting TMODE3 to Disabled for rover mode");
+
+            var payload = new List<byte>
+            {
+                UbxConstants.VAL_VERSION,                      // 0x01
+                (byte)(UbxConstants.VAL_LAYER_RAM),           // bitmask for VALSET (RAM only)
+                (byte)UbxConstants.ValTransaction.None,       // single-message apply
+                0x00,                                         // reserved
+            };
+
+            // Set TMODE_MODE to disabled
+            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_MODE));
+            payload.Add(UbxConstants.TMODE_DISABLED);
+
+            var response = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+
+            if (response == UbxResponseType.Ack)
+                _logger.LogInformation("TMODE3 disabled successfully");
+            else if (response == UbxResponseType.Nak)
+                _logger.LogWarning("TMODE3 disable configuration NAK");
+            else if (response == UbxResponseType.Timeout)
+                _logger.LogWarning("TMODE3 disable configuration timeout");
+            else
+                _logger.LogError("TMODE3 disable configuration error");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to disable TMODE3");
+        }
+    }
 
     private async Task SetSurveyInMode(uint durationSeconds, uint accuracyLimit)
     {

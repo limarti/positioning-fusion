@@ -103,6 +103,11 @@ public static class UbxConstants
     public const uint UART1_PROTOCOL_NMEA = 0x10740002;
     public const uint UART1_PROTOCOL_RTCM3 = 0x10740004;
 
+    // UART1 protocol enables (IN)
+    public const uint UART1_PROTOCOL_UBX_IN = 0x10730001;
+    public const uint UART1_PROTOCOL_NMEA_IN = 0x10730002;
+    public const uint UART1_PROTOCOL_RTCM3_IN = 0x10730004;
+
     // UART2 protocol enables (OUT)
     public const uint UART2_PROTOCOL_UBX = 0x10750001;
     public const uint UART2_PROTOCOL_NMEA = 0x10750002;
