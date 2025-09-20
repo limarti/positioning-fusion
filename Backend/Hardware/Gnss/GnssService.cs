@@ -688,40 +688,6 @@ public class GnssService : BackgroundService
         }
     }
 
-
-    private byte[] CreateUbxMessage(byte messageClass, byte messageId, byte[] payload)
-    {
-        var message = new List<byte>();
-
-        // Sync chars
-        message.Add(UbxConstants.SYNC_CHAR_1);
-        message.Add(UbxConstants.SYNC_CHAR_2);
-
-        // Message class and ID
-        message.Add(messageClass);
-        message.Add(messageId);
-
-        // Payload length (little-endian)
-        var length = (ushort)payload.Length;
-        message.Add((byte)(length & 0xFF));
-        message.Add((byte)(length >> 8));
-
-        // Payload
-        message.AddRange(payload);
-
-        // Calculate checksum (Fletcher-8 algorithm)
-        byte ck_a = 0, ck_b = 0;
-        for (int i = 2; i < message.Count; i++)
-        {
-            ck_a += message[i];
-            ck_b += ck_a;
-        }
-        message.Add(ck_a);
-        message.Add(ck_b);
-
-        return message.ToArray();
-    }
-
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("GNSS Service StopAsync starting");
