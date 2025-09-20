@@ -44,17 +44,8 @@ public static class PositionVelocityTimeParser
         var headVehValid = (flags & 0x20) != 0;
         var carrSoln = (flags >> 6) & 0x03;
 
-        // Get human-readable fix type
-        var fixTypeString = fixType switch
-        {
-            UbxConstants.FIX_TYPE_NO_FIX => "No Fix",
-            UbxConstants.FIX_TYPE_DEAD_RECKONING => "Dead Reckoning",
-            UbxConstants.FIX_TYPE_2D => "2D Fix",
-            UbxConstants.FIX_TYPE_3D => "3D Fix",
-            UbxConstants.FIX_TYPE_GNSS_DR => "GNSS+DR",
-            UbxConstants.FIX_TYPE_TIME_ONLY => "Time Only",
-            _ => $"Unknown({fixType})"
-        };
+        // Get enhanced fix type using fixType, diffSoln, and carrSoln
+        var fixTypeString = GetEnhancedFixTypeLabel(fixType, diffSoln, carrSoln);
 
         var carrierString = carrSoln switch
         {
@@ -63,10 +54,6 @@ public static class PositionVelocityTimeParser
             UbxConstants.CARRIER_SOLUTION_FIXED => "Fixed",
             _ => $"Unknown({carrSoln})"
         };
-
-        //_logger.LogInformation("NAV-PVT: iTow={iTow}, {DateTime}, Fix={FixType}({FixCode}), Carrier={Carrier}, Sats={NumSV}", iTow, $"{year:D4}-{month:D2}-{day:D2} {hour:D2}:{min:D2}:{sec:D2}", fixTypeString, fixType, carrierString, numSV);
-        //_logger.LogInformation("Position: Lat={Lat:F7}°, Lon={Lon:F7}°, Alt={Alt:F1}m, hAcc={HAcc}mm, vAcc={VAcc}mm", lat, lon, hMSL / 1000.0, hAcc, vAcc);
-        //_logger.LogDebug("Flags: gnssFixOk={GnssFixOk}, diffSoln={DiffSoln}, timeValid=0x{TimeValid:X2}", gnssFixOk, diffSoln, valid);
 
         var pvtData = new PvtUpdate
         {
@@ -79,6 +66,7 @@ public static class PositionVelocityTimeParser
             Second = sec,
             TimeValid = valid,
             FixType = fixType,
+            FixTypeString = fixTypeString,
             GnssFixOk = gnssFixOk,
             DifferentialSolution = diffSoln,
             NumSatellites = numSV,
@@ -100,11 +88,50 @@ public static class PositionVelocityTimeParser
 
             _lastSentTime = DateTime.UtcNow;
             await hubContext.Clients.All.SendAsync("PvtUpdate", pvtData, stoppingToken);
-            //logger.LogInformation("✅ PVT data sent to frontend: {FixType}, {NumSV} sats, Lat={Lat:F7}, Lon={Lon:F7}", fixTypeString, numSV, lat, lon);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "❌ Failed to send PVT data to frontend");
         }
+    }
+
+    private static string GetEnhancedFixTypeLabel(byte fixType, bool diffSoln, int carrSoln)
+    {
+        // Handle No Fix case first
+        if (fixType == UbxConstants.FIX_TYPE_NO_FIX)
+            return "No Fix";
+
+        // RTK solutions take priority (carrSoln > 0)
+        if (carrSoln == UbxConstants.CARRIER_SOLUTION_FIXED)
+        {
+            return fixType == UbxConstants.FIX_TYPE_2D ? "RTK Fix 2D" : "RTK Fix";
+        }
+        
+        if (carrSoln == UbxConstants.CARRIER_SOLUTION_FLOAT)
+        {
+            return fixType == UbxConstants.FIX_TYPE_2D ? "RTK Float 2D" : "RTK Float";
+        }
+
+        // Non-RTK solutions (carrSoln == 0)
+        if (diffSoln)
+        {
+            return fixType == UbxConstants.FIX_TYPE_2D ? "DGPS 2D" : "DGPS";
+        }
+
+        // Single point solutions
+        if (fixType == UbxConstants.FIX_TYPE_2D)
+            return "Single 2D";
+        
+        if (fixType == UbxConstants.FIX_TYPE_3D)
+            return "Single 3D";
+
+        // Fallback for other fix types
+        return fixType switch
+        {
+            UbxConstants.FIX_TYPE_DEAD_RECKONING => "Dead Reckoning",
+            UbxConstants.FIX_TYPE_GNSS_DR => "GNSS+DR",
+            UbxConstants.FIX_TYPE_TIME_ONLY => "Time Only",
+            _ => $"Unknown({fixType})"
+        };
     }
 }

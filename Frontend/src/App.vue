@@ -324,25 +324,16 @@ onMounted(async () => {
     gnssData.value.hAcc = data.horizontalAccuracy / 1000 // Convert mm to m
     gnssData.value.vAcc = data.verticalAccuracy / 1000 // Convert mm to m
 
-    // Update RTK information based on carrier solution - RTK takes priority
-    if (data.carrierSolution === 2) {
-      gnssData.value.fixType = 'RTK Fixed'
-      gnssData.value.rtkMode = 'Fixed'
+    // Use the enhanced fix type string from backend instead of hardcoded logic
+    gnssData.value.fixType = data.fixTypeString || 'No Fix'
+    
+    // Update RTK mode based on fix type string
+    if (data.fixTypeString && data.fixTypeString.includes('RTK')) {
       gnssData.value.rtk.active = true
-    } else if (data.carrierSolution === 1) {
-      gnssData.value.fixType = 'RTK Float'
-      gnssData.value.rtkMode = 'Float'
-      gnssData.value.rtk.active = true
+      gnssData.value.rtkMode = data.fixTypeString.includes('Fixed') ? 'Fixed' : 'Float'
     } else {
-      // Only show basic status for non-RTK
-      if (data.fixType === 0) {
-        gnssData.value.fixType = 'No Fix'
-      } else if (data.numSatellites >= 4) {
-        gnssData.value.fixType = 'GNSS Fixed'
-      } else {
-        gnssData.value.fixType = 'Acquiring'
-      }
       gnssData.value.rtk.active = false
+      gnssData.value.rtkMode = null
     }
 
     gnssData.value.satellitesUsed = data.numSatellites

@@ -35,6 +35,7 @@ public class PvtUpdate
     public byte Second { get; set; }
     public byte TimeValid { get; set; }
     public byte FixType { get; set; }
+    public string FixTypeString { get; set; } = string.Empty;
     public bool GnssFixOk { get; set; }
     public bool DifferentialSolution { get; set; }
     public byte NumSatellites { get; set; }

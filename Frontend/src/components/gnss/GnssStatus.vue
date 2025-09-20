@@ -30,14 +30,6 @@ const formatAccuracy = (meters) => {
   }
 }
 
-const getFixTypeClass = (fixType) => {
-  if (!fixType || fixType === 'No Fix') return 'text-slate-400'
-  if (fixType === 'RTK Fixed') return 'text-emerald-600'
-  if (fixType === 'RTK Float') return 'text-yellow-600'
-  if (fixType === 'GNSS Fixed') return 'text-blue-600'
-  if (fixType === 'Acquiring') return 'text-orange-600'
-  return 'text-slate-600'
-}
 </script>
 
 <template>
@@ -58,7 +50,7 @@ const getFixTypeClass = (fixType) => {
       </div>
       <div class="text-right">
         <div class="text-sm text-slate-600">Fix Type</div>
-        <div class="text-base font-bold" :class="getFixTypeClass(gnssData.fixType)">
+        <div class="text-base font-bold text-indigo-600" >
           {{ gnssData.fixType || 'No Fix' }}
         </div>
       </div>
