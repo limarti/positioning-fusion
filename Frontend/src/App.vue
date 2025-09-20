@@ -370,7 +370,6 @@ onMounted(async () => {
 
   connection.on("CorrectionsStatusUpdate", (data) => {
     gnssData.value.corrections.mode = data.mode
-    gnssData.value.corrections.active = data.active
   })
 
   connection.on("DopUpdate", (data) => {
