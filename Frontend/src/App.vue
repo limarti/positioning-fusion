@@ -427,8 +427,8 @@ onUnmounted(async () => {
         <GnssPanel :gnssData="gnssData" :dataRates="dataRates" :messageRates="messageRates" />
       </div>
       
-      <!-- Other Panels - Centered Two Column Masonry Layout -->
-      <div class="columns-1 lg:columns-2 gap-6 space-y-6 max-w-7xl mx-auto">
+      <!-- Other Panels - Centered Three Column Masonry Layout -->
+      <div class="columns-1 md:columns-2 xl:columns-3 gap-6 space-y-6 max-w-7xl mx-auto">
         <!-- IMU Panel -->
         <div class="break-inside-avoid mb-6">
           <ImuPanel :imuData="imuData" :dataRates="dataRates" />

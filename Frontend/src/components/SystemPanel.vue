@@ -109,27 +109,37 @@ const getUsageColor = (usage) => {
         <span :class="systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemHealth.temperature !== null ? systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
       </div>
 
-      <div class="flex justify-between">
+      <div v-if="(dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined && dataRates.kbpsGnssIn > 0) || (dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined && dataRates.kbpsGnssOut > 0)" class="flex justify-between">
         <span class="text-slate-500">GNSS Throughput:</span>
-        <span :class="(dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined) || (dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined) ? 'text-blue-600 font-mono' : 'text-slate-400'">
-          <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75 12 3m0 0 3.75 3.75M12 3v18" />
-          </svg>{{ dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined ? dataRates.kbpsGnssIn.toFixed(1) : '—' }}
-          <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
-          </svg>{{ dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined ? dataRates.kbpsGnssOut.toFixed(1) : '—' }} kbps
+        <span class="text-blue-600 font-mono">
+          <span v-if="dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined && dataRates.kbpsGnssIn > 0">
+            <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
+            </svg>{{ dataRates.kbpsGnssIn.toFixed(1) }}
+          </span>
+          <span v-if="dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined && dataRates.kbpsGnssOut > 0">
+            <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75 12 3m0 0 3.75 3.75M12 3v18" />
+            </svg>{{ dataRates.kbpsGnssOut.toFixed(1) }}
+          </span>
+          kbps
         </span>
       </div>
 
-      <div class="flex justify-between">
+      <div v-if="(dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined && dataRates.kbpsLoRaIn > 0) || (dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined && dataRates.kbpsLoRaOut > 0)" class="flex justify-between">
         <span class="text-slate-500">LoRa Throughput:</span>
-        <span :class="(dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined) || (dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined) ? 'text-amber-600 font-mono' : 'text-slate-400'">
-          <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75 12 3m0 0 3.75 3.75M12 3v18" />
-          </svg>{{ dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined ? dataRates.kbpsLoRaIn.toFixed(1) : '—' }}
-          <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
-          </svg>{{ dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined ? dataRates.kbpsLoRaOut.toFixed(1) : '—' }} kbps
+        <span class="text-amber-600 font-mono">
+          <span v-if="dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined && dataRates.kbpsLoRaIn > 0">
+            <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
+            </svg>{{ dataRates.kbpsLoRaIn.toFixed(1) }}
+          </span>
+          <span v-if="dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined && dataRates.kbpsLoRaOut > 0">
+            <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75 12 3m0 0 3.75 3.75M12 3v18" />
+            </svg>{{ dataRates.kbpsLoRaOut.toFixed(1) }}
+          </span>
+          kbps
         </span>
       </div>
 
