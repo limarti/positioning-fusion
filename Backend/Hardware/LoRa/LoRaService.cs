@@ -26,11 +26,26 @@ public class LoRaService : BackgroundService
     {
         _logger.LogInformation("LoRa Service started - will connect on first operation");
 
+        var lastInitAttempt = DateTime.MinValue;
+
         try
         {
             // Keep service running and monitor connection
             while (!stoppingToken.IsCancellationRequested)
             {
+                var now = DateTime.UtcNow;
+                
+                // In Receive mode, try to initialize LoRa port every 5 seconds if not connected
+                if (Backend.Configuration.SystemConfiguration.CorrectionsOperation == Backend.Configuration.SystemConfiguration.CorrectionsMode.Receive)
+                {
+                    if ((_loraPort == null || !_loraPort.IsOpen) && (now - lastInitAttempt).TotalSeconds >= 5)
+                    {
+                        _logger.LogDebug("📡 LoRa: Attempting proactive initialization for Receive mode");
+                        await InitializeLoRaPort();
+                        lastInitAttempt = now;
+                    }
+                }
+
                 await UpdateDataRatesAsync(stoppingToken);
                 await Task.Delay(1000, stoppingToken); // Check every second
             }
