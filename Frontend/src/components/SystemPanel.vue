@@ -91,7 +91,7 @@ const getUsageColor = (usage) => {
         <span :class="powerStatus.isExternalPowerConnected ? 'text-green-600' : 'text-orange-600'">{{ powerStatus.isExternalPowerConnected ? 'Plugged In' : 'Battery Only' }}</span>
       </div>
       <div class="flex justify-between">
-        <span class="text-slate-500">Rate:</span>
+        <span class="text-slate-500">Discharge rate:</span>
         <span class="font-mono text-slate-400">{{ dischargeRate !== null ? dischargeRate.toFixed(2) + '%/min' : '—' }}</span>
       </div>
       
@@ -105,7 +105,7 @@ const getUsageColor = (usage) => {
         <span :class="systemHealth.memoryUsage !== null ? getUsageColor(systemHealth.memoryUsage) : 'text-slate-400'">{{ systemHealth.memoryUsage !== null ? systemHealth.memoryUsage.toFixed(1) + '%' : '—' }}</span>
       </div>
       <div class="flex justify-between">
-        <span class="text-slate-500">Temp:</span>
+        <span class="text-slate-500">Temperature:</span>
         <span :class="systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemHealth.temperature !== null ? systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
       </div>
 
