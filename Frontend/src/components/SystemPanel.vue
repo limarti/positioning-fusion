@@ -143,6 +143,16 @@ const getUsageColor = (usage) => {
         </span>
       </div>
 
+      <div class="flex justify-between">
+        <span class="text-slate-500">IMU Throughput:</span>
+        <span class="text-purple-600 font-mono" v-if="dataRates.kbpsImu !== null && dataRates.kbpsImu !== undefined" >
+          <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
+          </svg>{{ dataRates.kbpsImu.toFixed(1) }} kbps
+        </span>
+        <span v-else class="text-slate-400 font-mono">—</span>
+      </div>
+
     </div>
 
   </Card>

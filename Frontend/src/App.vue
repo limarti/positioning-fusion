@@ -123,7 +123,8 @@ const dataRates = ref({
   kbpsGnssIn: null,
   kbpsGnssOut: null,
   kbpsLoRaIn: null,
-  kbpsLoRaOut: null
+  kbpsLoRaOut: null,
+  kbpsImu: null
 })
 
 const messageRates = ref({
@@ -226,7 +227,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
-      .withUrl("http://raspberrypi-base:5312/datahub")
+      .withUrl("http://raspberrypi-rover:5312/datahub")
     // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
 
@@ -250,6 +251,7 @@ onMounted(async () => {
     imuData.value.magnetometer.x = data.magnetometer.x
     imuData.value.magnetometer.y = data.magnetometer.y
     imuData.value.magnetometer.z = data.magnetometer.z
+    dataRates.value.kbpsImu = data.kbps
   })
 
   connection.on("SystemHealthUpdate", (data) => {

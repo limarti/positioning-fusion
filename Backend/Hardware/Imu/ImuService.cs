@@ -21,6 +21,11 @@ public class ImuService : BackgroundService
     private readonly object _throttleLock = new object();
     private bool _headerWritten = false;
     private DateTime _lastEventTime = DateTime.UtcNow;
+    
+    // Kbps tracking
+    private long _totalBytesReceived = 0;
+    private DateTime _kbpsStartTime = DateTime.UtcNow;
+    private readonly object _kbpsLock = new object();
 
     public ImuService(
         IHubContext<DataHub> hubContext,
@@ -119,6 +124,11 @@ public class ImuService : BackgroundService
 
     private void ProcessIncomingData(byte[] newData, int length)
     {
+        // Track bytes for kbps calculation
+        lock (_kbpsLock)
+        {
+            _totalBytesReceived += length;
+        }
         
         // Add new data to buffer
         lock (_dataBufferLock)
@@ -206,12 +216,14 @@ public class ImuService : BackgroundService
                         {
                             try
                             {
+                                var kbps = CalculateKbps();
                                 await _hubContext.Clients.All.SendAsync("ImuUpdate", new ImuUpdate
                                 {
                                     Timestamp = imuData.Timestamp,
                                     Acceleration = new Vector3Update { X = imuData.Acceleration.X, Y = imuData.Acceleration.Y, Z = imuData.Acceleration.Z },
                                     Gyroscope = new Vector3Update { X = imuData.Gyroscope.X, Y = imuData.Gyroscope.Y, Z = imuData.Gyroscope.Z },
-                                    Magnetometer = new Vector3Update { X = imuData.Magnetometer.X, Y = imuData.Magnetometer.Y, Z = imuData.Magnetometer.Z }
+                                    Magnetometer = new Vector3Update { X = imuData.Magnetometer.X, Y = imuData.Magnetometer.Y, Z = imuData.Magnetometer.Z },
+                                    Kbps = kbps
                                 });
                             }
                             catch (Exception ex)
@@ -259,6 +271,21 @@ public class ImuService : BackgroundService
             var firstFourHex = string.Join(" ", _dataBuffer.Take(4).Select(b => $"{b:X2}"));
         }
         return -1;
+    }
+
+    private double CalculateKbps()
+    {
+        lock (_kbpsLock)
+        {
+            var elapsed = DateTime.UtcNow - _kbpsStartTime;
+            if (elapsed.TotalSeconds < 1.0) // Avoid division by zero for very short periods
+            {
+                return 0.0;
+            }
+            
+            var kbps = (_totalBytesReceived * 8.0) / 1000.0 / elapsed.TotalSeconds;
+            return Math.Round(kbps, 2);
+        }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

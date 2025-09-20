@@ -17,7 +17,7 @@ const props = defineProps({
   <!-- IMU -->
   <Card 
     title="IMU" 
-    :subtitle="dataRates.imuRate !== null ? dataRates.imuRate : '—'"
+    :subtitle="dataRates.kbpsImu !== null ? `${dataRates.kbpsImu.toFixed(1)} kbps` : '—'"
     :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M12 2L15.5 8.5L22 12L15.5 15.5L12 22L8.5 15.5L2 12L8.5 8.5L12 2Z'/></svg>`"
     icon-color="bg-purple-500"
   >

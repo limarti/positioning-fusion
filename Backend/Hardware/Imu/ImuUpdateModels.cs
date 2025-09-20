@@ -6,6 +6,7 @@ public class ImuUpdate
     public Vector3Update Acceleration { get; set; } = new();
     public Vector3Update Gyroscope { get; set; } = new();
     public Vector3Update Magnetometer { get; set; } = new();
+    public double Kbps { get; set; }
 }
 
 public class Vector3Update
