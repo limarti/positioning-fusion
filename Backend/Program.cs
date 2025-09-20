@@ -8,17 +8,27 @@ using Backend.GnssSystem;
 using Backend.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure Serilog
+var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "logs", "gnss-system-.log");
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate: "{Timestamp:HH:mm:ss.fff}: {Level:u3}: {Message:lj}{NewLine}{Exception}")
+    .WriteTo.File(logPath,
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 30,
+        shared: true,
+        flushToDiskInterval: TimeSpan.FromSeconds(1),
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
 
+builder.Host.UseSerilog();
 
-
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole(options =>
-{
-    options.FormatterName = "inline";
-});
+// Keep the inline formatter as fallback for any remaining console logging
 builder.Services.AddSingleton<ConsoleFormatter, InlineFormatter>();
 
 
