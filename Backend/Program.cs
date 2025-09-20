@@ -69,53 +69,71 @@ var app = builder.Build();
 // Load existing operating mode
 var existingRtkMode = SystemConfiguration.LoadRtkMode();
 
-// Prompt user for operating mode
-Console.WriteLine("Select operating mode:");
-Console.WriteLine("(B) Base Station Mode");
-Console.WriteLine("(R) Rover Mode");
-Console.WriteLine("(D) Disabled");
-if (existingRtkMode.HasValue)
-{
-    Console.WriteLine($"Current mode: {existingRtkMode.Value}");
-}
-Console.Write("Press B, R, or D: ");
+SystemConfiguration.CorrectionsMode operatingMode;
+
+// Check if running interactively (has console input available)
+bool isInteractive = Environment.UserInteractive && !Console.IsInputRedirected;
 
 char? userInput = null;
-var inputTask = Task.Run(() =>
-{
-    var keyInfo = Console.ReadKey(true); // true = don't display the key
-    return keyInfo.KeyChar;
-});
+Task<char>? inputTask = null;
 
-for (int i = 10; i > 0; i--)
+if (isInteractive)
 {
-    if (inputTask.IsCompleted)
+    // Prompt user for operating mode
+    Console.WriteLine("Select operating mode:");
+    Console.WriteLine("(B) Base Station Mode");
+    Console.WriteLine("(R) Rover Mode");
+    Console.WriteLine("(D) Disabled");
+    if (existingRtkMode.HasValue)
     {
-        userInput = inputTask.Result;
-        Console.WriteLine(userInput); // Display the pressed key
-        break;
+        Console.WriteLine($"Current mode: {existingRtkMode.Value}");
     }
-    
-    Console.Write($"\rPress B, R, or D - timeout in {i} seconds: ");
-    await Task.Delay(1000);
+    Console.Write("Press B, R, or D: ");
+
+    inputTask = Task.Run(() =>
+    {
+        var keyInfo = Console.ReadKey(true); // true = don't display the key
+        return keyInfo.KeyChar;
+    });
 }
 
-SystemConfiguration.CorrectionsMode operatingMode;
-if (!inputTask.IsCompleted)
+if (isInteractive && inputTask != null)
 {
-    // Timeout occurred - use existing mode if available, otherwise default to Disabled
-    operatingMode = existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled;
-    Console.WriteLine($"\rTimeout reached. Using {operatingMode} mode.              ");
+    for (int i = 10; i > 0; i--)
+    {
+        if (inputTask.IsCompleted)
+        {
+            userInput = inputTask.Result;
+            Console.WriteLine(userInput); // Display the pressed key
+            break;
+        }
+        
+        Console.Write($"\rPress B, R, or D - timeout in {i} seconds: ");
+        await Task.Delay(1000);
+    }
+
+    if (!inputTask.IsCompleted)
+    {
+        // Timeout occurred - use existing mode if available, otherwise default to Disabled
+        operatingMode = existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled;
+        Console.WriteLine($"\rTimeout reached. Using {operatingMode} mode.              ");
+    }
+    else
+    {
+        operatingMode = userInput?.ToString().ToUpper() switch
+        {
+            "B" => SystemConfiguration.CorrectionsMode.Send,
+            "R" => SystemConfiguration.CorrectionsMode.Receive,
+            "D" => SystemConfiguration.CorrectionsMode.Disabled,
+            _ => existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled
+        };
+    }
 }
 else
 {
-    operatingMode = userInput?.ToString().ToUpper() switch
-    {
-        "B" => SystemConfiguration.CorrectionsMode.Send,
-        "R" => SystemConfiguration.CorrectionsMode.Receive,
-        "D" => SystemConfiguration.CorrectionsMode.Disabled,
-        _ => existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled
-    };
+    // Not running interactively (service mode) - use existing configuration or default
+    operatingMode = existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled;
+    Console.WriteLine($"Running in service mode. Using {operatingMode} mode from configuration.");
 }
 
 // Save the selected operating mode
