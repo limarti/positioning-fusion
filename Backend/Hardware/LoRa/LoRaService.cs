@@ -5,7 +5,7 @@ namespace Backend.Hardware.LoRa;
 public class LoRaService : BackgroundService
 {
     private const string LORA_PORT = "/dev/ttyUSB0";
-    private const int LORA_BAUD_RATE = 9600;
+    private const int LORA_BAUD_RATE = 57600;
 
     private readonly ILogger<LoRaService> _logger;
     private SerialPort? _loraPort;
@@ -115,8 +115,6 @@ public class LoRaService : BackgroundService
             return;
         }
 
-        _logger.LogDebug("📡 LoRa: Port {Port} exists, checking connection", LORA_PORT);
-
         // Initialize connection if needed
         if (_loraPort == null || !_loraPort.IsOpen)
         {
@@ -131,8 +129,22 @@ public class LoRaService : BackgroundService
 
         try
         {
-            // Write data to LoRa
-            _loraPort.Write(data, 0, data.Length);
+            // Non-blocking write with timeout protection
+            await Task.Run(() =>
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+                try
+                {
+                    _loraPort.WriteTimeout = 100; // 100ms timeout
+                    _loraPort.Write(data, 0, data.Length);
+                }
+                catch (TimeoutException)
+                {
+                    _logger.LogWarning("📡 LoRa: Write timeout - device may be overwhelmed");
+                    throw;
+                }
+            });
+
             _loraBytesSent += data.Length;
             _totalLoRaBytesSent += data.Length;
 
@@ -140,9 +152,16 @@ public class LoRaService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "📡 LoRa: Failed to send data. Will attempt to reconnect.");
+            _logger.LogWarning(ex, "📡 LoRa: Failed to send data. Device may be overwhelmed or disconnected.");
+            
+            // Don't try to reconnect immediately for timeout/overflow issues
+            if (ex is TimeoutException || ex.Message.Contains("timeout"))
+            {
+                _logger.LogInformation("📡 LoRa: Skipping reconnection due to timeout - device likely overwhelmed");
+                return;
+            }
 
-            // Try to reconnect
+            // Try to reconnect for other errors
             await TryReconnectLoRaPort();
         }
     }
@@ -230,7 +249,27 @@ public class LoRaService : BackgroundService
 
     public override void Dispose()
     {
-        // Port already cleaned up in StopAsync - skip base.Dispose() to avoid delay
-        _loraPort = null;
+        if (_loraPort != null)
+        {
+            try
+            {
+                _loraPort.DataReceived -= OnSerialDataReceived;
+                if (_loraPort.IsOpen)
+                {
+                    _loraPort.Close();
+                }
+                _loraPort.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "📡 LoRa: Error during disposal");
+            }
+            finally
+            {
+                _loraPort = null;
+            }
+        }
+        
+        base.Dispose();
     }
 }
