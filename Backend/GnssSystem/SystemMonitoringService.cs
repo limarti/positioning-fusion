@@ -114,8 +114,7 @@ public class SystemMonitoringService : BackgroundService
                 // Send corrections status update
                 await _hubContext.Clients.All.SendAsync("CorrectionsStatusUpdate", new CorrectionsStatusUpdate
                 {
-                    Mode = SystemConfiguration.CorrectionsOperation.ToString(),
-                    Active = SystemConfiguration.CorrectionsOperation != SystemConfiguration.CorrectionsMode.Disabled
+                    Mode = SystemConfiguration.CorrectionsOperation.ToString()
                 }, stoppingToken);
 
                 _logger.LogDebug("System health update sent: CPU={CpuUsage:F1}%, Memory={MemoryUsage:F1}%, Temp={Temperature:F1}°C, Battery={BatteryLevel:F1}%, Voltage={BatteryVoltage:F2}V, ExternalPower={IsExternalPowerConnected}",

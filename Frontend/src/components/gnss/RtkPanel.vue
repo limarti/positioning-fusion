@@ -37,7 +37,7 @@ const props = defineProps({
     <!-- Active RTK Content -->
     <div v-else class="space-y-4">
       <!-- RTK Quality Metrics (when active) -->
-      <div v-if="gnssData.rtk.active" class="space-y-4">
+      <div v-if="gnssData.corrections.mode !== 'Disabled'" class="space-y-4">
         <!-- Quality Status -->
         <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
           <span class="text-slate-600">RTK Status:</span>

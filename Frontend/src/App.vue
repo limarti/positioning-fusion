@@ -60,7 +60,6 @@ const gnssData = ref({
   
   // RTK-specific metrics
   rtk: {
-    active: false,
     arRatio: null,
     correctionAge: null,
     baselineLength: null,
@@ -79,8 +78,7 @@ const gnssData = ref({
 
   // Corrections mode and status
   corrections: {
-    mode: 'Disabled', // 'Disabled', 'Receive', 'Send'
-    active: false
+    mode: 'Disabled' // 'Disabled', 'Receive', 'Send'
   },
   
 })
@@ -331,10 +329,8 @@ onMounted(async () => {
     
     // Update RTK mode based on fix type string
     if (data.fixTypeString && data.fixTypeString.includes('RTK')) {
-      gnssData.value.rtk.active = true
       gnssData.value.rtkMode = data.fixTypeString.includes('Fixed') ? 'Fixed' : 'Float'
     } else {
-      gnssData.value.rtk.active = false
       gnssData.value.rtkMode = null
     }
 

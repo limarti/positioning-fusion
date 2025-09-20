@@ -13,5 +13,4 @@ public class SystemHealthUpdate
 public class CorrectionsStatusUpdate
 {
     public string Mode { get; set; } = "Disabled"; // "Disabled", "Receive", "Send"
-    public bool Active { get; set; }
 }
