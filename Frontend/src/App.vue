@@ -226,7 +226,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
-      .withUrl("http://raspberrypi-rover:5312/datahub")
+      .withUrl("http://raspberrypi-base:5312/datahub")
     // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
 
@@ -451,7 +451,7 @@ onUnmounted(async () => {
         
         <!-- System Panel -->
         <div class="break-inside-avoid mb-6">
-          <SystemPanel :systemHealth="systemHealth" :powerStatus="powerStatus" />
+          <SystemPanel :systemHealth="systemHealth" :powerStatus="powerStatus" :dataRates="dataRates" />
         </div>
       </div>
     </main>

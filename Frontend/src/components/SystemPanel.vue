@@ -91,14 +91,6 @@ const getUsageColor = (usage) => {
         <span :class="powerStatus.isExternalPowerConnected ? 'text-green-600' : 'text-orange-600'">{{ powerStatus.isExternalPowerConnected ? 'Plugged In' : 'Battery Only' }}</span>
       </div>
       <div class="flex justify-between">
-        <span class="text-slate-500">Draw:</span>
-        <span :class="powerStatus.powerConsumption !== null ? 'font-mono' : 'text-slate-400'">{{ powerStatus.powerConsumption !== null ? powerStatus.powerConsumption + 'W' : '—' }}</span>
-      </div>
-      <div class="flex justify-between">
-        <span class="text-slate-500">Runtime:</span>
-        <span :class="powerStatus.estimatedRuntime !== null ? '' : 'text-slate-400'">{{ powerStatus.estimatedRuntime !== null ? powerStatus.estimatedRuntime : '—' }}</span>
-      </div>
-      <div class="flex justify-between">
         <span class="text-slate-500">Rate:</span>
         <span class="font-mono text-slate-400">{{ dischargeRate !== null ? dischargeRate.toFixed(2) + '%/min' : '—' }}</span>
       </div>
