@@ -233,7 +233,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
-      .withUrl("http://raspberrypi-base:5312/datahub")
+      .withUrl("http://base:5312/datahub")
     // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
 
@@ -381,7 +381,6 @@ onMounted(async () => {
   })
 
   connection.on("ReferenceStationPosition", (data) => {
-    console.log("📍 Received reference station position:", data)
     gnssData.value.referenceStation.stationId = data.stationId
     gnssData.value.referenceStation.latitude = data.latitude
     gnssData.value.referenceStation.longitude = data.longitude

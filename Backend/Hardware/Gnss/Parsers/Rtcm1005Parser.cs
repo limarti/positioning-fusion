@@ -80,13 +80,12 @@ public static class Rtcm1005Parser
             // ECEF-Z coordinate (38 bits, signed, 0.0001 m resolution)
             var ecefZ = ExtractSignedBits(bits, bitPos, 38) * 0.0001;
 
-            logger.LogInformation("🔢 ECEF coordinates: X={X:F4}m, Y={Y:F4}m, Z={Z:F4}m", ecefX, ecefY, ecefZ);
+            //logger.LogInformation("🔢 ECEF coordinates: X={X:F4}m, Y={Y:F4}m, Z={Z:F4}m", ecefX, ecefY, ecefZ);
 
             // Convert ECEF to Latitude/Longitude (WGS84)
             var (latitude, longitude, altitude) = EcefToGeodetic(ecefX, ecefY, ecefZ);
 
-            logger.LogInformation("📍 Base Station Position: Lat={Lat:F8}°, Lon={Lon:F8}°, Alt={Alt:F3}m (Station ID: {StationId})", 
-                latitude, longitude, altitude, stationId);
+            //logger.LogInformation("📍 Base Station Position: Lat={Lat:F8}°, Lon={Lon:F8}°, Alt={Alt:F3}m (Station ID: {StationId})", latitude, longitude, altitude, stationId);
 
             // Send reference station position to frontend
             await hubContext.Clients.All.SendAsync("ReferenceStationPosition", new
