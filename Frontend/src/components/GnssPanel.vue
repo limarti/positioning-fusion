@@ -33,9 +33,6 @@ const props = defineProps({
       </div>
       <div class="flex-1">
         <h3 class="font-bold text-slate-800">GNSS</h3>
-        <div class="text-sm" :class="gnssData.connected ? 'text-emerald-600' : 'text-slate-400'">
-          {{ gnssData.connected ? 'Connected' : 'Offline' }}
-        </div>
       </div>
     </div>
     

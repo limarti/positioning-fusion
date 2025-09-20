@@ -87,8 +87,7 @@ public static class NavigationSatelliteParser
         {
             ITow = iTow,
             NumSatellites = numSvs,
-            Satellites = satellites,
-            Connected = true
+            Satellites = satellites
         };
 
         try

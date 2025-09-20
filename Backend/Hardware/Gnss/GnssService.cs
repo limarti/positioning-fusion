@@ -74,8 +74,6 @@ public class GnssService : BackgroundService
         {
             _logger.LogWarning("GNSS serial port not available - service will not collect data");
 
-            // Send disconnected status to frontend
-            await _hubContext.Clients.All.SendAsync("SatelliteUpdate", new SatelliteUpdate { Connected = false }, stoppingToken);
 
             // Send zero data rates since GNSS is disconnected
             await _hubContext.Clients.All.SendAsync("DataRatesUpdate", new DataRatesUpdate

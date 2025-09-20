@@ -5,7 +5,6 @@ public class SatelliteUpdate
     public uint ITow { get; set; }
     public byte NumSatellites { get; set; }
     public List<SatelliteInfo> Satellites { get; set; } = new();
-    public bool Connected { get; set; }
 }
 
 public class SatelliteInfo
