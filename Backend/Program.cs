@@ -65,6 +65,48 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Prompt user for operating mode
+Console.WriteLine("Select operating mode:");
+Console.WriteLine("(B) Base Station Mode");
+Console.WriteLine("(R) Rover Mode");
+Console.WriteLine("(N) None (no mode)");
+Console.Write("Enter your choice (B/R/N): ");
+
+string? userInput = null;
+var inputTask = Task.Run(() => Console.ReadLine());
+
+for (int i = 10; i > 0; i--)
+{
+    if (inputTask.IsCompleted)
+    {
+        userInput = inputTask.Result;
+        break;
+    }
+    
+    Console.Write($"\rEnter your choice (B/R/N) - timeout in {i} seconds: ");
+    await Task.Delay(1000);
+}
+
+if (!inputTask.IsCompleted)
+{
+    Console.WriteLine("\rTimeout reached. Defaulting to None mode.              ");
+}
+else if (userInput != null)
+{
+    Console.WriteLine();
+}
+
+string operatingMode = userInput?.ToUpper() switch
+{
+    "B" => "Base",
+    "R" => "Rover", 
+    "N" => "None",
+    _ => "None"
+};
+
+Console.WriteLine($"Operating mode selected: {operatingMode}");
+Console.WriteLine();
+
 // Initialize hardware
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
