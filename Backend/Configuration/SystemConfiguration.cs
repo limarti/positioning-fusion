@@ -24,7 +24,7 @@ public static class SystemConfiguration
     public static int LoggingMaxBufferSizeBytes { get; set; } = 1048576; // 1MB
 
     // Operating mode persistence
-    private static readonly string ConfigFilePath = "rtk-mode.json";
+    private static readonly string ConfigFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "rtk-mode.json");
 
     public static CorrectionsMode? LoadRtkMode()
     {
