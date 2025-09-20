@@ -314,6 +314,8 @@ public class GnssService : BackgroundService
             // Payload starts at byte 3, message type is the first 12 bits of payload
             var messageType = (ushort)((completeMessage[3] << 4) | (completeMessage[4] >> 4));
             
+            //_logger.LogInformation("📨 RTCM message received: Type={Type}, Length={Length}", messageType, completeMessage.Length);
+            
             // Validate RTCM3 message type - standard types are typically 1000-1300 range
             var isValidRtcmType = (messageType >= 1000 && messageType <= 1300) || 
                                   (messageType >= 4000 && messageType <= 4100); // Some extended types
@@ -325,6 +327,13 @@ public class GnssService : BackgroundService
             }
             
             var messageKey = $"RTCM3.{messageType}";
+
+            // Parse RTCM 1005 for reference station position
+            if (messageType == 1005)
+            {
+                //_logger.LogInformation("📡 RTCM 1005 detected! Parsing reference station position...");
+                await Rtcm1005Parser.ProcessAsync(completeMessage, _hubContext, _logger, stoppingToken);
+            }
 
             // Track message frequency with timestamps
             var now = DateTime.UtcNow;

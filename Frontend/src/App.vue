@@ -80,6 +80,14 @@ const gnssData = ref({
   corrections: {
     mode: 'Disabled' // 'Disabled', 'Receive', 'Send'
   },
+
+  // Reference station position (for base station mode)
+  referenceStation: {
+    stationId: null,
+    latitude: null,
+    longitude: null,
+    altitude: null
+  },
   
 })
 
@@ -225,7 +233,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
-      .withUrl("http://raspberrypi-rover:5312/datahub")
+      .withUrl("http://raspberrypi-base:5312/datahub")
     // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
 
@@ -370,6 +378,14 @@ onMounted(async () => {
 
   connection.on("CorrectionsStatusUpdate", (data) => {
     gnssData.value.corrections.mode = data.mode
+  })
+
+  connection.on("ReferenceStationPosition", (data) => {
+    console.log("📍 Received reference station position:", data)
+    gnssData.value.referenceStation.stationId = data.stationId
+    gnssData.value.referenceStation.latitude = data.latitude
+    gnssData.value.referenceStation.longitude = data.longitude
+    gnssData.value.referenceStation.altitude = data.altitude
   })
 
   connection.on("DopUpdate", (data) => {

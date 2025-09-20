@@ -98,7 +98,7 @@ const props = defineProps({
           </span>
         </div>
         
-        <div class="grid grid-cols-3 gap-3">
+        <div class="grid grid-cols-3 gap-3 mb-3">
           <div class="text-center">
             <div class="text-xs text-blue-600 mb-1">Duration</div>
             <div class="font-bold text-blue-800">{{ gnssData.surveyIn.duration !== null ? gnssData.surveyIn.duration + 's' : '—' }}</div>
@@ -110,6 +110,31 @@ const props = defineProps({
           <div class="text-center">
             <div class="text-xs text-blue-600 mb-1">Accuracy</div>
             <div class="font-bold text-blue-800">{{ gnssData.surveyIn.accuracyMm !== null ? (gnssData.surveyIn.accuracyMm / 1000).toFixed(2) + 'm' : '—' }}</div>
+          </div>
+        </div>
+
+        <!-- Reference Station Position -->
+        <div class="bg-blue-100 rounded-lg p-3 border border-blue-200">
+          <div class="text-xs font-semibold text-blue-800 mb-2">Broadcasting Position</div>
+          <div class="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <div class="text-blue-600">Latitude:</div>
+              <div class="font-mono font-semibold" :class="gnssData.referenceStation.latitude !== null ? 'text-blue-800' : 'text-slate-400'">
+                {{ gnssData.referenceStation.latitude !== null ? gnssData.referenceStation.latitude.toFixed(8) + '°' : '—' }}
+              </div>
+            </div>
+            <div>
+              <div class="text-blue-600">Longitude:</div>
+              <div class="font-mono font-semibold" :class="gnssData.referenceStation.longitude !== null ? 'text-blue-800' : 'text-slate-400'">
+                {{ gnssData.referenceStation.longitude !== null ? gnssData.referenceStation.longitude.toFixed(8) + '°' : '—' }}
+              </div>
+            </div>
+          </div>
+          <div class="mt-2 text-center">
+            <div class="text-blue-600 text-xs">Altitude:</div>
+            <div class="font-mono font-semibold" :class="gnssData.referenceStation.altitude !== null ? 'text-blue-800' : 'text-slate-400'">
+              {{ gnssData.referenceStation.altitude !== null ? gnssData.referenceStation.altitude.toFixed(3) + 'm' : '—' }}
+            </div>
           </div>
         </div>
       </div>
