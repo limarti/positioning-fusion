@@ -1,8 +1,7 @@
 <script setup>
 import GnssStatus from './gnss/GnssStatus.vue'
 import SatelliteHealthPanel from './gnss/SatelliteHealthPanel.vue'
-import RtkQualityPanel from './gnss/RtkQualityPanel.vue'
-import CorrectionsPanel from './gnss/CorrectionsPanel.vue'
+import RtkPanel from './gnss/RtkPanel.vue'
 import PositionScatterPlot from './gnss/PositionScatterPlot.vue'
 import MessageRatesPanel from './MessageRatesPanel.vue'
 
@@ -50,11 +49,8 @@ const props = defineProps({
         <!-- Satellite Health Subsection -->
         <SatelliteHealthPanel :gnssData="gnssData" :dataRates="dataRates" />
         
-        <!-- RTK Quality Section (Rover Mode Only) -->
-        <RtkQualityPanel :gnssData="gnssData" :dataRates="dataRates" />
-        
-        <!-- Corrections Panel -->
-        <CorrectionsPanel :gnssData="gnssData" :dataRates="dataRates" />
+        <!-- Unified RTK Panel -->
+        <RtkPanel :gnssData="gnssData" :dataRates="dataRates" />
         
         <!-- Position Scatter Plot -->
         <PositionScatterPlot :gnssData="gnssData" />
