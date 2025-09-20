@@ -5,6 +5,7 @@ using Backend.Hardware.LoRa;
 using Backend.Hubs;
 using Backend.Storage;
 using Backend.GnssSystem;
+using Backend.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
 
@@ -65,44 +66,63 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Load existing operating mode
+var existingRtkMode = SystemConfiguration.LoadRtkMode();
+
 // Prompt user for operating mode
 Console.WriteLine("Select operating mode:");
 Console.WriteLine("(B) Base Station Mode");
 Console.WriteLine("(R) Rover Mode");
-Console.WriteLine("(N) None (no mode)");
-Console.Write("Enter your choice (B/R/N): ");
+Console.WriteLine("(D) Disabled");
+if (existingRtkMode.HasValue)
+{
+    Console.WriteLine($"Current mode: {existingRtkMode.Value}");
+}
+Console.Write("Press B, R, or D: ");
 
-string? userInput = null;
-var inputTask = Task.Run(() => Console.ReadLine());
+char? userInput = null;
+var inputTask = Task.Run(() =>
+{
+    var keyInfo = Console.ReadKey(true); // true = don't display the key
+    return keyInfo.KeyChar;
+});
 
 for (int i = 10; i > 0; i--)
 {
     if (inputTask.IsCompleted)
     {
         userInput = inputTask.Result;
+        Console.WriteLine(userInput); // Display the pressed key
         break;
     }
     
-    Console.Write($"\rEnter your choice (B/R/N) - timeout in {i} seconds: ");
+    Console.Write($"\rPress B, R, or D - timeout in {i} seconds: ");
     await Task.Delay(1000);
 }
 
+SystemConfiguration.CorrectionsMode operatingMode;
 if (!inputTask.IsCompleted)
 {
-    Console.WriteLine("\rTimeout reached. Defaulting to None mode.              ");
+    // Timeout occurred - use existing mode if available, otherwise default to Disabled
+    operatingMode = existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled;
+    Console.WriteLine($"\rTimeout reached. Using {operatingMode} mode.              ");
 }
-else if (userInput != null)
+else
 {
-    Console.WriteLine();
+    operatingMode = userInput?.ToString().ToUpper() switch
+    {
+        "B" => SystemConfiguration.CorrectionsMode.Send,
+        "R" => SystemConfiguration.CorrectionsMode.Receive,
+        "D" => SystemConfiguration.CorrectionsMode.Disabled,
+        _ => existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled
+    };
 }
 
-string operatingMode = userInput?.ToUpper() switch
-{
-    "B" => "Base",
-    "R" => "Rover", 
-    "N" => "None",
-    _ => "None"
-};
+// Save the selected operating mode
+SystemConfiguration.SaveOperatingMode(operatingMode);
+
+// Update the corrections operation
+SystemConfiguration.CorrectionsOperation = operatingMode;
 
 Console.WriteLine($"Operating mode selected: {operatingMode}");
 Console.WriteLine();
