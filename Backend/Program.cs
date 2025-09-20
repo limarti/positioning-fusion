@@ -181,6 +181,12 @@ if (!gnssInitialized)
 // Use CORS (before other middleware)
 app.UseCors("AllowFrontend");
 
+// Enable default files (index.html, default.html, etc.)
+app.UseDefaultFiles();
+
+// Serve static files from wwwroot
+app.UseStaticFiles();
+
 // Disable HTTPS redirection for development
 // app.UseHttpsRedirection();
 
@@ -206,6 +212,9 @@ app.MapGet("/weatherforecast", () =>
 
 // Map SignalR hub
 app.MapHub<DataHub>("/datahub");
+
+// Fallback for SPA routing - serve index.html for any unmatched routes
+app.MapFallbackToFile("index.html");
 
 app.Run();
 
