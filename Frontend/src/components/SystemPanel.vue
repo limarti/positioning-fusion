@@ -10,6 +10,10 @@ const props = defineProps({
   powerStatus: {
     type: Object,
     required: true
+  },
+  dataRates: {
+    type: Object,
+    required: true
   }
 })
 
@@ -62,60 +66,82 @@ const getUsageColor = (usage) => {
     icon-color="bg-emerald-500"
   >
     
-    <!-- Combined system data in compact grid -->
-    <div class="grid grid-cols-2 gap-3 text-sm">
+    <!-- Combined system data in single column -->
+    <div class="space-y-1 text-sm">
       <!-- Power section -->
-      <div class="space-y-1">
-        <div class="flex justify-between">
-          <span class="text-slate-500">Battery:</span>
-          <div class="flex items-center space-x-1">
-            <span :class="powerStatus.batteryLevel !== null ? getBatteryColor(powerStatus.batteryLevel) : 'text-slate-400'">{{ powerStatus.batteryLevel !== null ? powerStatus.batteryLevel.toFixed(1) + '%' : '—' }}</span>
-            <span v-if="powerStatus.isExternalPowerConnected" class="text-green-500 text-xs">🔌</span>
-            <span v-else class="text-orange-500 text-xs">🔋</span>
-          </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">Battery:</span>
+        <div class="flex items-center space-x-1">
+          <span :class="powerStatus.batteryLevel !== null ? getBatteryColor(powerStatus.batteryLevel) : 'text-slate-400'">{{ powerStatus.batteryLevel !== null ? powerStatus.batteryLevel.toFixed(1) + '%' : '—' }}</span>
+          <span v-if="powerStatus.isExternalPowerConnected" class="text-green-500 text-xs">🔌</span>
+          <span v-else class="text-orange-500 text-xs">🔋</span>
         </div>
-        <div class="w-full bg-slate-200 rounded-full h-1 mb-1">
-          <div class="h-1 rounded-full transition-all" 
-               :class="powerStatus.batteryLevel !== null ? (powerStatus.batteryLevel > 60 ? 'bg-emerald-500' : powerStatus.batteryLevel > 30 ? 'bg-yellow-500' : 'bg-red-500') : 'bg-slate-300'"
-               :style="`width: ${powerStatus.batteryLevel !== null ? powerStatus.batteryLevel : 0}%`"></div>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-500">Voltage:</span>
-          <span :class="powerStatus.batteryVoltage !== null ? 'font-mono text-blue-600' : 'text-slate-400'">{{ powerStatus.batteryVoltage !== null ? powerStatus.batteryVoltage.toFixed(2) + 'V' : '—' }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-500">Power:</span>
-          <span :class="powerStatus.isExternalPowerConnected ? 'text-green-600' : 'text-orange-600'">{{ powerStatus.isExternalPowerConnected ? 'Plugged In' : 'Battery Only' }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-500">Draw:</span>
-          <span :class="powerStatus.powerConsumption !== null ? 'font-mono' : 'text-slate-400'">{{ powerStatus.powerConsumption !== null ? powerStatus.powerConsumption + 'W' : '—' }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-500">Runtime:</span>
-          <span :class="powerStatus.estimatedRuntime !== null ? '' : 'text-slate-400'">{{ powerStatus.estimatedRuntime !== null ? powerStatus.estimatedRuntime : '—' }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-500">Rate:</span>
-          <span class="font-mono text-slate-400">{{ dischargeRate !== null ? dischargeRate.toFixed(2) + '%/min' : '—' }}</span>
-        </div>
+      </div>
+      <div class="w-full bg-slate-200 rounded-full h-1 mb-1">
+        <div class="h-1 rounded-full transition-all" 
+             :class="powerStatus.batteryLevel !== null ? (powerStatus.batteryLevel > 60 ? 'bg-emerald-500' : powerStatus.batteryLevel > 30 ? 'bg-yellow-500' : 'bg-red-500') : 'bg-slate-300'"
+             :style="`width: ${powerStatus.batteryLevel !== null ? powerStatus.batteryLevel : 0}%`"></div>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">Voltage:</span>
+        <span :class="powerStatus.batteryVoltage !== null ? 'font-mono text-blue-600' : 'text-slate-400'">{{ powerStatus.batteryVoltage !== null ? powerStatus.batteryVoltage.toFixed(2) + 'V' : '—' }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">Power:</span>
+        <span :class="powerStatus.isExternalPowerConnected ? 'text-green-600' : 'text-orange-600'">{{ powerStatus.isExternalPowerConnected ? 'Plugged In' : 'Battery Only' }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">Draw:</span>
+        <span :class="powerStatus.powerConsumption !== null ? 'font-mono' : 'text-slate-400'">{{ powerStatus.powerConsumption !== null ? powerStatus.powerConsumption + 'W' : '—' }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">Runtime:</span>
+        <span :class="powerStatus.estimatedRuntime !== null ? '' : 'text-slate-400'">{{ powerStatus.estimatedRuntime !== null ? powerStatus.estimatedRuntime : '—' }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">Rate:</span>
+        <span class="font-mono text-slate-400">{{ dischargeRate !== null ? dischargeRate.toFixed(2) + '%/min' : '—' }}</span>
       </div>
       
-      <!-- System + Files section -->
-      <div class="space-y-1">
-        <div class="flex justify-between">
-          <span class="text-slate-500">CPU:</span>
-          <span :class="systemHealth.cpuUsage !== null ? getUsageColor(systemHealth.cpuUsage) : 'text-slate-400'">{{ systemHealth.cpuUsage !== null ? systemHealth.cpuUsage.toFixed(1) + '%' : '—' }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-500">RAM:</span>
-          <span :class="systemHealth.memoryUsage !== null ? getUsageColor(systemHealth.memoryUsage) : 'text-slate-400'">{{ systemHealth.memoryUsage !== null ? systemHealth.memoryUsage.toFixed(1) + '%' : '—' }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-slate-500">Temp:</span>
-          <span :class="systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemHealth.temperature !== null ? systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
-        </div>
+      <!-- System Health section -->
+      <div class="flex justify-between">
+        <span class="text-slate-500">CPU:</span>
+        <span :class="systemHealth.cpuUsage !== null ? getUsageColor(systemHealth.cpuUsage) : 'text-slate-400'">{{ systemHealth.cpuUsage !== null ? systemHealth.cpuUsage.toFixed(1) + '%' : '—' }}</span>
       </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">RAM:</span>
+        <span :class="systemHealth.memoryUsage !== null ? getUsageColor(systemHealth.memoryUsage) : 'text-slate-400'">{{ systemHealth.memoryUsage !== null ? systemHealth.memoryUsage.toFixed(1) + '%' : '—' }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">Temp:</span>
+        <span :class="systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemHealth.temperature !== null ? systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
+      </div>
+
+      <div class="flex justify-between">
+        <span class="text-slate-500">GNSS Throughput:</span>
+        <span :class="(dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined) || (dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined) ? 'text-blue-600 font-mono' : 'text-slate-400'">
+          <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75 12 3m0 0 3.75 3.75M12 3v18" />
+          </svg>{{ dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined ? dataRates.kbpsGnssIn.toFixed(1) : '—' }}
+          <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
+          </svg>{{ dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined ? dataRates.kbpsGnssOut.toFixed(1) : '—' }} kbps
+        </span>
+      </div>
+
+      <div class="flex justify-between">
+        <span class="text-slate-500">LoRa Throughput:</span>
+        <span :class="(dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined) || (dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined) ? 'text-amber-600 font-mono' : 'text-slate-400'">
+          <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75 12 3m0 0 3.75 3.75M12 3v18" />
+          </svg>{{ dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined ? dataRates.kbpsLoRaIn.toFixed(1) : '—' }}
+          <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
+          </svg>{{ dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined ? dataRates.kbpsLoRaOut.toFixed(1) : '—' }} kbps
+        </span>
+      </div>
+
     </div>
+
   </Card>
 </template>

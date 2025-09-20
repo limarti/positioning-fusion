@@ -40,17 +40,17 @@ const props = defineProps({
     </div>
     
     <!-- GNSS Status Summary -->
-    <GnssStatus :gnssData="gnssData" :dataRates="dataRates" />
+    <GnssStatus :gnssData="gnssData" />
     
     <!-- GNSS Subsections -->
     <div class="space-y-4">
       <!-- Centered Masonry Layout for All GNSS Cards -->
       <div class="columns-1 lg:columns-2 gap-6 space-y-6 mx-auto">
         <!-- Satellite Health Subsection -->
-        <SatelliteHealthPanel :gnssData="gnssData" :dataRates="dataRates" />
+        <SatelliteHealthPanel :gnssData="gnssData" />
         
         <!-- Unified RTK Panel -->
-        <RtkPanel :gnssData="gnssData" :dataRates="dataRates" />
+        <RtkPanel :gnssData="gnssData" />
         
         <!-- Position Scatter Plot -->
         <PositionScatterPlot :gnssData="gnssData" />

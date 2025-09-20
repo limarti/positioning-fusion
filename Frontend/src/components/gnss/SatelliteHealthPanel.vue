@@ -5,10 +5,6 @@ const props = defineProps({
   gnssData: {
     type: Object,
     required: true
-  },
-  dataRates: {
-    type: Object,
-    required: true
   }
 })
 </script>
@@ -20,7 +16,6 @@ const props = defineProps({
         <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
       </svg>
       <h2 class="text-lg font-bold text-slate-800">Satellite Health</h2>
-      <div class="ml-auto text-sm font-semibold" :class="dataRates.gnssRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.gnssRate !== null ? dataRates.gnssRate : '—' }}</div>
     </div>
 
     <!-- Constellation Summary -->

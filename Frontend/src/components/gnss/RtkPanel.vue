@@ -3,10 +3,6 @@ const props = defineProps({
   gnssData: {
     type: Object,
     required: true
-  },
-  dataRates: {
-    type: Object,
-    required: true
   }
 })
 </script>
@@ -20,7 +16,6 @@ const props = defineProps({
           <path d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z"/>
         </svg>
         <h2 class="text-lg font-bold" :class="gnssData.corrections.mode === 'Disabled' ? 'text-slate-400' : 'text-slate-800'">RTK</h2>
-        <div class="text-sm font-semibold" :class="dataRates.correctionRate !== null ? 'text-emerald-600' : 'text-slate-400'">{{ dataRates.correctionRate !== null ? dataRates.correctionRate : '—' }}</div>
       </div>
       
       <!-- Mode Badge -->
@@ -119,30 +114,6 @@ const props = defineProps({
         </div>
       </div>
 
-      <!-- LoRa Radio Status -->
-      <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
-        <div class="text-sm font-semibold text-amber-800 mb-3">LoRa Radio</div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="text-center">
-            <div class="text-xs text-amber-600 mb-1 flex items-center justify-center">
-              <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M7,14L12,9L17,14H7Z"/>
-              </svg>
-              Data In
-            </div>
-            <div class="font-bold text-amber-800">{{ dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined ? dataRates.kbpsLoRaIn.toFixed(1) + ' kbps' : '—' }}</div>
-          </div>
-          <div class="text-center">
-            <div class="text-xs text-amber-600 mb-1 flex items-center justify-center">
-              <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M7,10L12,15L17,10H7Z"/>
-              </svg>
-              Data Out
-            </div>
-            <div class="font-bold text-amber-800">{{ dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined ? dataRates.kbpsLoRaOut.toFixed(1) + ' kbps' : '—' }}</div>
-          </div>
-        </div>
-      </div>
 
       <!-- Mode Summary -->
       <div class="flex justify-between p-3 bg-slate-50 rounded-lg">
