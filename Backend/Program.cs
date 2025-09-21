@@ -22,7 +22,9 @@ Log.Logger = new LoggerConfiguration()
         rollingInterval: RollingInterval.Day,
         retainedFileCountLimit: 30,
         shared: true,
-        flushToDiskInterval: TimeSpan.FromSeconds(1),
+        flushToDiskInterval: TimeSpan.FromSeconds(10),
+        fileSizeLimitBytes: 104_857_600, // 100 MB per file
+        rollOnFileSizeLimit: true,
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
@@ -191,11 +193,27 @@ if (!gnssInitialized)
 // Use CORS (before other middleware)
 app.UseCors("AllowFrontend");
 
-// Enable default files (index.html, default.html, etc.)
-app.UseDefaultFiles();
+// Configure custom static file path
+var frontendPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "frontend");
 
-// Serve static files from wwwroot
-app.UseStaticFiles();
+// Ensure frontend directory exists
+if (!Directory.Exists(frontendPath))
+{
+    Directory.CreateDirectory(frontendPath);
+    logger.LogInformation("Created frontend directory at: {FrontendPath}", frontendPath);
+}
+
+// Enable default files from custom path
+app.UseDefaultFiles(new DefaultFilesOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendPath)
+});
+
+// Serve static files from custom frontend directory
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendPath)
+});
 
 // Disable HTTPS redirection for development
 // app.UseHttpsRedirection();
