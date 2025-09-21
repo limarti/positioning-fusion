@@ -179,7 +179,7 @@ const getSignalColor = (strength) => {
 // Connection management functions
 const updateConnectionStatus = () => {
   if (!connection) {
-    connectionStatus.value = 'Disconnected'
+    connectionStatus.value = 'Reconnecting'
     return
   }
 
@@ -190,12 +190,12 @@ const updateConnectionStatus = () => {
       clearRetryTimer()
       break
     case HubConnectionState.Connecting:
-      connectionStatus.value = 'Connecting'
-      break
     case HubConnectionState.Disconnected:
-      connectionStatus.value = 'Disconnected'
+      connectionStatus.value = 'Reconnecting'
       // Only start our custom retry after SignalR has given up
-      scheduleRetry()
+      if (connection.state === HubConnectionState.Disconnected) {
+        scheduleRetry()
+      }
       break
   }
 }
@@ -233,7 +233,7 @@ const scheduleRetry = () => {
     retryTimer = null
     if (connection && connection.state === HubConnectionState.Disconnected) {
       try {
-        connectionStatus.value = 'Connecting'
+        connectionStatus.value = 'Reconnecting'
         await connection.start()
         updateConnectionStatus() // Update status after successful connection
       } catch (err) {
@@ -248,7 +248,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
-      .withUrl("http://raspberrypi-rover/datahub")
+      .withUrl("http://rover.local/datahub")
     // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
 
@@ -435,7 +435,7 @@ onMounted(async () => {
   })
 
   try {
-    connectionStatus.value = 'Connecting'
+    connectionStatus.value = 'Reconnecting'
     await connection.start()
     console.log("SignalR Connected successfully!")
     updateConnectionStatus()
