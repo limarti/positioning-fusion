@@ -9,11 +9,11 @@ public class CameraService : BackgroundService, IDisposable
 {
     // Camera configuration constants
     private const int CAMERA_CAPTURE_RATE = 60;  // Hardware capture rate
-    private const int CAMERA_OUTPUT_RATE = 15;   // Desired output rate (configurable)
+    private const int CAMERA_FRAME_MULTIPLIER = 4;   // Number of frames until we collect a frame (configurable)
     private const int CAMERA_WIDTH = 2560;
     private const int CAMERA_HEIGHT = 720;
     private const int VIDEO_SEGMENT_SECONDS = 60; // Time limit per video file
-    private const int FRAME_DROP_RATIO = CAMERA_CAPTURE_RATE / CAMERA_OUTPUT_RATE; // Keep every Nth frame
+    private const int FRAME_DROP_RATIO = CAMERA_FRAME_MULTIPLIER; // Keep every Nth frame
     private readonly IHubContext<DataHub> _hubContext;
     private readonly ILogger<CameraService> _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -42,8 +42,8 @@ public class CameraService : BackgroundService, IDisposable
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Camera Service started - continuous video recording at {Width}x{Height} capture:{CaptureRate}fps output:{OutputRate}fps", 
-            CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_CAPTURE_RATE, CAMERA_OUTPUT_RATE);
+        _logger.LogInformation("Camera Service started - continuous video recording at {Width}x{Height} capture:{CaptureRate}fps multiplier:{Multiplier}", 
+            CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_CAPTURE_RATE, CAMERA_FRAME_MULTIPLIER);
 
         // Start the data file writer for logging
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
@@ -81,22 +81,17 @@ public class CameraService : BackgroundService, IDisposable
             // Start continuous video recording
             await StartVideoRecording(stoppingToken);
             
-            // Send connected status periodically while recording
+            // The MJPEG processing will handle sending frames to frontend
+            // Just wait for the FFmpeg process to complete
             while (!stoppingToken.IsCancellationRequested && _ffmpegProcess != null && !_ffmpegProcess.HasExited)
             {
                 try
                 {
-                    await SendCameraConnectedUpdate();
-                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
                     break;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error sending camera status");
-                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
                 }
             }
         }
@@ -144,8 +139,11 @@ public class CameraService : BackgroundService, IDisposable
 
             _logger.LogInformation("Camera stream process started - processing MJPEG frames with {DropRatio}:1 frame dropping", FRAME_DROP_RATIO);
             
+            // Send initial connected status to frontend
+            await SendCameraConnectedStatus();
+            
             // Log recording start to batched file writer
-            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},{CAMERA_WIDTH}x{CAMERA_HEIGHT},capture:{CAMERA_CAPTURE_RATE}fps,output:{CAMERA_OUTPUT_RATE}fps";
+            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},{CAMERA_WIDTH}x{CAMERA_HEIGHT},capture:{CAMERA_CAPTURE_RATE}fps,multiplier:{CAMERA_FRAME_MULTIPLIER}";
             _dataFileWriter.WriteData(logEntry);
 
             // Process MJPEG stream with frame dropping
@@ -185,6 +183,7 @@ public class CameraService : BackgroundService, IDisposable
         int frameCount = 0;
         int framesKeptInSegment = 0;
         DateTime lastSegmentTime = DateTime.UtcNow;
+        DateTime lastFrontendFrameTime = DateTime.UtcNow;
         
         // Start first video segment
         await StartNewVideoSegment(stoppingToken);
@@ -239,6 +238,14 @@ public class CameraService : BackgroundService, IDisposable
                         {
                             _logger.LogDebug("Processed {FrameCount} total frames, kept {KeptCount}, current frame size: {FrameSize} bytes", 
                                 frameCount, framesKeptInSegment, frameData.Length);
+                        }
+                        
+                        // Send frame to frontend every 5 seconds
+                        var timeSinceLastFrontendFrame = DateTime.UtcNow - lastFrontendFrameTime;
+                        if (timeSinceLastFrontendFrame.TotalSeconds >= 5)
+                        {
+                            _ = Task.Run(() => SendFrameToFrontend(frameData));
+                            lastFrontendFrameTime = DateTime.UtcNow;
                         }
                         
                         // Check if we need to start a new video segment
@@ -348,7 +355,7 @@ public class CameraService : BackgroundService, IDisposable
             {
                 FileName = "ffmpeg",
                 Arguments = $"-hide_banner -loglevel warning " +
-                           $"-f mjpeg -framerate {CAMERA_OUTPUT_RATE} -i - " +  // Read MJPEG from stdin
+                           $"-f mjpeg -framerate {CAMERA_CAPTURE_RATE / CAMERA_FRAME_MULTIPLIER} -i - " +  // Read MJPEG from stdin
                            "-c copy -f matroska " +  // Copy MJPEG into MKV container
                            $"\"{_currentVideoFilePath}\"",
                 RedirectStandardInput = true,
@@ -440,6 +447,34 @@ public class CameraService : BackgroundService, IDisposable
             }
         }
     }
+    
+    private async Task SendFrameToFrontend(byte[] frameData)
+    {
+        try
+        {
+            var base64Image = Convert.ToBase64String(frameData);
+            
+            var cameraUpdate = new CameraUpdate
+            {
+                Timestamp = DateTime.UtcNow,
+                ImageBase64 = base64Image,
+                ImageSizeBytes = frameData.Length,
+                ImageWidth = CAMERA_WIDTH,
+                ImageHeight = CAMERA_HEIGHT,
+                Format = "JPEG",
+                CaptureTimeMs = 0, // We don't track individual capture times
+                EncodingTimeMs = 0, // No encoding since we're using raw MJPEG frames
+                IsConnected = true
+            };
+
+            await _hubContext.Clients.All.SendAsync("CameraUpdate", cameraUpdate);
+            _logger.LogDebug("Sent frame to frontend: {Size} bytes", frameData.Length);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send frame to frontend");
+        }
+    }
 
     private async Task ConfigureCameraAsync()
     {
@@ -481,29 +516,29 @@ public class CameraService : BackgroundService, IDisposable
         }
     }
 
-    private async Task SendCameraConnectedUpdate()
+    private async Task SendCameraConnectedStatus()
     {
         try
         {
-            var connectedUpdate = new CameraUpdate
+            var statusUpdate = new CameraUpdate
             {
                 Timestamp = DateTime.UtcNow,
                 ImageBase64 = string.Empty,
                 ImageSizeBytes = 0,
                 ImageWidth = CAMERA_WIDTH,
                 ImageHeight = CAMERA_HEIGHT,
-                Format = "VIDEO_RECORDING",
+                Format = "MKV_RECORDING",
                 CaptureTimeMs = 0,
                 EncodingTimeMs = 0,
                 IsConnected = true
             };
 
-            await _hubContext.Clients.All.SendAsync("CameraUpdate", connectedUpdate);
-            _logger.LogDebug("Camera recording status sent via SignalR");
+            await _hubContext.Clients.All.SendAsync("CameraUpdate", statusUpdate);
+            _logger.LogDebug("Camera connected status sent via SignalR");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send camera recording status via SignalR");
+            _logger.LogWarning(ex, "Failed to send camera status via SignalR");
         }
     }
 
