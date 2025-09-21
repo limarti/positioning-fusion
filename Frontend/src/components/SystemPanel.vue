@@ -82,6 +82,23 @@ const getUsageColor = (usage) => {
         <span :class="systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemHealth.temperature !== null ? systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
       </div>
 
+      <!-- Battery Information -->
+<!--      <div class="flex justify-between">-->
+<!--        <span class="text-slate-500">Battery:</span>-->
+<!--        <span :class="powerStatus.batteryLevel !== null ? getBatteryColor(powerStatus.batteryLevel) : 'text-slate-400'">-->
+<!--          {{ powerStatus.batteryLevel !== null ? powerStatus.batteryLevel.toFixed(1) + '%' : '—' }}-->
+<!--          <span v-if="powerStatus.isExternalPowerConnected" class="text-green-600 ml-1">⚡</span>-->
+<!--        </span>-->
+<!--      </div>-->
+      <div class="flex justify-between">
+        <span class="text-slate-500">Voltage:</span>
+        <span class="text-blue-600">{{ powerStatus.batteryVoltage !== null ? powerStatus.batteryVoltage.toFixed(2) + 'V' : '—' }}</span>
+      </div>
+      <div v-if="dischargeRate !== null && !powerStatus.isExternalPowerConnected" class="flex justify-between">
+        <span class="text-slate-500">Discharge Rate:</span>
+        <span class="text-red-500">{{ dischargeRate.toFixed(2) }}%/min</span>
+      </div>
+
       <div v-if="(dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined && dataRates.kbpsGnssIn > 0) || (dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined && dataRates.kbpsGnssOut > 0)" class="flex justify-between">
         <span class="text-slate-500">GNSS Throughput:</span>
         <span class="text-blue-600 font-mono">
