@@ -58,12 +58,62 @@ const statusColor = computed(() => {
 })
 
 const imageUrl = computed(() => {
-  if (!cameraData.value.imageBase64 || !cameraData.value.isConnected) return null
-  return `data:image/jpeg;base64,${cameraData.value.imageBase64}`
+  console.log('Camera debug:', {
+    isConnected: cameraData.value.isConnected,
+    hasImageData: !!cameraData.value.imageBase64,
+    imageSize: cameraData.value.imageSizeBytes,
+    timestamp: cameraData.value.timestamp
+  })
+  
+  if (!cameraData.value.imageBase64 || !cameraData.value.isConnected) {
+    console.log('No image URL - missing data or disconnected')
+    return null
+  }
+  
+  const dataUrl = `data:image/jpeg;base64,${cameraData.value.imageBase64}`
+  console.log('Generated image URL, base64 length:', cameraData.value.imageBase64.length)
+  return dataUrl
+})
+
+// Large preview dialog
+const showLargePreview = ref(false)
+
+const openLargePreview = () => {
+  if (imageUrl.value) {
+    showLargePreview.value = true
+  }
+}
+
+const closeLargePreview = () => {
+  showLargePreview.value = false
+}
+
+// Handle escape key to close dialog
+const handleKeyDown = (event) => {
+  if (event.key === 'Escape' && showLargePreview.value) {
+    closeLargePreview()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown)
 })
 
 // SignalR connection will be handled by parent component
 const handleCameraUpdate = (update) => {
+  console.log('Camera update received:', {
+    isConnected: update.isConnected,
+    imageSize: update.imageSizeBytes,
+    format: update.format,
+    resolution: `${update.imageWidth}x${update.imageHeight}`,
+    hasBase64: !!update.imageBase64,
+    base64Length: update.imageBase64?.length || 0
+  })
+  
   cameraData.value = update
   lastUpdateTime.value = new Date()
 }
@@ -85,17 +135,27 @@ defineExpose({
     <div class="space-y-4">
       <!-- Camera Image Display -->
       <div class="relative">
-        <div v-if="imageUrl" class="aspect-video bg-gray-900 rounded-lg overflow-hidden">
+        <div v-if="imageUrl" class="h-48 bg-gray-900 rounded-lg overflow-hidden group cursor-pointer" @click="openLargePreview">
           <img 
             :src="imageUrl" 
             :alt="`Camera frame ${resolution}`"
-            class="w-full h-full object-contain"
+            class="w-full h-full object-contain transition-transform group-hover:scale-105"
+            @load="() => console.log('Small preview image loaded')"
+            @error="() => console.log('Small preview image error')"
           />
-          <div class="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+          <div class="absolute top-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
             {{ resolution }}
           </div>
-          <div class="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+          <div class="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
             {{ imageSize }}
+          </div>
+          <!-- Expand button overlay - only visible on hover -->
+          <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all duration-200 flex items-center justify-center pointer-events-none group-hover:pointer-events-auto">
+            <div class="bg-black/60 text-white p-3 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+              </svg>
+            </div>
           </div>
         </div>
         <div v-else class="aspect-video bg-gray-800 rounded-lg flex items-center justify-center">
@@ -137,4 +197,45 @@ defineExpose({
       </div>
     </div>
   </Card>
+
+  <!-- Large Preview Dialog -->
+  <Teleport to="body">
+    <div 
+      v-if="showLargePreview" 
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm"
+      @click="closeLargePreview"
+    >
+      <div class="relative w-[80vw] h-[80vh] bg-gray-900 rounded-lg overflow-hidden shadow-2xl">
+        <!-- Close button -->
+        <button 
+          @click="closeLargePreview"
+          class="absolute top-4 right-4 z-10 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all duration-200"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+        
+        <!-- Large image -->
+        <div class="w-full h-full flex items-center justify-center p-4">
+          <img 
+            :src="imageUrl" 
+            :alt="`Large camera preview ${resolution}`"
+            class="max-w-full max-h-full object-contain"
+            @click.stop
+          />
+        </div>
+        
+        <!-- Info overlay -->
+        <div class="absolute bottom-4 left-4 bg-black/50 text-white px-4 py-2 rounded-lg">
+          <div class="text-sm space-y-1">
+            <div><strong>Resolution:</strong> {{ resolution }}</div>
+            <div><strong>Size:</strong> {{ imageSize }}</div>
+            <div><strong>Format:</strong> {{ cameraData.format }}</div>
+            <div class="text-xs text-gray-300 mt-2">Click outside or press ESC to close</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
