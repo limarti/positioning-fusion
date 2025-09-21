@@ -87,53 +87,58 @@ const props = defineProps({
 
       <!-- Survey-In Status (Base Station Mode) -->
       <div v-if="gnssData.corrections.mode === 'Send'" class="bg-blue-50 rounded-xl p-4 border border-blue-200">
-        <div class="flex items-center justify-between mb-3">
-          <div class="text-sm font-semibold text-blue-800">Survey-In Status</div>
-          <span class="text-xs font-bold px-2 py-1 rounded-lg"
-                :class="gnssData.surveyIn.valid ? 'bg-emerald-100 text-emerald-700' : 
-                       gnssData.surveyIn.active ? 'bg-yellow-100 text-yellow-700' : 
-                       'bg-slate-100 text-slate-700'">
-            {{ gnssData.surveyIn.valid ? '✅ COMPLETED' : 
-               gnssData.surveyIn.active ? '📍 ACTIVE' : '❌ INACTIVE' }}
-          </span>
-        </div>
+        <div class="text-sm font-semibold text-blue-800 mb-3">Survey-In Status</div>
         
-        <div class="grid grid-cols-3 gap-3 mb-3">
-          <div class="text-center">
-            <div class="text-xs text-blue-600 mb-1">Duration</div>
-            <div class="font-bold text-blue-800">{{ gnssData.surveyIn.duration !== null ? gnssData.surveyIn.duration + 's' : '—' }}</div>
+        <div class="space-y-2 text-sm mb-3">
+          <div class="flex justify-between">
+            <span class="text-blue-600">Status:</span>
+            <span class="text-xs font-bold px-2 py-1 rounded-lg"
+                  :class="gnssData.surveyIn.valid ? 'bg-emerald-100 text-emerald-700' : 
+                         gnssData.surveyIn.active ? 'bg-yellow-100 text-yellow-700' : 
+                         'bg-slate-100 text-slate-700'">
+              {{ gnssData.surveyIn.valid ? '✅ COMPLETED' : 
+                 gnssData.surveyIn.active ? '📍 ACTIVE' : '❌ INACTIVE' }}
+            </span>
           </div>
-          <div class="text-center">
-            <div class="text-xs text-blue-600 mb-1">Observations</div>
-            <div class="font-bold text-blue-800">{{ gnssData.surveyIn.observations !== null ? gnssData.surveyIn.observations : '—' }}</div>
+          <div class="flex justify-between">
+            <span class="text-blue-600">Duration:</span>
+            <span class="font-bold text-blue-800">{{ gnssData.surveyIn.duration !== null ? gnssData.surveyIn.duration + 's' : '—' }}</span>
           </div>
-          <div class="text-center">
-            <div class="text-xs text-blue-600 mb-1">Accuracy</div>
-            <div class="font-bold text-blue-800">{{ gnssData.surveyIn.accuracyMm !== null ? (gnssData.surveyIn.accuracyMm / 1000).toFixed(2) + 'm' : '—' }}</div>
+          <div class="flex justify-between">
+            <span class="text-blue-600">Observations:</span>
+            <span class="font-bold text-blue-800">{{ gnssData.surveyIn.observations !== null ? gnssData.surveyIn.observations : '—' }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-blue-600">Accuracy:</span>
+            <span class="font-bold text-blue-800">{{ gnssData.surveyIn.accuracyMm !== null ? (gnssData.surveyIn.accuracyMm / 1000).toFixed(2) + 'm' : '—' }}</span>
           </div>
         </div>
 
+        
+        <!-- Divider -->
+        <div class="border-t border-blue-200 my-3"></div>
+        
         <!-- Reference Station Position -->
-        <div class="bg-blue-100 rounded-lg p-3 border border-blue-200">
+        <div>
           <div class="text-xs font-semibold text-blue-800 mb-2">Broadcasting Position</div>
-          <div class="grid grid-cols-2 gap-2 text-sm">
-            <div>
-              <div class="text-blue-600">Latitude:</div>
-              <div class="font-mono font-semibold" :class="gnssData.referenceStation.latitude !== null ? 'text-blue-800' : 'text-slate-400'">
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-blue-600">Latitude:</span>
+              <span class="font-mono font-semibold" :class="gnssData.referenceStation.latitude !== null ? 'text-blue-800' : 'text-slate-400'">
                 {{ gnssData.referenceStation.latitude !== null ? gnssData.referenceStation.latitude.toFixed(8) + '°' : '—' }}
-              </div>
+              </span>
             </div>
-            <div>
-              <div class="text-blue-600">Longitude:</div>
-              <div class="font-mono font-semibold" :class="gnssData.referenceStation.longitude !== null ? 'text-blue-800' : 'text-slate-400'">
+            <div class="flex justify-between">
+              <span class="text-blue-600">Longitude:</span>
+              <span class="font-mono font-semibold" :class="gnssData.referenceStation.longitude !== null ? 'text-blue-800' : 'text-slate-400'">
                 {{ gnssData.referenceStation.longitude !== null ? gnssData.referenceStation.longitude.toFixed(8) + '°' : '—' }}
-              </div>
+              </span>
             </div>
-          </div>
-          <div class="mt-2 text-center">
-            <div class="text-blue-600 text-xs">Altitude:</div>
-            <div class="font-mono font-semibold" :class="gnssData.referenceStation.altitude !== null ? 'text-blue-800' : 'text-slate-400'">
-              {{ gnssData.referenceStation.altitude !== null ? gnssData.referenceStation.altitude.toFixed(3) + 'm' : '—' }}
+            <div class="flex justify-between">
+              <span class="text-blue-600">Altitude:</span>
+              <span class="font-mono font-semibold" :class="gnssData.referenceStation.altitude !== null ? 'text-blue-800' : 'text-slate-400'">
+                {{ gnssData.referenceStation.altitude !== null ? gnssData.referenceStation.altitude.toFixed(3) + 'm' : '—' }}
+              </span>
             </div>
           </div>
         </div>
