@@ -67,6 +67,13 @@ public class LoRaService : BackgroundService
     {
         try
         {
+            // Check if LoRa port exists before attempting to open
+            if (!File.Exists(LORA_PORT))
+            {
+                _logger.LogDebug("📡 LoRa: Port {Port} does not exist - no device connected", LORA_PORT);
+                return;
+            }
+
             _logger.LogDebug("📡 LoRa: Creating SerialPort for {Port} at {BaudRate} baud", LORA_PORT, LORA_BAUD_RATE);
             _loraPort = new SerialPort(LORA_PORT, LORA_BAUD_RATE, Parity.None, 8, StopBits.One);
 
