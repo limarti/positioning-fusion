@@ -8,10 +8,10 @@ namespace Backend.Hardware.Camera;
 public class CameraService : BackgroundService, IDisposable
 {
     // Camera configuration constants
-    private const int CAMERA_CAPTURE_RATE = 60;  // Hardware capture rate
-    private const int CAMERA_FRAME_MULTIPLIER = 4;   // Number of frames until we collect a frame (configurable)
-    private const int CAMERA_WIDTH = 2560;
-    private const int CAMERA_HEIGHT = 720;
+    private const int CAMERA_CAPTURE_RATE = 100;  // Hardware capture rate
+    private const int CAMERA_FRAME_MULTIPLIER = 7;   // Number of frames until we collect a frame (configurable)
+    private const int CAMERA_WIDTH = 1600;
+    private const int CAMERA_HEIGHT = 600;
     private const int VIDEO_SEGMENT_SECONDS = 60; // Time limit per video file
     private const int FRAME_DROP_RATIO = CAMERA_FRAME_MULTIPLIER; // Keep every Nth frame
     private readonly IHubContext<DataHub> _hubContext;
