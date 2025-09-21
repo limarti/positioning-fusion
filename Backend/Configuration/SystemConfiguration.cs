@@ -21,7 +21,7 @@ public static class SystemConfiguration
 
     // Logging configuration
     public static int LoggingFlushIntervalSeconds { get; set; } = 10;
-    public static int LoggingMaxBufferSizeBytes { get; set; } = 1048576; // 1MB
+    public static int LoggingMaxBufferSizeBytes { get; set; } = 10 * 1024 * 1024;
 
     // Operating mode persistence
     private static readonly string ConfigFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "rtk-mode.json");

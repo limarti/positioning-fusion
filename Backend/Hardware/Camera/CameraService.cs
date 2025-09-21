@@ -116,6 +116,10 @@ public class CameraService : BackgroundService, IDisposable
             {
                 FileName = "ffmpeg",
                 Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c:v copy -f mjpeg -",
+
+                //software compression. a lot more CPU usage
+                //Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c:v libx264 -preset ultrafast -tune zerolatency -crf 23 -f h264 -",
+
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
