@@ -11,13 +11,11 @@ public class CameraService : BackgroundService, IDisposable
     private readonly ILogger<CameraService> _logger;
     private readonly CameraInitializer _cameraInitializer;
     private readonly DataFileWriter _dataFileWriter;
+    private readonly DataFileWriter _videoFileWriter;
     private readonly string _devicePath;
-    private readonly TimeSpan _captureInterval = TimeSpan.FromSeconds(5); // Capture every 5 seconds
-    private bool _headerWritten = false;
-    private DateTime _lastCaptureTime = DateTime.MinValue;
-    private int _successfulCaptures = 0;
-    private int _failedCaptures = 0;
+    private Process? _ffmpegProcess = null;
     private bool _disposed = false;
+    private string _currentVideoFile = string.Empty;
 
     public CameraService(
         IHubContext<DataHub> hubContext,
@@ -29,22 +27,41 @@ public class CameraService : BackgroundService, IDisposable
         _logger = logger;
         _cameraInitializer = cameraInitializer;
         _dataFileWriter = new DataFileWriter("Camera.txt", loggerFactory.CreateLogger<DataFileWriter>());
+        _videoFileWriter = new DataFileWriter("Camera.mjpeg", loggerFactory.CreateLogger<DataFileWriter>());
         _devicePath = "/dev/video0"; // Default camera device
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Camera Service started - capturing frames every {Interval} seconds", _captureInterval.TotalSeconds);
+        _logger.LogInformation("Camera Service started - continuous video recording at 2560x720 30fps");
 
-        // Start the data file writer
+        // Start the data file writers for logging
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
+        _ = Task.Run(() => _videoFileWriter.StartAsync(stoppingToken), stoppingToken);
 
-        // Check if camera was initialized
-        var cameraAvailable = _cameraInitializer.IsCameraAvailable();
+        // Wait for camera initialization (with timeout)
+        _logger.LogInformation("Waiting for camera initialization...");
+        var cameraAvailable = false;
+        var maxWaitTime = TimeSpan.FromSeconds(30);
+        var checkInterval = TimeSpan.FromSeconds(1);
+        var elapsed = TimeSpan.Zero;
+        
+        while (elapsed < maxWaitTime && !stoppingToken.IsCancellationRequested)
+        {
+            cameraAvailable = _cameraInitializer.IsCameraAvailable();
+            if (cameraAvailable)
+            {
+                _logger.LogInformation("Camera became available after {ElapsedSeconds}s", elapsed.TotalSeconds);
+                break;
+            }
+            
+            await Task.Delay(checkInterval, stoppingToken);
+            elapsed = elapsed.Add(checkInterval);
+        }
         
         if (!cameraAvailable)
         {
-            _logger.LogWarning("Camera not available - Camera service will run in disconnected mode");
+            _logger.LogWarning("Camera not available after {MaxWaitSeconds}s - Camera service will run in disconnected mode", maxWaitTime.TotalSeconds);
             
             // Send disconnected status to frontend periodically
             while (!stoppingToken.IsCancellationRequested)
@@ -52,7 +69,7 @@ public class CameraService : BackgroundService, IDisposable
                 try
                 {
                     await SendCameraDisconnectedUpdate();
-                    await Task.Delay(_captureInterval, stoppingToken);
+                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -67,139 +84,208 @@ public class CameraService : BackgroundService, IDisposable
             return;
         }
 
-        _logger.LogInformation("Camera Service connected to video device - capturing at {Interval}s intervals", _captureInterval.TotalSeconds);
+        _logger.LogInformation("Camera Service connected to video device - starting continuous recording");
 
-        // Main capture loop
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            // Start continuous video recording
+            await StartVideoRecording(stoppingToken);
+            
+            // Send connected status periodically while recording
+            while (!stoppingToken.IsCancellationRequested && _ffmpegProcess != null && !_ffmpegProcess.HasExited)
             {
-                var captureStartTime = DateTime.UtcNow;
-                var stopwatch = Stopwatch.StartNew();
-
-                // Capture frame
-                var imageData = await CaptureFrameAsync();
-                var captureTimeMs = stopwatch.Elapsed.TotalMilliseconds;
-
-                if (imageData == null || imageData.Length == 0)
-                {
-                    _failedCaptures++;
-                    _logger.LogWarning("Failed to capture frame from camera (Failed captures: {FailedCount})", _failedCaptures);
-                    
-                    // Send disconnected status
-                    await SendCameraDisconnectedUpdate();
-                    
-                    // Wait before retrying
-                    await Task.Delay(_captureInterval, stoppingToken);
-                    continue;
-                }
-
-                _successfulCaptures++;
-                var imageSizeKb = imageData.Length / 1024.0;
-                _logger.LogInformation("Frame captured successfully - Size: {SizeKb:F1} KB, Capture time: {CaptureTime:F2}ms (Total successful: {SuccessCount})", 
-                    imageSizeKb, captureTimeMs, _successfulCaptures);
-
-                // Image is already JPEG encoded from fswebcam
-                var encodingTimeMs = 0.0; // No additional encoding needed
-
-                // Convert to base64
-                var base64Image = Convert.ToBase64String(imageData);
-
-                _logger.LogInformation("Frame processed successfully - Size: {SizeKb:F1} KB", imageSizeKb);
-
-                // Create camera data - we'll assume 640x480 since fswebcam captures at this resolution
-                var cameraData = new CameraData
-                {
-                    Timestamp = captureStartTime,
-                    ImageBase64 = base64Image,
-                    ImageSizeBytes = imageData.Length,
-                    ImageWidth = 640,
-                    ImageHeight = 480,
-                    Format = "JPEG"
-                };
-
-                // Write CSV header if this is the first data
-                if (!_headerWritten)
-                {
-                    var csvHeader = "timestamp,width,height,size_bytes,size_kb,capture_time_ms,encoding_time_ms";
-                    _dataFileWriter.WriteData(csvHeader);
-                    _headerWritten = true;
-                    _logger.LogInformation("Camera data CSV header written to file");
-                }
-
-                // Log data to file
-                var csvLine = $"{cameraData.Timestamp:F2},{cameraData.ImageWidth},{cameraData.ImageHeight},{cameraData.ImageSizeBytes},{imageSizeKb:F1},{captureTimeMs:F2},{encodingTimeMs:F2}";
-                _dataFileWriter.WriteData(csvLine);
-
-                // Send data via SignalR
-                await SendCameraUpdate(cameraData, captureTimeMs, encodingTimeMs);
-
-                _lastCaptureTime = captureStartTime;
-
-                // Wait for next capture interval
-                var totalProcessingTime = TimeSpan.FromMilliseconds(captureTimeMs + encodingTimeMs);
-                var remainingWaitTime = _captureInterval - totalProcessingTime;
-                
-                if (remainingWaitTime > TimeSpan.Zero)
-                {
-                    _logger.LogDebug("Waiting {WaitTime:F1}s until next capture", remainingWaitTime.TotalSeconds);
-                    await Task.Delay(remainingWaitTime, stoppingToken);
-                }
-                else
-                {
-                    _logger.LogWarning("Processing time ({ProcessingTime:F2}ms) exceeded capture interval - no wait time", 
-                        totalProcessingTime.TotalMilliseconds);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected when cancellation is requested
-                break;
-            }
-            catch (Exception ex)
-            {
-                _failedCaptures++;
-                _logger.LogError(ex, "Exception in camera capture loop (Failed captures: {FailedCount})", _failedCaptures);
-                
                 try
                 {
-                    await Task.Delay(_captureInterval, stoppingToken);
+                    await SendCameraConnectedUpdate();
+                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
                     break;
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error sending camera status");
+                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                }
             }
-        }
-        
-        _logger.LogInformation("Camera Service stopped - Statistics: {SuccessCount} successful captures, {FailedCount} failed captures", 
-            _successfulCaptures, _failedCaptures);
-    }
-
-    private async Task SendCameraUpdate(CameraData cameraData, double captureTimeMs, double encodingTimeMs)
-    {
-        try
-        {
-            var cameraUpdate = new CameraUpdate
-            {
-                Timestamp = cameraData.Timestamp,
-                ImageBase64 = cameraData.ImageBase64,
-                ImageSizeBytes = cameraData.ImageSizeBytes,
-                ImageWidth = cameraData.ImageWidth,
-                ImageHeight = cameraData.ImageHeight,
-                Format = cameraData.Format,
-                CaptureTimeMs = captureTimeMs,
-                EncodingTimeMs = encodingTimeMs,
-                IsConnected = true
-            };
-
-            await _hubContext.Clients.All.SendAsync("CameraUpdate", cameraUpdate);
-            _logger.LogDebug("Camera update sent via SignalR - {Width}x{Height}, {SizeKb:F1} KB", 
-                cameraUpdate.ImageWidth, cameraUpdate.ImageHeight, cameraUpdate.ImageSizeBytes / 1024.0);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send camera update via SignalR");
+            _logger.LogError(ex, "Exception in camera service");
+        }
+        finally
+        {
+            await StopVideoRecording();
+        }
+        
+        _logger.LogInformation("Camera Service stopped");
+    }
+
+    private async Task StartVideoRecording(CancellationToken stoppingToken)
+    {
+        try
+        {
+            // First configure the camera with v4l2-ctl
+            await ConfigureCameraAsync();
+            
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = "ffmpeg",
+                Arguments = $"-f v4l2 -input_format mjpeg -video_size 2560x720 -i {_devicePath} -c:v copy -f mjpeg -",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            _logger.LogInformation("Starting direct camera stream recording from {DevicePath}", _devicePath);
+
+            _ffmpegProcess = Process.Start(processInfo);
+            
+            if (_ffmpegProcess == null)
+            {
+                throw new InvalidOperationException("Failed to start camera stream process");
+            }
+
+            _logger.LogInformation("Camera stream process started - streaming raw MJPEG data to DataFileWriter");
+            
+            // Log recording start to batched file writer
+            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},2560x720,raw_mjpeg";
+            _dataFileWriter.WriteData(logEntry);
+
+            // Stream data to video file writer (same as GNSS raw data buffering)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var buffer = new byte[8192];
+                    var stream = _ffmpegProcess.StandardOutput.BaseStream;
+                    
+                    while (!stoppingToken.IsCancellationRequested && !_ffmpegProcess.HasExited)
+                    {
+                        var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, stoppingToken);
+                        if (bytesRead == 0)
+                            break;
+                            
+                        // Write raw camera data to video file (like GNSS writes raw data)
+                        _videoFileWriter.WriteData(buffer.Take(bytesRead).ToArray());
+                    }
+                    
+                    _logger.LogInformation("Camera stream recording completed successfully");
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected during shutdown
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error streaming camera data to file");
+                }
+            }, stoppingToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start camera stream recording");
+            throw;
+        }
+    }
+
+    private async Task StopVideoRecording()
+    {
+        if (_ffmpegProcess != null && !_ffmpegProcess.HasExited)
+        {
+            try
+            {
+                _logger.LogInformation("Stopping camera stream recording...");
+                
+                // Kill the cat process
+                _ffmpegProcess.Kill(entireProcessTree: false);
+                
+                // Wait for process to exit with timeout
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await _ffmpegProcess.WaitForExitAsync(cts.Token);
+                
+                _logger.LogInformation("Camera stream recording stopped - file saved: {VideoFile}", _currentVideoFile);
+                
+                // Log recording stop to batched file writer
+                var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STOPPED,{_devicePath}";
+                _dataFileWriter.WriteData(logEntry);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error stopping camera stream recording");
+            }
+            finally
+            {
+                _ffmpegProcess?.Dispose();
+                _ffmpegProcess = null;
+            }
+        }
+    }
+
+    private async Task ConfigureCameraAsync()
+    {
+        try
+        {
+            _logger.LogInformation("Configuring camera to 2560x720 MJPEG format");
+            
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = "v4l2-ctl",
+                Arguments = $"--device={_devicePath} --set-fmt-video=width=2560,height=720,pixelformat=MJPG",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(processInfo);
+            if (process != null)
+            {
+                await process.WaitForExitAsync();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
+                
+                if (process.ExitCode == 0)
+                {
+                    _logger.LogInformation("Camera configured successfully: {Output}", output.Trim());
+                }
+                else
+                {
+                    _logger.LogWarning("Camera configuration warning: {Error}", error.Trim());
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to configure camera - continuing anyway");
+        }
+    }
+
+    private async Task SendCameraConnectedUpdate()
+    {
+        try
+        {
+            var connectedUpdate = new CameraUpdate
+            {
+                Timestamp = DateTime.UtcNow,
+                ImageBase64 = string.Empty,
+                ImageSizeBytes = 0,
+                ImageWidth = 2560,
+                ImageHeight = 720,
+                Format = "VIDEO_RECORDING",
+                CaptureTimeMs = 0,
+                EncodingTimeMs = 0,
+                IsConnected = true
+            };
+
+            await _hubContext.Clients.All.SendAsync("CameraUpdate", connectedUpdate);
+            _logger.LogDebug("Camera recording status sent via SignalR");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send camera recording status via SignalR");
         }
     }
 
@@ -234,114 +320,10 @@ public class CameraService : BackgroundService, IDisposable
         _logger.LogInformation("Stopping Camera Service");
         
         await _dataFileWriter.StopAsync(cancellationToken);
+        await _videoFileWriter.StopAsync(cancellationToken);
         await base.StopAsync(cancellationToken);
     }
 
-    private async Task<byte[]?> CaptureFrameAsync()
-    {
-        try
-        {
-            // Use fswebcam to capture a frame - this is a lightweight alternative
-            // that works well on Raspberry Pi with USB cameras
-            var tempFile = Path.GetTempFileName() + ".jpg";
-            
-            var processInfo = new ProcessStartInfo
-            {
-                FileName = "fswebcam",
-                Arguments = $"--device {_devicePath} --resolution 640x480 --jpeg 85 --no-banner --save {tempFile}",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            _logger.LogDebug("Executing: fswebcam {Arguments}", processInfo.Arguments);
-
-            using var process = Process.Start(processInfo);
-            if (process == null)
-            {
-                _logger.LogError("Failed to start fswebcam process");
-                return null;
-            }
-
-            // Add timeout for frame capture
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await process.WaitForExitAsync(cts.Token);
-
-            if (process.ExitCode != 0)
-            {
-                var error = await process.StandardError.ReadToEndAsync();
-                var output = await process.StandardOutput.ReadToEndAsync();
-                _logger.LogError("fswebcam failed with exit code {ExitCode}. Stderr: {Error}. Stdout: {Output}", process.ExitCode, error, output);
-                return null;
-            }
-
-            // Add a small delay to ensure file is written
-            await Task.Delay(100);
-
-            if (File.Exists(tempFile))
-            {
-                var imageData = await File.ReadAllBytesAsync(tempFile);
-                File.Delete(tempFile);
-                
-                _logger.LogDebug("Successfully captured frame: {Size} bytes from {TempFile}", imageData.Length, tempFile);
-                return imageData;
-            }
-            else
-            {
-                var output = await process.StandardOutput.ReadToEndAsync();
-                _logger.LogError("fswebcam did not create output file: {TempFile}. Process output: {Output}", tempFile, output);
-                return null;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Exception in CaptureFrameAsync");
-            return null;
-        }
-    }
-
-    private async Task<bool> TestCameraAsync()
-    {
-        try
-        {
-            // Simple test to see if the camera is accessible
-            var processInfo = new ProcessStartInfo
-            {
-                FileName = "v4l2-ctl",
-                Arguments = $"--device={_devicePath} --list-formats",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(processInfo);
-            if (process == null) return false;
-
-            // Add timeout for camera test
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            await process.WaitForExitAsync(cts.Token);
-            
-            if (process.ExitCode == 0)
-            {
-                var output = await process.StandardOutput.ReadToEndAsync();
-                _logger.LogInformation("Camera formats available: {Output}", output.Trim());
-                return true;
-            }
-            else
-            {
-                var error = await process.StandardError.ReadToEndAsync();
-                _logger.LogWarning("Camera test failed: {Error}", error.Trim());
-                return false;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Exception testing camera");
-            return false;
-        }
-    }
 
     public new void Dispose()
     {
