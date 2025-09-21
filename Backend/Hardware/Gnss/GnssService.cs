@@ -404,6 +404,10 @@ public class GnssService : BackgroundService
             {
                 await SurveyInStatusParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
             }
+            else if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_SIG)
+            {
+                await NavigationSignalParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
+            }
             else if (messageClass == UbxConstants.CLASS_CFG)
             {
                 _logger.LogInformation("📋 CFG message received: ID=0x{Id:X2}, Length={Length}", messageId, data.Length);
@@ -417,6 +421,10 @@ public class GnssService : BackgroundService
             else if (messageClass == UbxConstants.CLASS_MON && messageId == UbxConstants.MON_VER)
             {
                 await ReceiverVersionParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
+            }
+            else if (messageClass == UbxConstants.CLASS_MON && messageId == UbxConstants.MON_COMMS)
+            {
+                await CommunicationStatusParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
             }
             else if (messageClass == UbxConstants.CLASS_RXM && messageId == UbxConstants.RXM_SFRBX)
             {
