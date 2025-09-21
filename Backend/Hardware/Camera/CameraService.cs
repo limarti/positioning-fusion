@@ -111,20 +111,43 @@ public class CameraService : BackgroundService, IDisposable
         {
             // First configure the camera with v4l2-ctl
             await ConfigureCameraAsync();
+
+            //var processInfo = new ProcessStartInfo
+            //{
+            //    FileName = "ffmpeg",
+            //    Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c copy -f mjpeg -fflags +flush_packets -",
+
+            //    //software compression. a lot more CPU usage
+            //    //Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c:v libx264 -preset ultrafast -tune zerolatency -crf 23 -f h264 -",
+
+
+            //    RedirectStandardOutput = true,
+            //    RedirectStandardError = true,
+            //    UseShellExecute = false,
+            //    CreateNoWindow = true
+            //};
+
+            int segmentSeconds = 60;
             
+            // Use the same folder structure as DataFileWriter service
+            string OUTPUT_PATTERN = Path.Combine(DataFileWriter.SharedSessionPath, "capture_%03d.mkv");
+            _logger.LogInformation("Camera videos will be saved to session folder: {SessionPath}", DataFileWriter.SharedSessionPath);
+
             var processInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c:v copy -f mjpeg -",
-
-                //software compression. a lot more CPU usage
-                //Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c:v libx264 -preset ultrafast -tune zerolatency -crf 23 -f h264 -",
-
+                Arguments =
+                    $"-hide_banner -loglevel warning " +
+                    $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} " +
+                    "-c copy -map 0 " + // copy-only MJPEG into MKV
+                    $"-f segment -segment_time {segmentSeconds} -reset_timestamps 1 -segment_format matroska " +
+                    $"\"{OUTPUT_PATTERN}\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+
 
             _logger.LogInformation("Starting direct camera stream recording from {DevicePath}", _devicePath);
 
@@ -138,7 +161,7 @@ public class CameraService : BackgroundService, IDisposable
             _logger.LogInformation("Camera stream process started - streaming raw MJPEG data to DataFileWriter");
             
             // Log recording start to batched file writer
-            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},{CAMERA_WIDTH}x{CAMERA_HEIGHT},{CAMERA_FRAME_RATE}fps,raw_mjpeg";
+            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},{CAMERA_WIDTH}x{CAMERA_HEIGHT},{CAMERA_FRAME_RATE}fps,raw_mjpeg_flushed";
             _dataFileWriter.WriteData(logEntry);
 
             // Stream data to video file writer (same as GNSS raw data buffering)
@@ -155,7 +178,7 @@ public class CameraService : BackgroundService, IDisposable
                         if (bytesRead == 0)
                             break;
                             
-                        // Write raw camera data to video file (like GNSS writes raw data)
+                        // Write raw MJPEG data to video file (like GNSS writes raw data)
                         _videoFileWriter.WriteData(buffer.Take(bytesRead).ToArray());
                     }
                     
