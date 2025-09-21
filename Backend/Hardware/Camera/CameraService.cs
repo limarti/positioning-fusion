@@ -8,17 +8,22 @@ namespace Backend.Hardware.Camera;
 public class CameraService : BackgroundService, IDisposable
 {
     // Camera configuration constants
-    private const int CAMERA_FRAME_RATE = 30;
+    private const int CAMERA_CAPTURE_RATE = 60;  // Hardware capture rate
+    private const int CAMERA_OUTPUT_RATE = 15;   // Desired output rate (configurable)
     private const int CAMERA_WIDTH = 2560;
     private const int CAMERA_HEIGHT = 720;
+    private const int VIDEO_SEGMENT_SECONDS = 60; // Time limit per video file
+    private const int FRAME_DROP_RATIO = CAMERA_CAPTURE_RATE / CAMERA_OUTPUT_RATE; // Keep every Nth frame
     private readonly IHubContext<DataHub> _hubContext;
     private readonly ILogger<CameraService> _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly DataFileWriter _dataFileWriter;
-    private readonly DataFileWriter _videoFileWriter;
+    private DataFileWriter? _currentVideoFileWriter;
     private readonly string _devicePath;
     private Process? _ffmpegProcess = null;
     private bool _disposed = false;
-    private string _currentVideoFile = string.Empty;
+    private int _currentSegmentNumber = 1;
+    private DateTime _currentSegmentStartTime = DateTime.UtcNow;
 
     public CameraService(
         IHubContext<DataHub> hubContext,
@@ -27,19 +32,19 @@ public class CameraService : BackgroundService, IDisposable
     {
         _hubContext = hubContext;
         _logger = logger;
+        _loggerFactory = loggerFactory;
         _dataFileWriter = new DataFileWriter("Camera.txt", loggerFactory.CreateLogger<DataFileWriter>());
-        _videoFileWriter = new DataFileWriter("Camera.mjpeg", loggerFactory.CreateLogger<DataFileWriter>());
+        // Video file writer will be created per segment
         _devicePath = "/dev/video0"; // Default camera device
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Camera Service started - continuous video recording at {Width}x{Height} {FrameRate}fps", 
-            CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FRAME_RATE);
+        _logger.LogInformation("Camera Service started - continuous video recording at {Width}x{Height} capture:{CaptureRate}fps output:{OutputRate}fps", 
+            CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_CAPTURE_RATE, CAMERA_OUTPUT_RATE);
 
-        // Start the data file writers for logging
+        // Start the data file writer for logging
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
-        _ = Task.Run(() => _videoFileWriter.StartAsync(stoppingToken), stoppingToken);
 
         // Check if camera device exists
         if (!File.Exists(_devicePath))
@@ -112,36 +117,13 @@ public class CameraService : BackgroundService, IDisposable
             // First configure the camera with v4l2-ctl
             await ConfigureCameraAsync();
 
-            //var processInfo = new ProcessStartInfo
-            //{
-            //    FileName = "ffmpeg",
-            //    Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c copy -f mjpeg -fflags +flush_packets -",
-
-            //    //software compression. a lot more CPU usage
-            //    //Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c:v libx264 -preset ultrafast -tune zerolatency -crf 23 -f h264 -",
-
-
-            //    RedirectStandardOutput = true,
-            //    RedirectStandardError = true,
-            //    UseShellExecute = false,
-            //    CreateNoWindow = true
-            //};
-
-            int segmentSeconds = 60;
-            
-            // Use the same folder structure as DataFileWriter service
-            string OUTPUT_PATTERN = Path.Combine(DataFileWriter.SharedSessionPath, "capture_%03d.mkv");
-            _logger.LogInformation("Camera videos will be saved to session folder: {SessionPath}", DataFileWriter.SharedSessionPath);
-
+            // Stream MJPEG to stdout for frame processing
             var processInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                Arguments =
-                    $"-hide_banner -loglevel warning " +
-                    $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} " +
-                    "-c copy -map 0 " + // copy-only MJPEG into MKV
-                    $"-f segment -segment_time {segmentSeconds} -reset_timestamps 1 -segment_format matroska " +
-                    $"\"{OUTPUT_PATTERN}\"",
+                Arguments = $"-hide_banner -loglevel warning " +
+                           $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_CAPTURE_RATE} -i {_devicePath} " +
+                           "-c copy -f mjpeg -",  // Stream raw MJPEG to stdout
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -149,7 +131,7 @@ public class CameraService : BackgroundService, IDisposable
             };
 
 
-            _logger.LogInformation("Starting direct camera stream recording from {DevicePath}", _devicePath);
+            _logger.LogInformation("Starting MJPEG stream capture from {DevicePath}", _devicePath);
 
             _ffmpegProcess = Process.Start(processInfo);
             
@@ -158,31 +140,19 @@ public class CameraService : BackgroundService, IDisposable
                 throw new InvalidOperationException("Failed to start camera stream process");
             }
 
-            _logger.LogInformation("Camera stream process started - streaming raw MJPEG data to DataFileWriter");
+            _logger.LogInformation("Camera stream process started - processing MJPEG frames with {DropRatio}:1 frame dropping", FRAME_DROP_RATIO);
             
             // Log recording start to batched file writer
-            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},{CAMERA_WIDTH}x{CAMERA_HEIGHT},{CAMERA_FRAME_RATE}fps,raw_mjpeg_flushed";
+            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},{CAMERA_WIDTH}x{CAMERA_HEIGHT},capture:{CAMERA_CAPTURE_RATE}fps,output:{CAMERA_OUTPUT_RATE}fps";
             _dataFileWriter.WriteData(logEntry);
 
-            // Stream data to video file writer (same as GNSS raw data buffering)
+            // Process MJPEG stream with frame dropping
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    var buffer = new byte[8192];
-                    var stream = _ffmpegProcess.StandardOutput.BaseStream;
-                    
-                    while (!stoppingToken.IsCancellationRequested && !_ffmpegProcess.HasExited)
-                    {
-                        var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, stoppingToken);
-                        if (bytesRead == 0)
-                            break;
-                            
-                        // Write raw MJPEG data to video file (like GNSS writes raw data)
-                        _videoFileWriter.WriteData(buffer.Take(bytesRead).ToArray());
-                    }
-                    
-                    _logger.LogInformation("Camera stream recording completed successfully");
+                    await ProcessMjpegStreamWithFrameDropping(stoppingToken);
+                    _logger.LogInformation("MJPEG stream processing completed successfully");
                 }
                 catch (OperationCanceledException)
                 {
@@ -190,7 +160,7 @@ public class CameraService : BackgroundService, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error streaming camera data to file");
+                    _logger.LogError(ex, "Error processing MJPEG stream");
                 }
             }, stoppingToken);
         }
@@ -201,22 +171,151 @@ public class CameraService : BackgroundService, IDisposable
         }
     }
 
+    private async Task ProcessMjpegStreamWithFrameDropping(CancellationToken stoppingToken)
+    {
+        if (_ffmpegProcess == null)
+            return;
+
+        var stream = _ffmpegProcess.StandardOutput.BaseStream;
+        var buffer = new byte[64 * 1024]; // 64KB buffer for reading
+        var frameBuffer = new List<byte>();
+        
+        int frameCount = 0;
+        int framesKeptInSegment = 0;
+        DateTime lastSegmentTime = DateTime.UtcNow;
+        
+        // Start first video segment
+        await StartNewVideoSegment(stoppingToken);
+        
+        // MJPEG frame markers
+        var startMarker = new byte[] { 0xFF, 0xD8 }; // JPEG start
+        var endMarker = new byte[] { 0xFF, 0xD9 };   // JPEG end
+        
+        _logger.LogInformation("Starting MJPEG frame processing loop...");
+        
+        while (!stoppingToken.IsCancellationRequested && !_ffmpegProcess.HasExited)
+        {
+            var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, stoppingToken);
+            if (bytesRead == 0)
+            {
+                _logger.LogWarning("FFmpeg stream ended - no more data available");
+                break;
+            }
+
+            // Debug log data flow every 100KB
+            if (frameCount == 0 || (frameCount % 100 == 0))
+            {
+                _logger.LogDebug("Read {BytesRead} bytes from FFmpeg stream, frame buffer size: {BufferSize}", bytesRead, frameBuffer.Count);
+            }
+
+            // Add bytes to frame buffer
+            for (int i = 0; i < bytesRead; i++)
+            {
+                frameBuffer.Add(buffer[i]);
+                
+                // Check for JPEG end marker
+                if (frameBuffer.Count >= 2 && 
+                    frameBuffer[frameBuffer.Count - 2] == 0xFF && 
+                    frameBuffer[frameBuffer.Count - 1] == 0xD9)
+                {
+                    // Complete frame found
+                    if (ShouldKeepFrame(frameCount))
+                    {
+                        // Write frame immediately to current video file
+                        var frameData = frameBuffer.ToArray();
+                        _currentVideoFileWriter?.WriteData(frameData);
+                        framesKeptInSegment++;
+                        
+                        // Debug log every 30 frames to see if data is flowing
+                        if (frameCount % 30 == 0)
+                        {
+                            _logger.LogDebug("Processed {FrameCount} total frames, kept {KeptCount}, current frame size: {FrameSize} bytes", 
+                                frameCount, framesKeptInSegment, frameData.Length);
+                        }
+                        
+                        // Check if we need to start a new video segment
+                        var timeSinceLastSegment = DateTime.UtcNow - lastSegmentTime;
+                        if (timeSinceLastSegment.TotalSeconds >= VIDEO_SEGMENT_SECONDS)
+                        {
+                            // Complete current segment and start new one
+                            await CompleteCurrentSegment(framesKeptInSegment);
+                            await StartNewVideoSegment(stoppingToken);
+                            
+                            lastSegmentTime = DateTime.UtcNow;
+                            framesKeptInSegment = 0;
+                        }
+                    }
+                    
+                    frameCount++;
+                    frameBuffer.Clear();
+                }
+            }
+        }
+        
+        // Complete the final segment
+        await CompleteCurrentSegment(framesKeptInSegment);
+    }
+    
+    private async Task StartNewVideoSegment(CancellationToken stoppingToken)
+    {
+        _currentSegmentStartTime = DateTime.UtcNow;
+        
+        // Create new video file for this segment
+        var segmentFileName = $"Camera_{_currentSegmentNumber:D3}.mjpeg";
+        _currentVideoFileWriter = new DataFileWriter(segmentFileName, _loggerFactory.CreateLogger<DataFileWriter>());
+        
+        // Start the new video file writer
+        _ = Task.Run(() => _currentVideoFileWriter.StartAsync(stoppingToken), stoppingToken);
+        
+        // Wait a moment for the writer to initialize
+        await Task.Delay(100, stoppingToken);
+        
+        var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},SEGMENT_STARTED,segment:{_currentSegmentNumber},file:{segmentFileName}";
+        _dataFileWriter.WriteData(logEntry);
+        
+        _logger.LogInformation("Started video segment {SegmentNumber}: {FileName}", _currentSegmentNumber, segmentFileName);
+    }
+    
+    private async Task CompleteCurrentSegment(int framesKept)
+    {
+        var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},SEGMENT_COMPLETED,segment:{_currentSegmentNumber},frames_kept:{framesKept}";
+        _dataFileWriter.WriteData(logEntry);
+        
+        _logger.LogInformation("Completed video segment {SegmentNumber} with {FramesKept} frames", _currentSegmentNumber, framesKept);
+        
+        // Stop and dispose current video file writer
+        if (_currentVideoFileWriter != null)
+        {
+            await _currentVideoFileWriter.StopAsync(CancellationToken.None);
+            _currentVideoFileWriter.Dispose();
+            _currentVideoFileWriter = null;
+        }
+        
+        _currentSegmentNumber++;
+    }
+    
+    private static bool ShouldKeepFrame(int frameCount)
+    {
+        // Keep every FRAME_DROP_RATIO frame (e.g., every 2nd frame for 15fps from 30fps)
+        return frameCount % FRAME_DROP_RATIO == 0;
+    }
+
     private async Task StopVideoRecording()
     {
         if (_ffmpegProcess != null && !_ffmpegProcess.HasExited)
         {
             try
             {
-                _logger.LogInformation("Stopping camera stream recording...");
+                _logger.LogInformation("Stopping MJPEG stream capture...");
                 
-                // Kill the cat process
+                // Kill the FFmpeg process
                 _ffmpegProcess.Kill(entireProcessTree: false);
                 
                 // Wait for process to exit with timeout
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 await _ffmpegProcess.WaitForExitAsync(cts.Token);
                 
-                _logger.LogInformation("Camera stream recording stopped - file saved: {VideoFile}", _currentVideoFile);
+                _logger.LogInformation("MJPEG stream capture stopped");
                 
                 // Log recording stop to batched file writer
                 var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STOPPED,{_devicePath}";
@@ -224,7 +323,7 @@ public class CameraService : BackgroundService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error stopping camera stream recording");
+                _logger.LogError(ex, "Error stopping MJPEG stream capture");
             }
             finally
             {
@@ -331,7 +430,15 @@ public class CameraService : BackgroundService, IDisposable
         _logger.LogInformation("Stopping Camera Service");
         
         await _dataFileWriter.StopAsync(cancellationToken);
-        await _videoFileWriter.StopAsync(cancellationToken);
+        
+        // Stop current video file writer if it exists
+        if (_currentVideoFileWriter != null)
+        {
+            await _currentVideoFileWriter.StopAsync(cancellationToken);
+            _currentVideoFileWriter.Dispose();
+            _currentVideoFileWriter = null;
+        }
+        
         await base.StopAsync(cancellationToken);
     }
 
