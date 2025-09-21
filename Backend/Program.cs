@@ -1,5 +1,6 @@
 using Backend.Hardware.Gnss;
 using Backend.Hardware.Imu;
+using Backend.Hardware.Camera;
 using Backend.Hardware.Bluetooth;
 using Backend.Hardware.LoRa;
 using Backend.Hubs;
@@ -11,6 +12,12 @@ using Microsoft.Extensions.Logging.Console;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure host options to not stop on background service exceptions
+builder.Services.Configure<HostOptions>(hostOptions =>
+{
+    hostOptions.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
+});
 
 // Configure Serilog
 var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "logs", "gnss-system-.log");
@@ -53,6 +60,10 @@ builder.Services.AddHostedService<ImuService>();
 // Add GNSS services
 builder.Services.AddSingleton<GnssInitializer>();
 builder.Services.AddHostedService<GnssService>();
+
+// Add Camera services
+builder.Services.AddSingleton<CameraInitializer>();
+builder.Services.AddHostedService<CameraService>();
 
 // Add Bluetooth services
 builder.Services.AddHostedService<BluetoothStreamingService>();
@@ -161,6 +172,7 @@ Console.WriteLine();
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
 var gnssInitializer = app.Services.GetRequiredService<GnssInitializer>();
+var cameraInitializer = app.Services.GetRequiredService<CameraInitializer>();
 
 logger.LogInformation("Initializing IM19 IMU hardware...");
 try 
@@ -185,6 +197,37 @@ var gnssInitialized = await gnssInitializer.InitializeAsync();
 if (!gnssInitialized)
 {
     logger.LogWarning("GNSS initialization failed - continuing without GNSS");
+}
+
+logger.LogInformation("Initializing Camera hardware...");
+try 
+{
+    // Run camera initialization in background to prevent blocking startup
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            var cameraInitialized = await cameraInitializer.InitializeAsync();
+            if (!cameraInitialized)
+            {
+                logger.LogWarning("Camera initialization failed - camera service will run in disconnected mode");
+            }
+            else
+            {
+                logger.LogInformation("Camera initialization completed successfully");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Exception during Camera initialization - camera service will run in disconnected mode");
+        }
+    });
+    
+    logger.LogInformation("Camera initialization started in background");
+}
+catch (Exception ex)
+{
+    logger.LogError(ex, "Exception starting Camera initialization");
 }
 
 // Configure the HTTP request pipeline.

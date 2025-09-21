@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Backend.Hardware.Imu;
 using Backend.Hardware.Gnss;
+using Backend.Hardware.Camera;
 using Backend.GnssSystem;
 using Backend.Storage;
 
@@ -37,5 +38,10 @@ public class DataHub : Hub
     public async Task SendFileLoggingStatusUpdate(FileLoggingStatus status)
     {
         await Clients.All.SendAsync("FileLoggingStatusUpdate", status);
+    }
+
+    public async Task SendCameraUpdate(CameraUpdate cameraUpdate)
+    {
+        await Clients.All.SendAsync("CameraUpdate", cameraUpdate);
     }
 }

@@ -154,6 +154,21 @@ const fileLoggingStatus = ref({
   activeFiles: []
 })
 
+const cameraData = ref({
+  timestamp: null,
+  imageBase64: '',
+  imageSizeBytes: 0,
+  imageWidth: 0,
+  imageHeight: 0,
+  format: 'JPEG',
+  captureTimeMs: 0,
+  encodingTimeMs: 0,
+  isConnected: false
+})
+
+// Component refs
+const cameraPanelRef = ref(null)
+
 // Helper functions (moved to components where needed)
 const getSignalColor = (strength) => {
   if (strength > -70) return 'text-green-500'
@@ -233,7 +248,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
-      .withUrl("http://10.200.1.1/datahub")
+      .withUrl("http://raspberrypi-rover/datahub")
     // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
 
@@ -394,6 +409,31 @@ onMounted(async () => {
     gnssData.value.tdop = data.timeDop
   })
 
+  connection.on("CameraUpdate", (data) => {
+    cameraData.value.timestamp = data.timestamp
+    cameraData.value.imageBase64 = data.imageBase64
+    cameraData.value.imageSizeBytes = data.imageSizeBytes
+    cameraData.value.imageWidth = data.imageWidth
+    cameraData.value.imageHeight = data.imageHeight
+    cameraData.value.format = data.format
+    cameraData.value.captureTimeMs = data.captureTimeMs
+    cameraData.value.encodingTimeMs = data.encodingTimeMs
+    cameraData.value.isConnected = data.isConnected
+    
+    // Log frame size received
+    if (data.isConnected && data.imageSizeBytes > 0) {
+      const sizeKb = (data.imageSizeBytes / 1024).toFixed(1)
+      console.log(`Camera frame received: ${data.imageWidth}x${data.imageHeight}, ${sizeKb} KB (${data.format})`)
+    } else if (!data.isConnected) {
+      console.log('Camera disconnected')
+    }
+    
+    // Call the CameraPanel's handler method
+    if (cameraPanelRef.value && cameraPanelRef.value.handleCameraUpdate) {
+      cameraPanelRef.value.handleCameraUpdate(data)
+    }
+  })
+
   try {
     connectionStatus.value = 'Connecting'
     await connection.start()
@@ -489,7 +529,7 @@ onUnmounted(async () => {
         
         <!-- Camera Panel -->
         <div class="break-inside-avoid mb-6">
-          <CameraPanel />
+          <CameraPanel ref="cameraPanelRef" />
         </div>
         
         <!-- Encoder Panel -->
