@@ -18,12 +18,13 @@ public class CameraService : BackgroundService, IDisposable
     private readonly ILogger<CameraService> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly DataFileWriter _dataFileWriter;
-    private DataFileWriter? _currentVideoFileWriter;
+    private string? _currentVideoFilePath;
     private readonly string _devicePath;
     private Process? _ffmpegProcess = null;
     private bool _disposed = false;
     private int _currentSegmentNumber = 1;
     private DateTime _currentSegmentStartTime = DateTime.UtcNow;
+    private readonly List<byte[]> _frameBuffer = new(); // Buffer frames for batch writing
 
     public CameraService(
         IHubContext<DataHub> hubContext,
@@ -221,9 +222,15 @@ public class CameraService : BackgroundService, IDisposable
                     // Complete frame found
                     if (ShouldKeepFrame(frameCount))
                     {
-                        // Write frame immediately to current video file
+                        // Buffer frame for writing to current video file
                         var frameData = frameBuffer.ToArray();
-                        _currentVideoFileWriter?.WriteData(frameData);
+                        _frameBuffer.Add(frameData);
+                        
+                        // Write buffered frames every 10 frames to reduce I/O
+                        if (_frameBuffer.Count >= 10)
+                        {
+                            await FlushFramesToFile();
+                        }
                         framesKeptInSegment++;
                         
                         // Debug log every 30 frames to see if data is flowing
@@ -237,7 +244,8 @@ public class CameraService : BackgroundService, IDisposable
                         var timeSinceLastSegment = DateTime.UtcNow - lastSegmentTime;
                         if (timeSinceLastSegment.TotalSeconds >= VIDEO_SEGMENT_SECONDS)
                         {
-                            // Complete current segment and start new one
+                            // Flush remaining frames, complete current segment and start new one
+                            await FlushFramesToFile();
                             await CompleteCurrentSegment(framesKeptInSegment);
                             await StartNewVideoSegment(stoppingToken);
                             
@@ -252,7 +260,8 @@ public class CameraService : BackgroundService, IDisposable
             }
         }
         
-        // Complete the final segment
+        // Flush any remaining frames and complete the final segment
+        await FlushFramesToFile();
         await CompleteCurrentSegment(framesKeptInSegment);
     }
     
@@ -260,20 +269,29 @@ public class CameraService : BackgroundService, IDisposable
     {
         _currentSegmentStartTime = DateTime.UtcNow;
         
-        // Create new video file for this segment
+        // Wait for shared session to be available from the main data file writer
+        while (DataFileWriter.SharedSessionPath == null && !stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogDebug("Waiting for shared session path to be available...");
+            await Task.Delay(100, stoppingToken);
+        }
+        
+        if (DataFileWriter.SharedSessionPath == null)
+        {
+            _logger.LogError("No shared session path available for video segment");
+            return;
+        }
+        
+        // Create new video file path in shared session
         var segmentFileName = $"Camera_{_currentSegmentNumber:D3}.mjpeg";
-        _currentVideoFileWriter = new DataFileWriter(segmentFileName, _loggerFactory.CreateLogger<DataFileWriter>());
-        
-        // Start the new video file writer
-        _ = Task.Run(() => _currentVideoFileWriter.StartAsync(stoppingToken), stoppingToken);
-        
-        // Wait a moment for the writer to initialize
-        await Task.Delay(100, stoppingToken);
+        _currentVideoFilePath = Path.Combine(DataFileWriter.SharedSessionPath, segmentFileName);
+        _currentSegmentStartTime = DateTime.UtcNow;
         
         var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},SEGMENT_STARTED,segment:{_currentSegmentNumber},file:{segmentFileName}";
         _dataFileWriter.WriteData(logEntry);
         
-        _logger.LogInformation("Started video segment {SegmentNumber}: {FileName}", _currentSegmentNumber, segmentFileName);
+        _logger.LogInformation("Started video segment {SegmentNumber}: {FileName} at {FilePath}", 
+            _currentSegmentNumber, segmentFileName, _currentVideoFilePath);
     }
     
     private async Task CompleteCurrentSegment(int framesKept)
@@ -281,17 +299,34 @@ public class CameraService : BackgroundService, IDisposable
         var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},SEGMENT_COMPLETED,segment:{_currentSegmentNumber},frames_kept:{framesKept}";
         _dataFileWriter.WriteData(logEntry);
         
-        _logger.LogInformation("Completed video segment {SegmentNumber} with {FramesKept} frames", _currentSegmentNumber, framesKept);
-        
-        // Stop and dispose current video file writer
-        if (_currentVideoFileWriter != null)
-        {
-            await _currentVideoFileWriter.StopAsync(CancellationToken.None);
-            _currentVideoFileWriter.Dispose();
-            _currentVideoFileWriter = null;
-        }
+        _logger.LogInformation("Completed video segment {SegmentNumber} with {FramesKept} frames at {FilePath}", 
+            _currentSegmentNumber, framesKept, _currentVideoFilePath);
         
         _currentSegmentNumber++;
+        _currentVideoFilePath = null;
+    }
+    
+    private async Task FlushFramesToFile()
+    {
+        if (_frameBuffer.Count == 0 || string.IsNullOrEmpty(_currentVideoFilePath))
+            return;
+            
+        try
+        {
+            // Write all buffered frames to the current video file
+            using var fileStream = new FileStream(_currentVideoFilePath, FileMode.Append, FileAccess.Write);
+            foreach (var frameData in _frameBuffer)
+            {
+                await fileStream.WriteAsync(frameData);
+            }
+            
+            _logger.LogDebug("Flushed {FrameCount} frames to {FilePath}", _frameBuffer.Count, _currentVideoFilePath);
+            _frameBuffer.Clear();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error writing frames to video file {FilePath}", _currentVideoFilePath);
+        }
     }
     
     private static bool ShouldKeepFrame(int frameCount)
@@ -429,16 +464,10 @@ public class CameraService : BackgroundService, IDisposable
     {
         _logger.LogInformation("Stopping Camera Service");
         
+        // Flush any remaining frames
+        await FlushFramesToFile();
+        
         await _dataFileWriter.StopAsync(cancellationToken);
-        
-        // Stop current video file writer if it exists
-        if (_currentVideoFileWriter != null)
-        {
-            await _currentVideoFileWriter.StopAsync(cancellationToken);
-            _currentVideoFileWriter.Dispose();
-            _currentVideoFileWriter = null;
-        }
-        
         await base.StopAsync(cancellationToken);
     }
 
