@@ -62,7 +62,6 @@ builder.Services.AddSingleton<GnssInitializer>();
 builder.Services.AddHostedService<GnssService>();
 
 // Add Camera services
-builder.Services.AddSingleton<CameraInitializer>();
 builder.Services.AddHostedService<CameraService>();
 
 // Add Bluetooth services
@@ -172,7 +171,6 @@ Console.WriteLine();
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
 var gnssInitializer = app.Services.GetRequiredService<GnssInitializer>();
-var cameraInitializer = app.Services.GetRequiredService<CameraInitializer>();
 
 logger.LogInformation("Initializing IM19 IMU hardware...");
 try 
@@ -199,36 +197,7 @@ if (!gnssInitialized)
     logger.LogWarning("GNSS initialization failed - continuing without GNSS");
 }
 
-logger.LogInformation("Initializing Camera hardware...");
-try 
-{
-    // Run camera initialization in background to prevent blocking startup
-    _ = Task.Run(async () =>
-    {
-        try
-        {
-            var cameraInitialized = await cameraInitializer.InitializeAsync();
-            if (!cameraInitialized)
-            {
-                logger.LogWarning("Camera initialization failed - camera service will run in disconnected mode");
-            }
-            else
-            {
-                logger.LogInformation("Camera initialization completed successfully");
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Exception during Camera initialization - camera service will run in disconnected mode");
-        }
-    });
-    
-    logger.LogInformation("Camera initialization started in background");
-}
-catch (Exception ex)
-{
-    logger.LogError(ex, "Exception starting Camera initialization");
-}
+// Camera service now handles its own initialization
 
 // Configure the HTTP request pipeline.
 // Removed Swagger for cleaner console output

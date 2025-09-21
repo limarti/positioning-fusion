@@ -7,9 +7,12 @@ namespace Backend.Hardware.Camera;
 
 public class CameraService : BackgroundService, IDisposable
 {
+    // Camera configuration constants
+    private const int CAMERA_FRAME_RATE = 30;
+    private const int CAMERA_WIDTH = 2560;
+    private const int CAMERA_HEIGHT = 720;
     private readonly IHubContext<DataHub> _hubContext;
     private readonly ILogger<CameraService> _logger;
-    private readonly CameraInitializer _cameraInitializer;
     private readonly DataFileWriter _dataFileWriter;
     private readonly DataFileWriter _videoFileWriter;
     private readonly string _devicePath;
@@ -20,12 +23,10 @@ public class CameraService : BackgroundService, IDisposable
     public CameraService(
         IHubContext<DataHub> hubContext,
         ILogger<CameraService> logger,
-        CameraInitializer cameraInitializer,
         ILoggerFactory loggerFactory)
     {
         _hubContext = hubContext;
         _logger = logger;
-        _cameraInitializer = cameraInitializer;
         _dataFileWriter = new DataFileWriter("Camera.txt", loggerFactory.CreateLogger<DataFileWriter>());
         _videoFileWriter = new DataFileWriter("Camera.mjpeg", loggerFactory.CreateLogger<DataFileWriter>());
         _devicePath = "/dev/video0"; // Default camera device
@@ -33,35 +34,17 @@ public class CameraService : BackgroundService, IDisposable
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Camera Service started - continuous video recording at 2560x720 30fps");
+        _logger.LogInformation("Camera Service started - continuous video recording at {Width}x{Height} {FrameRate}fps", 
+            CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FRAME_RATE);
 
         // Start the data file writers for logging
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
         _ = Task.Run(() => _videoFileWriter.StartAsync(stoppingToken), stoppingToken);
 
-        // Wait for camera initialization (with timeout)
-        _logger.LogInformation("Waiting for camera initialization...");
-        var cameraAvailable = false;
-        var maxWaitTime = TimeSpan.FromSeconds(30);
-        var checkInterval = TimeSpan.FromSeconds(1);
-        var elapsed = TimeSpan.Zero;
-        
-        while (elapsed < maxWaitTime && !stoppingToken.IsCancellationRequested)
+        // Check if camera device exists
+        if (!File.Exists(_devicePath))
         {
-            cameraAvailable = _cameraInitializer.IsCameraAvailable();
-            if (cameraAvailable)
-            {
-                _logger.LogInformation("Camera became available after {ElapsedSeconds}s", elapsed.TotalSeconds);
-                break;
-            }
-            
-            await Task.Delay(checkInterval, stoppingToken);
-            elapsed = elapsed.Add(checkInterval);
-        }
-        
-        if (!cameraAvailable)
-        {
-            _logger.LogWarning("Camera not available after {MaxWaitSeconds}s - Camera service will run in disconnected mode", maxWaitTime.TotalSeconds);
+            _logger.LogWarning("Camera device not found at {DevicePath} - Camera service will run in disconnected mode", _devicePath);
             
             // Send disconnected status to frontend periodically
             while (!stoppingToken.IsCancellationRequested)
@@ -132,7 +115,7 @@ public class CameraService : BackgroundService, IDisposable
             var processInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                Arguments = $"-f v4l2 -input_format mjpeg -video_size 2560x720 -i {_devicePath} -c:v copy -f mjpeg -",
+                Arguments = $"-f v4l2 -input_format mjpeg -video_size {CAMERA_WIDTH}x{CAMERA_HEIGHT} -framerate {CAMERA_FRAME_RATE} -i {_devicePath} -c:v copy -f mjpeg -",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -151,7 +134,7 @@ public class CameraService : BackgroundService, IDisposable
             _logger.LogInformation("Camera stream process started - streaming raw MJPEG data to DataFileWriter");
             
             // Log recording start to batched file writer
-            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},2560x720,raw_mjpeg";
+            var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STARTED,{_devicePath},{CAMERA_WIDTH}x{CAMERA_HEIGHT},{CAMERA_FRAME_RATE}fps,raw_mjpeg";
             _dataFileWriter.WriteData(logEntry);
 
             // Stream data to video file writer (same as GNSS raw data buffering)
@@ -228,12 +211,13 @@ public class CameraService : BackgroundService, IDisposable
     {
         try
         {
-            _logger.LogInformation("Configuring camera to 2560x720 MJPEG format");
+            _logger.LogInformation("Configuring camera to {Width}x{Height} MJPEG format", 
+                CAMERA_WIDTH, CAMERA_HEIGHT);
             
             var processInfo = new ProcessStartInfo
             {
                 FileName = "v4l2-ctl",
-                Arguments = $"--device={_devicePath} --set-fmt-video=width=2560,height=720,pixelformat=MJPG",
+                Arguments = $"--device={_devicePath} --set-fmt-video=width={CAMERA_WIDTH},height={CAMERA_HEIGHT},pixelformat=MJPG",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -272,8 +256,8 @@ public class CameraService : BackgroundService, IDisposable
                 Timestamp = DateTime.UtcNow,
                 ImageBase64 = string.Empty,
                 ImageSizeBytes = 0,
-                ImageWidth = 2560,
-                ImageHeight = 720,
+                ImageWidth = CAMERA_WIDTH,
+                ImageHeight = CAMERA_HEIGHT,
                 Format = "VIDEO_RECORDING",
                 CaptureTimeMs = 0,
                 EncodingTimeMs = 0,
