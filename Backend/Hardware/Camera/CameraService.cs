@@ -19,12 +19,13 @@ public class CameraService : BackgroundService, IDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly DataFileWriter _dataFileWriter;
     private string? _currentVideoFilePath;
+    private Process? _currentMkvProcess = null;
     private readonly string _devicePath;
     private Process? _ffmpegProcess = null;
     private bool _disposed = false;
     private int _currentSegmentNumber = 1;
     private DateTime _currentSegmentStartTime = DateTime.UtcNow;
-    private readonly List<byte[]> _frameBuffer = new(); // Buffer frames for batch writing
+    private readonly List<byte[]> _frameBuffer = new(); // Buffer frames for writing to MKV
 
     public CameraService(
         IHubContext<DataHub> hubContext,
@@ -282,9 +283,12 @@ public class CameraService : BackgroundService, IDisposable
             return;
         }
         
-        // Create new video file path in shared session
-        var segmentFileName = $"Camera_{_currentSegmentNumber:D3}.mjpeg";
+        // Create new MKV file path in shared session
+        var segmentFileName = $"Camera_{_currentSegmentNumber:D3}.mkv";
         _currentVideoFilePath = Path.Combine(DataFileWriter.SharedSessionPath, segmentFileName);
+        
+        // Start FFmpeg process to create MKV file from MJPEG stream
+        await StartMkvProcess();
         _currentSegmentStartTime = DateTime.UtcNow;
         
         var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},SEGMENT_STARTED,segment:{_currentSegmentNumber},file:{segmentFileName}";
@@ -296,6 +300,9 @@ public class CameraService : BackgroundService, IDisposable
     
     private async Task CompleteCurrentSegment(int framesKept)
     {
+        // Stop the current MKV process
+        await StopMkvProcess();
+        
         var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},SEGMENT_COMPLETED,segment:{_currentSegmentNumber},frames_kept:{framesKept}";
         _dataFileWriter.WriteData(logEntry);
         
@@ -308,24 +315,90 @@ public class CameraService : BackgroundService, IDisposable
     
     private async Task FlushFramesToFile()
     {
-        if (_frameBuffer.Count == 0 || string.IsNullOrEmpty(_currentVideoFilePath))
+        if (_frameBuffer.Count == 0 || _currentMkvProcess == null)
             return;
             
         try
         {
-            // Write all buffered frames to the current video file
-            using var fileStream = new FileStream(_currentVideoFilePath, FileMode.Append, FileAccess.Write);
+            // Write all buffered frames to FFmpeg stdin for MKV creation
+            var stdin = _currentMkvProcess.StandardInput.BaseStream;
             foreach (var frameData in _frameBuffer)
             {
-                await fileStream.WriteAsync(frameData);
+                await stdin.WriteAsync(frameData);
             }
+            await stdin.FlushAsync();
             
-            _logger.LogDebug("Flushed {FrameCount} frames to {FilePath}", _frameBuffer.Count, _currentVideoFilePath);
+            _logger.LogDebug("Flushed {FrameCount} frames to MKV process", _frameBuffer.Count);
             _frameBuffer.Clear();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error writing frames to video file {FilePath}", _currentVideoFilePath);
+            _logger.LogError(ex, "Error writing frames to MKV process");
+        }
+    }
+    
+    private async Task StartMkvProcess()
+    {
+        if (string.IsNullOrEmpty(_currentVideoFilePath))
+            return;
+            
+        try
+        {
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = "ffmpeg",
+                Arguments = $"-hide_banner -loglevel warning " +
+                           $"-f mjpeg -framerate {CAMERA_OUTPUT_RATE} -i - " +  // Read MJPEG from stdin
+                           "-c copy -f matroska " +  // Copy MJPEG into MKV container
+                           $"\"{_currentVideoFilePath}\"",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            
+            _currentMkvProcess = Process.Start(processInfo);
+            
+            if (_currentMkvProcess == null)
+            {
+                throw new InvalidOperationException("Failed to start MKV creation process");
+            }
+            
+            _logger.LogInformation("Started MKV creation process for {FilePath}", _currentVideoFilePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start MKV creation process");
+            throw;
+        }
+    }
+    
+    private async Task StopMkvProcess()
+    {
+        if (_currentMkvProcess != null && !_currentMkvProcess.HasExited)
+        {
+            try
+            {
+                // Close stdin to signal end of stream
+                _currentMkvProcess.StandardInput.Close();
+                
+                // Wait for FFmpeg to finish processing
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await _currentMkvProcess.WaitForExitAsync(cts.Token);
+                
+                _logger.LogInformation("MKV creation process completed for {FilePath}", _currentVideoFilePath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error stopping MKV creation process");
+                _currentMkvProcess.Kill();
+            }
+            finally
+            {
+                _currentMkvProcess?.Dispose();
+                _currentMkvProcess = null;
+            }
         }
     }
     
@@ -464,8 +537,9 @@ public class CameraService : BackgroundService, IDisposable
     {
         _logger.LogInformation("Stopping Camera Service");
         
-        // Flush any remaining frames
+        // Flush any remaining frames and stop MKV process
         await FlushFramesToFile();
+        await StopMkvProcess();
         
         await _dataFileWriter.StopAsync(cancellationToken);
         await base.StopAsync(cancellationToken);
