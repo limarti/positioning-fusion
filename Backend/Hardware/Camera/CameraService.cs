@@ -16,6 +16,12 @@ public class CameraService : BackgroundService, IDisposable
     private const int FRAME_DROP_RATIO = CAMERA_FRAME_MULTIPLIER; // Keep every Nth frame
     private const int DEVICE_CHECK_INTERVAL_SECONDS = 5; // Check for camera every 5 seconds
     private const int CONNECTION_RETRY_DELAY_SECONDS = 2; // Wait between connection attempts
+    
+    // Camera control constants - optimized for VIO (Visual-Inertial Odometry)
+    private const int AUTO_EXPOSURE_MODE = 3; // 1=manual mode, 3=aperture priority mode (auto exposure) - CRITICAL for VIO
+    private const int MAX_GAIN_LIMIT = 150; // Reduced gain to minimize noise for better feature detection
+    private const int SHARPNESS_LEVEL = 50; // Increased sharpness for better feature detection (range: 1-100, default=28)
+    private const int BACKLIGHT_COMPENSATION = 80; // Help with challenging lighting conditions (range: 0-255, default=72)
     // Camera connection states
     private enum CameraConnectionState
     {
@@ -669,8 +675,31 @@ public class CameraService : BackgroundService, IDisposable
     {
         try
         {
-            _logger.LogInformation("Configuring camera to {Width}x{Height} MJPEG format", 
+            _logger.LogInformation("Configuring camera format and controls: {Width}x{Height} MJPEG", 
                 CAMERA_WIDTH, CAMERA_HEIGHT);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONFIG_START,device:{_devicePath}");
+            
+            // Step 1: Set video format
+            await SetCameraFormat();
+            
+            // Step 2: Configure camera controls for optimal image quality
+            await SetCameraControls();
+            
+            _logger.LogInformation("Camera configuration completed successfully");
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONFIG_COMPLETED");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to configure camera - continuing anyway");
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONFIG_FAILED,error:{ex.Message}");
+        }
+    }
+
+    private async Task SetCameraFormat()
+    {
+        try
+        {
+            _logger.LogInformation("Setting camera video format to {Width}x{Height} MJPEG", CAMERA_WIDTH, CAMERA_HEIGHT);
             
             var processInfo = new ProcessStartInfo
             {
@@ -691,18 +720,220 @@ public class CameraService : BackgroundService, IDisposable
                 
                 if (process.ExitCode == 0)
                 {
-                    _logger.LogInformation("Camera configured successfully: {Output}", output.Trim());
+                    _logger.LogInformation("Camera format set successfully: {Output}", output.Trim());
+                    _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_FORMAT_SET,{CAMERA_WIDTH}x{CAMERA_HEIGHT}");
                 }
                 else
                 {
-                    _logger.LogWarning("Camera configuration warning: {Error}", error.Trim());
+                    _logger.LogWarning("Camera format warning: {Error}", error.Trim());
+                    _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_FORMAT_WARNING,{error.Trim()}");
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to configure camera - continuing anyway");
+            _logger.LogWarning(ex, "Failed to set camera format");
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_FORMAT_ERROR,{ex.Message}");
         }
+    }
+
+    private async Task SetCameraControls()
+    {
+        _logger.LogInformation("Configuring camera controls optimized for VIO performance");
+        
+        // Set VIO-optimized camera controls
+        await SetSingleCameraControl("auto_exposure", AUTO_EXPOSURE_MODE);
+        await VerifyCameraControl("auto_exposure", AUTO_EXPOSURE_MODE);
+        
+        await SetSingleCameraControl("gain", MAX_GAIN_LIMIT);
+        await VerifyCameraControl("gain", MAX_GAIN_LIMIT);
+        
+        await SetSingleCameraControl("sharpness", SHARPNESS_LEVEL);
+        await VerifyCameraControl("sharpness", SHARPNESS_LEVEL);
+        
+        await SetSingleCameraControl("backlight_compensation", BACKLIGHT_COMPENSATION);
+        await VerifyCameraControl("backlight_compensation", BACKLIGHT_COMPENSATION);
+        
+        // Monitor auto exposure status after configuration
+        await MonitorAutoExposureStatus();
+        
+        _logger.LogInformation("Camera controls configuration completed");
+    }
+
+    private async Task SetSingleCameraControl(string controlName, object value)
+    {
+        try
+        {
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = "v4l2-ctl",
+                Arguments = $"--device={_devicePath} --set-ctrl={controlName}={value}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(processInfo);
+            if (process != null)
+            {
+                await process.WaitForExitAsync();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
+                
+                if (process.ExitCode == 0)
+                {
+                    _logger.LogDebug("Camera control {ControlName} set to {Value} successfully", controlName, value);
+                    _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONTROL_SET,{controlName}={value}");
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to set camera control {ControlName}={Value}: {Error}", controlName, value, error.Trim());
+                    _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONTROL_FAILED,{controlName}={value},error:{error.Trim()}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error setting camera control {ControlName}={Value}", controlName, value);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONTROL_ERROR,{controlName}={value},exception:{ex.Message}");
+        }
+    }
+
+    private async Task VerifyCameraControl(string controlName, object expectedValue)
+    {
+        try
+        {
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = "v4l2-ctl",
+                Arguments = $"--device={_devicePath} --get-ctrl={controlName}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(processInfo);
+            if (process != null)
+            {
+                await process.WaitForExitAsync();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
+                
+                if (process.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                {
+                    // Parse the output: "control_name: value"
+                    var parts = output.Split(':');
+                    if (parts.Length >= 2)
+                    {
+                        var actualValue = parts[1].Trim();
+                        var expectedStr = expectedValue.ToString();
+                        
+                        if (actualValue == expectedStr)
+                        {
+                            _logger.LogDebug("Camera control {ControlName} verified: {Value}", controlName, actualValue);
+                            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONTROL_VERIFIED,{controlName}={actualValue}");
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Camera control {ControlName} mismatch: expected {Expected}, got {Actual}", 
+                                controlName, expectedStr, actualValue);
+                            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONTROL_MISMATCH,{controlName},expected:{expectedStr},actual:{actualValue}");
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Camera control {ControlName} read result: {Output}", controlName, output.Trim());
+                        _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONTROL_READ,{controlName},{output.Trim()}");
+                    }
+                }
+                else
+                {
+                    _logger.LogDebug("Cannot verify camera control {ControlName}: {Error}", controlName, error.Trim());
+                    _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONTROL_VERIFY_FAILED,{controlName},error:{error.Trim()}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("Error verifying camera control {ControlName}: {Error}", controlName, ex.Message);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CAMERA_CONTROL_VERIFY_ERROR,{controlName},exception:{ex.Message}");
+        }
+    }
+
+    private async Task MonitorAutoExposureStatus()
+    {
+        try
+        {
+            _logger.LogInformation("Checking auto exposure configuration status");
+            
+            // Check auto exposure mode
+            var autoExposureMode = await GetCameraControl("auto_exposure");
+            var exposureTime = await GetCameraControl("exposure_time_absolute");
+            
+            if (autoExposureMode != null)
+            {
+                _logger.LogInformation("Auto exposure mode: {Mode}", autoExposureMode);
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},AUTO_EXPOSURE_STATUS,mode:{autoExposureMode}");
+                
+                if (autoExposureMode.Contains("Aperture Priority"))
+                {
+                    _logger.LogInformation("Auto exposure is ENABLED (Aperture Priority Mode)");
+                    _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},AUTO_EXPOSURE_ENABLED,aperture_priority");
+                }
+                else if (autoExposureMode.Contains("Manual"))
+                {
+                    _logger.LogWarning("Auto exposure is DISABLED (Manual Mode) - this may prevent dynamic exposure adjustment");
+                    _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},AUTO_EXPOSURE_DISABLED,manual_mode");
+                }
+            }
+            
+            if (exposureTime != null)
+            {
+                _logger.LogInformation("Current exposure time: {ExposureTime}", exposureTime);
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},EXPOSURE_TIME,{exposureTime}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to monitor auto exposure status");
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},AUTO_EXPOSURE_MONITOR_ERROR,{ex.Message}");
+        }
+    }
+
+    private async Task<string?> GetCameraControl(string controlName)
+    {
+        try
+        {
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = "v4l2-ctl",
+                Arguments = $"--device={_devicePath} --get-ctrl={controlName}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(processInfo);
+            if (process != null)
+            {
+                await process.WaitForExitAsync();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                
+                if (process.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                {
+                    return output.Trim();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("Error reading camera control {ControlName}: {Error}", controlName, ex.Message);
+        }
+        
+        return null;
     }
 
     private async Task SendCameraConnectedStatus()
