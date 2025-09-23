@@ -240,9 +240,9 @@ public class CameraService : BackgroundService, IDisposable
                                 frameCount, framesKeptInSegment, frameData.Length);
                         }
                         
-                        // Send frame to frontend every 5 seconds
+                        // Send frame to frontend every 1 second
                         var timeSinceLastFrontendFrame = DateTime.UtcNow - lastFrontendFrameTime;
-                        if (timeSinceLastFrontendFrame.TotalSeconds >= 5)
+                        if (timeSinceLastFrontendFrame.TotalSeconds >= 1)
                         {
                             _ = Task.Run(() => SendFrameToFrontend(frameData));
                             lastFrontendFrameTime = DateTime.UtcNow;
