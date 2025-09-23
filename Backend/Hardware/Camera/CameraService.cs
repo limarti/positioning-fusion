@@ -14,6 +14,17 @@ public class CameraService : BackgroundService, IDisposable
     private const int CAMERA_HEIGHT = 600;
     private const int VIDEO_SEGMENT_SECONDS = 60; // Time limit per video file
     private const int FRAME_DROP_RATIO = CAMERA_FRAME_MULTIPLIER; // Keep every Nth frame
+    private const int DEVICE_CHECK_INTERVAL_SECONDS = 5; // Check for camera every 5 seconds
+    private const int CONNECTION_RETRY_DELAY_SECONDS = 2; // Wait between connection attempts
+    // Camera connection states
+    private enum CameraConnectionState
+    {
+        Disconnected,
+        Connecting,
+        Connected,
+        Recording
+    }
+
     private readonly IHubContext<DataHub> _hubContext;
     private readonly ILogger<CameraService> _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -26,6 +37,10 @@ public class CameraService : BackgroundService, IDisposable
     private int _currentSegmentNumber = 1;
     private DateTime _currentSegmentStartTime = DateTime.UtcNow;
     private readonly List<byte[]> _frameBuffer = new(); // Buffer frames for writing to MKV
+    private CameraConnectionState _connectionState = CameraConnectionState.Disconnected;
+    private DateTime _lastDeviceCheck = DateTime.MinValue;
+    private int _connectionAttempts = 0;
+    private DateTime _lastConnectionAttempt = DateTime.MinValue;
 
     public CameraService(
         IHubContext<DataHub> hubContext,
@@ -42,75 +57,179 @@ public class CameraService : BackgroundService, IDisposable
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Camera Service started - continuous video recording at {Width}x{Height} capture:{CaptureRate}fps multiplier:{Multiplier}", 
+        _logger.LogInformation("Camera Service started with dynamic connection handling - {Width}x{Height} capture:{CaptureRate}fps multiplier:{Multiplier}", 
             CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_CAPTURE_RATE, CAMERA_FRAME_MULTIPLIER);
 
         // Start the data file writer for logging
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
 
-        // Check if camera device exists
-        if (!File.Exists(_devicePath))
+        // Main monitoring loop - continuously check for camera availability
+        while (!stoppingToken.IsCancellationRequested)
         {
-            _logger.LogWarning("Camera device not found at {DevicePath} - Camera service will run in disconnected mode", _devicePath);
-            
-            // Send disconnected status to frontend periodically
-            while (!stoppingToken.IsCancellationRequested)
+            try
             {
-                try
-                {
-                    await SendCameraDisconnectedUpdate();
-                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error sending camera disconnected status");
-                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-                }
+                await MonitorCameraConnection(stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken); // Main loop delay
             }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in camera monitoring loop");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            }
+        }
+        
+        // Cleanup on shutdown
+        await CleanupCameraResources();
+        _logger.LogInformation("Camera Service stopped");
+    }
+
+    private async Task MonitorCameraConnection(CancellationToken stoppingToken)
+    {
+        var currentTime = DateTime.UtcNow;
+        
+        // Check device availability periodically
+        if (currentTime - _lastDeviceCheck >= TimeSpan.FromSeconds(DEVICE_CHECK_INTERVAL_SECONDS))
+        {
+            _lastDeviceCheck = currentTime;
+            var deviceExists = File.Exists(_devicePath);
+            
+            _logger.LogDebug("Camera device check: {DevicePath} exists={DeviceExists}, current state={State}", 
+                _devicePath, deviceExists, _connectionState);
+
+            switch (_connectionState)
+            {
+                case CameraConnectionState.Disconnected:
+                    if (deviceExists)
+                    {
+                        _logger.LogInformation("Camera device detected at {DevicePath} - attempting connection", _devicePath);
+                        _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},DEVICE_DETECTED,{_devicePath}");
+                        await AttemptCameraConnection(stoppingToken);
+                    }
+                    else
+                    {
+                        await SendCameraDisconnectedUpdate();
+                    }
+                    break;
+
+                case CameraConnectionState.Connected:
+                case CameraConnectionState.Recording:
+                    if (!deviceExists)
+                    {
+                        _logger.LogWarning("Camera device {DevicePath} disappeared - handling disconnection", _devicePath);
+                        _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},DEVICE_DISAPPEARED,{_devicePath}");
+                        await HandleCameraDisconnection();
+                    }
+                    else if (_connectionState == CameraConnectionState.Connected)
+                    {
+                        // Device exists and we're connected but not recording - start recording
+                        await StartVideoRecording(stoppingToken);
+                    }
+                    else if (_connectionState == CameraConnectionState.Recording)
+                    {
+                        // Check if FFmpeg process is still running
+                        if (_ffmpegProcess == null || _ffmpegProcess.HasExited)
+                        {
+                            _logger.LogWarning("FFmpeg process died unexpectedly - attempting to restart recording");
+                            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},FFMPEG_PROCESS_DIED,exit_code:{_ffmpegProcess?.ExitCode ?? -1}");
+                            await HandleCameraDisconnection();
+                            await AttemptCameraConnection(stoppingToken);
+                        }
+                    }
+                    break;
+
+                case CameraConnectionState.Connecting:
+                    // Allow connection attempt to complete
+                    break;
+            }
+        }
+    }
+
+    private async Task AttemptCameraConnection(CancellationToken stoppingToken)
+    {
+        var currentTime = DateTime.UtcNow;
+        
+        // Prevent too frequent connection attempts
+        if (currentTime - _lastConnectionAttempt < TimeSpan.FromSeconds(CONNECTION_RETRY_DELAY_SECONDS))
+        {
             return;
         }
 
-        _logger.LogInformation("Camera Service connected to video device - starting continuous recording");
+        _connectionState = CameraConnectionState.Connecting;
+        _lastConnectionAttempt = currentTime;
+        _connectionAttempts++;
 
         try
         {
-            // Start continuous video recording
-            await StartVideoRecording(stoppingToken);
+            _logger.LogInformation("Camera connection attempt #{AttemptNumber} to {DevicePath}", _connectionAttempts, _devicePath);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CONNECTION_ATTEMPT,attempt:{_connectionAttempts},device:{_devicePath}");
+
+            // Test camera configuration first
+            await ConfigureCameraAsync();
             
-            // The MJPEG processing will handle sending frames to frontend
-            // Just wait for the FFmpeg process to complete
-            while (!stoppingToken.IsCancellationRequested && _ffmpegProcess != null && !_ffmpegProcess.HasExited)
-            {
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-            }
+            _connectionState = CameraConnectionState.Connected;
+            _connectionAttempts = 0; // Reset on successful connection
+            
+            _logger.LogInformation("Camera successfully connected to {DevicePath}", _devicePath);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CONNECTION_SUCCESS,device:{_devicePath}");
+            
+            await SendCameraConnectedStatus();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Exception in camera service");
+            _connectionState = CameraConnectionState.Disconnected;
+            _logger.LogWarning(ex, "Camera connection attempt #{AttemptNumber} failed: {Error}", _connectionAttempts, ex.Message);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},CONNECTION_FAILED,attempt:{_connectionAttempts},error:{ex.Message}");
+            
+            await SendCameraDisconnectedUpdate();
         }
-        finally
-        {
-            await StopVideoRecording();
-        }
+    }
+
+    private async Task HandleCameraDisconnection()
+    {
+        _logger.LogInformation("Handling camera disconnection - cleaning up resources");
+        _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},DISCONNECTION_HANDLING_STARTED,state:{_connectionState}");
+
+        _connectionState = CameraConnectionState.Disconnected;
         
-        _logger.LogInformation("Camera Service stopped");
+        // Stop video recording gracefully
+        await StopVideoRecording();
+        
+        // Send disconnected status
+        await SendCameraDisconnectedUpdate();
+        
+        _logger.LogInformation("Camera disconnection handling completed");
+        _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},DISCONNECTION_HANDLING_COMPLETED");
+    }
+
+    private async Task CleanupCameraResources()
+    {
+        _logger.LogInformation("Cleaning up camera resources on shutdown");
+        
+        await StopVideoRecording();
+        await FlushFramesToFile();
+        await StopMkvProcess();
+        await _dataFileWriter.StopAsync(CancellationToken.None);
+        
+        _logger.LogInformation("Camera resource cleanup completed");
     }
 
     private async Task StartVideoRecording(CancellationToken stoppingToken)
     {
+        if (_connectionState != CameraConnectionState.Connected)
+        {
+            _logger.LogWarning("Cannot start recording - camera not in connected state (current: {State})", _connectionState);
+            return;
+        }
+
         try
         {
+            _logger.LogInformation("Starting video recording for connected camera");
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_START_ATTEMPT,device:{_devicePath}");
+            
             // First configure the camera with v4l2-ctl
             await ConfigureCameraAsync();
 
@@ -138,6 +257,9 @@ public class CameraService : BackgroundService, IDisposable
             }
 
             _logger.LogInformation("Camera stream process started - processing MJPEG frames with {DropRatio}:1 frame dropping", FRAME_DROP_RATIO);
+            
+            // Update state to recording
+            _connectionState = CameraConnectionState.Recording;
             
             // Send initial connected status to frontend
             await SendCameraConnectedStatus();
@@ -167,6 +289,8 @@ public class CameraService : BackgroundService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to start camera stream recording");
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_START_FAILED,error:{ex.Message}");
+            _connectionState = CameraConnectionState.Connected; // Reset to connected state
             throw;
         }
     }
@@ -347,10 +471,16 @@ public class CameraService : BackgroundService, IDisposable
     private async Task StartMkvProcess()
     {
         if (string.IsNullOrEmpty(_currentVideoFilePath))
+        {
+            _logger.LogWarning("Cannot start MKV process - no current video file path set");
             return;
+        }
             
         try
         {
+            _logger.LogInformation("Starting MKV creation process for {FilePath}", _currentVideoFilePath);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_START_ATTEMPT,file:{Path.GetFileName(_currentVideoFilePath)}");
+            
             var processInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
@@ -372,11 +502,13 @@ public class CameraService : BackgroundService, IDisposable
                 throw new InvalidOperationException("Failed to start MKV creation process");
             }
             
-            _logger.LogInformation("Started MKV creation process for {FilePath}", _currentVideoFilePath);
+            _logger.LogInformation("Started MKV creation process (PID: {ProcessId}) for {FilePath}", _currentMkvProcess.Id, _currentVideoFilePath);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_STARTED,pid:{_currentMkvProcess.Id},file:{Path.GetFileName(_currentVideoFilePath)}");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to start MKV creation process");
+            _logger.LogError(ex, "Failed to start MKV creation process for {FilePath}", _currentVideoFilePath);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_START_FAILED,file:{Path.GetFileName(_currentVideoFilePath ?? "unknown")},error:{ex.Message}");
             throw;
         }
     }
@@ -387,6 +519,9 @@ public class CameraService : BackgroundService, IDisposable
         {
             try
             {
+                _logger.LogInformation("Stopping MKV creation process (PID: {ProcessId}) for {FilePath}", _currentMkvProcess.Id, _currentVideoFilePath);
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_STOP_ATTEMPT,pid:{_currentMkvProcess.Id},file:{Path.GetFileName(_currentVideoFilePath ?? "unknown")}");
+                
                 // Close stdin to signal end of stream
                 _currentMkvProcess.StandardInput.Close();
                 
@@ -394,18 +529,45 @@ public class CameraService : BackgroundService, IDisposable
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 await _currentMkvProcess.WaitForExitAsync(cts.Token);
                 
-                _logger.LogInformation("MKV creation process completed for {FilePath}", _currentVideoFilePath);
+                _logger.LogInformation("MKV creation process completed successfully (exit code: {ExitCode}) for {FilePath}", _currentMkvProcess.ExitCode, _currentVideoFilePath);
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_COMPLETED,exit_code:{_currentMkvProcess.ExitCode},file:{Path.GetFileName(_currentVideoFilePath ?? "unknown")}");
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("MKV creation process did not complete within timeout - forcing termination");
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_TIMEOUT,forced_kill,file:{Path.GetFileName(_currentVideoFilePath ?? "unknown")}");
+                try
+                {
+                    _currentMkvProcess.Kill();
+                }
+                catch (Exception killEx)
+                {
+                    _logger.LogError(killEx, "Failed to force kill MKV creation process");
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error stopping MKV creation process");
-                _currentMkvProcess.Kill();
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_STOP_ERROR,error:{ex.Message},file:{Path.GetFileName(_currentVideoFilePath ?? "unknown")}");
+                try
+                {
+                    _currentMkvProcess.Kill();
+                }
+                catch (Exception killEx)
+                {
+                    _logger.LogError(killEx, "Failed to kill MKV creation process after error");
+                }
             }
             finally
             {
                 _currentMkvProcess?.Dispose();
                 _currentMkvProcess = null;
             }
+        }
+        else if (_currentMkvProcess != null)
+        {
+            _logger.LogDebug("MKV creation process already exited with code {ExitCode}", _currentMkvProcess.ExitCode);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_ALREADY_STOPPED,exit_code:{_currentMkvProcess.ExitCode}");
         }
     }
     
@@ -422,6 +584,7 @@ public class CameraService : BackgroundService, IDisposable
             try
             {
                 _logger.LogInformation("Stopping MJPEG stream capture...");
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STOP_ATTEMPT,process_id:{_ffmpegProcess.Id}");
                 
                 // Kill the FFmpeg process
                 _ffmpegProcess.Kill(entireProcessTree: false);
@@ -430,21 +593,47 @@ public class CameraService : BackgroundService, IDisposable
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 await _ffmpegProcess.WaitForExitAsync(cts.Token);
                 
-                _logger.LogInformation("MJPEG stream capture stopped");
+                _logger.LogInformation("MJPEG stream capture stopped successfully");
                 
                 // Log recording stop to batched file writer
-                var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STOPPED,{_devicePath}";
+                var logEntry = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STOPPED,{_devicePath},exit_code:{_ffmpegProcess.ExitCode}";
                 _dataFileWriter.WriteData(logEntry);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("FFmpeg process did not exit within timeout - forcing termination");
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STOP_TIMEOUT,forced_kill");
+                try
+                {
+                    _ffmpegProcess.Kill(entireProcessTree: true);
+                }
+                catch (Exception killEx)
+                {
+                    _logger.LogError(killEx, "Failed to force kill FFmpeg process");
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error stopping MJPEG stream capture");
+                _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_STOP_ERROR,error:{ex.Message}");
             }
             finally
             {
                 _ffmpegProcess?.Dispose();
                 _ffmpegProcess = null;
+                
+                // Update connection state if we were recording
+                if (_connectionState == CameraConnectionState.Recording)
+                {
+                    _connectionState = File.Exists(_devicePath) ? CameraConnectionState.Connected : CameraConnectionState.Disconnected;
+                    _logger.LogDebug("Updated connection state to {State} after stopping recording", _connectionState);
+                }
             }
+        }
+        else if (_ffmpegProcess != null)
+        {
+            _logger.LogDebug("FFmpeg process already exited with code {ExitCode}", _ffmpegProcess.ExitCode);
+            _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},RECORDING_ALREADY_STOPPED,exit_code:{_ffmpegProcess.ExitCode}");
         }
     }
     
