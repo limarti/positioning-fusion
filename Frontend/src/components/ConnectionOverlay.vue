@@ -21,24 +21,6 @@
         {{ statusMessage }}
       </p>
 
-      <!-- Retry Information -->
-      <div v-if="nextRetryIn > 0" 
-           class="text-sm text-slate-500 mb-4">
-        Retry attempt {{ retryAttempt }} in {{ nextRetryIn }}s
-      </div>
-      
-      <div v-else-if="retryAttempt > 0" 
-           class="text-sm text-slate-500 mb-4">
-        Attempt {{ retryAttempt }}
-      </div>
-
-      <!-- Progress indicator for retry countdown -->
-      <div v-if="nextRetryIn > 0" 
-           class="w-full bg-slate-200 rounded-full h-2 mb-4">
-        <div class="bg-slate-600 h-2 rounded-full transition-all duration-1000"
-             :style="{ width: `${((5 - nextRetryIn) / 5) * 100}%` }">
-        </div>
-      </div>
     </div>
   </div>
 </template>
