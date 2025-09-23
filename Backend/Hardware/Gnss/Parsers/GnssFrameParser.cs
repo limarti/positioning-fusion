@@ -46,21 +46,33 @@ public class GnssFrameParser
     private (FrameKind k, int s, int t, int partial)? FindUbxCandidate(List<byte> dataBuffer)
     {
         // UBX: 0xB5 0x62 [cls][id][lenL][lenH] payload ... [CK_A][CK_B]
-        for (int i = 0; i + 5 < dataBuffer.Count; i++)
+        for (int i = 0; i < dataBuffer.Count; i++)
         {
-            if (dataBuffer[i] != 0xB5 || dataBuffer[i + 1] != 0x62) continue;
+            if (dataBuffer[i] != 0xB5) continue;
+            
+            // Check if we have the second sync byte
+            if (i + 1 >= dataBuffer.Count)
+            {
+                // Found B5 but need 62 - this is a partial frame
+                _logger.LogDebug("⏳ UBX partial sync at {Pos}: need 1 more byte for sync", i);
+                return (FrameKind.Ubx, i, 2, 1);
+            }
+            
+            if (dataBuffer[i + 1] != 0x62) continue;
 
             // need at least header to read length
             if (i + 6 > dataBuffer.Count) 
             {
-                _logger.LogDebug("⏳ UBX partial header at {Pos}: need {Need} more bytes", i, 6 - (i + 6 - dataBuffer.Count));
-                return (FrameKind.Ubx, i, 6, 6 - dataBuffer.Count + i);
+                int needed = (i + 6) - dataBuffer.Count;
+                _logger.LogDebug("⏳ UBX partial header at {Pos}: need {Need} more bytes", i, needed);
+                return (FrameKind.Ubx, i, 6, needed);
             }
 
             int len = dataBuffer[i + 4] | (dataBuffer[i + 5] << 8);
-            if (len < 0 || len > 1024) 
+            if (len < 0 || len > 4096) 
             {
-                _logger.LogDebug("🚫 UBX candidate at {Pos}: invalid length {Len}", i, len);
+                _logger.LogInformation("🚫 UBX candidate at {Pos}: invalid length {Len} (class=0x{Class:X2}, id=0x{Id:X2})", 
+                    i, len, dataBuffer[i + 2], dataBuffer[i + 3]);
                 continue;
             }
 
@@ -74,12 +86,14 @@ public class GnssFrameParser
 
             if (ValidateUbxChecksum(dataBuffer, i, total))
             {
-                _logger.LogDebug("✅ Valid UBX frame found at {Pos}: payload={PayloadLen}, total={Total}", i, len, total);
+                _logger.LogDebug("✅ Valid UBX frame found at {Pos}: payload={PayloadLen}, total={Total} (class=0x{Class:X2}, id=0x{Id:X2})", 
+                    i, len, total, dataBuffer[i + 2], dataBuffer[i + 3]);
                 return (FrameKind.Ubx, i, total, 0);
             }
             else
             {
-                _logger.LogDebug("❌ UBX candidate at {Pos}: checksum validation failed (payload={PayloadLen})", i, len);
+                _logger.LogInformation("❌ UBX candidate at {Pos}: checksum validation failed (class=0x{Class:X2}, id=0x{Id:X2}, payload={PayloadLen})", 
+                    i, dataBuffer[i + 2], dataBuffer[i + 3], len);
             }
 
             // bad checksum — skip this sync and keep scanning
@@ -105,7 +119,7 @@ public class GnssFrameParser
             }
 
             int payloadLen = ((b1 & 0x03) << 8) | b2;
-            if (payloadLen <= 0 || payloadLen > 1024)
+            if (payloadLen <= 0 || payloadLen > 4096)
             {
                 _logger.LogDebug("🚫 RTCM3 candidate at {Pos}: invalid payload length {Len}", i, payloadLen);
                 continue;
@@ -121,7 +135,7 @@ public class GnssFrameParser
 
             if (ValidateRtcmCrc24Q(dataBuffer, i, total))
             {
-                //_logger.LogInformation("✅ Valid RTCM3 frame found at {Pos}: payload={PayloadLen}, total={Total}", i, payloadLen, total);
+                _logger.LogDebug("✅ Valid RTCM3 frame found at {Pos}: payload={PayloadLen}, total={Total}", i, payloadLen, total);
                 return (FrameKind.Rtcm3, i, total, 0);
             }
             else
@@ -163,12 +177,33 @@ public class GnssFrameParser
         byte ckA = 0, ckB = 0;
         int payloadLen = dataBuffer[start + 4] | (dataBuffer[start + 5] << 8);
         int end = start + 6 + payloadLen;
+        
+        // Debug: Check if we have enough data for checksum
+        if (end + 1 >= dataBuffer.Count)
+        {
+            _logger.LogDebug("🐛 UBX checksum validation: insufficient data. Need {Need}, have {Have}", 
+                end + 2, dataBuffer.Count - start);
+            return false;
+        }
+        
         for (int j = start + 2; j < end; j++)
         {
             ckA = (byte)(ckA + dataBuffer[j]);
             ckB = (byte)(ckB + ckA);
         }
-        return ckA == dataBuffer[end] && ckB == dataBuffer[end + 1];
+        
+        byte expectedCkA = dataBuffer[end];
+        byte expectedCkB = dataBuffer[end + 1];
+        bool isValid = ckA == expectedCkA && ckB == expectedCkB;
+        
+        if (!isValid)
+        {
+            _logger.LogInformation("🐛 UBX checksum mismatch: calculated CK_A=0x{CalcA:X2} CK_B=0x{CalcB:X2}, " +
+                "expected CK_A=0x{ExpA:X2} CK_B=0x{ExpB:X2} (class=0x{Class:X2}, id=0x{Id:X2}, len={Len})", 
+                ckA, ckB, expectedCkA, expectedCkB, dataBuffer[start + 2], dataBuffer[start + 3], payloadLen);
+        }
+        
+        return isValid;
     }
 
     private bool ValidateRtcmCrc24Q(List<byte> dataBuffer, int start, int total)

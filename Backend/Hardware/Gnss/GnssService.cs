@@ -220,6 +220,15 @@ public class GnssService : BackgroundService
             lock (_dataBufferLock)
             {
                 frameFound = _frameParser.TryFindNextFrame(_dataBuffer, out kind, out start, out totalLen, out partialNeeded);
+                
+                // Only log when no frames found and no partial frames (potential garbage)
+                if (!frameFound && partialNeeded == 0)
+                {
+                    // Show first few bytes for debugging garbage data
+                    var debugBytes = Math.Min(_dataBuffer.Count, 8);
+                    var hexDump = string.Join(" ", _dataBuffer.Take(debugBytes).Select(b => $"{b:X2}"));
+                    _logger.LogDebug("🔍 No frames found. Buffer: {HexDump} (total {Count} bytes)", hexDump, _dataBuffer.Count);
+                }
             }
             
             if (!frameFound)
@@ -236,7 +245,11 @@ public class GnssService : BackgroundService
                 {
                     if (_dataBuffer.Count > 0)
                     {
-                        _logger.LogDebug("🗑️ No valid frames found, dropping 1 garbage byte (0x{Byte:X2})", _dataBuffer[0]);
+                        // Show more context data for analysis
+                        var contextBytes = Math.Min(_dataBuffer.Count, 32);
+                        var hexDump = string.Join(" ", _dataBuffer.Take(contextBytes).Select(b => $"{b:X2}"));
+                        _logger.LogInformation("🗑️ No valid frames found, dropping 1 garbage byte (0x{Byte:X2}). Context (next {ContextCount} bytes): {HexDump}", 
+                            _dataBuffer[0], contextBytes, hexDump);
                         _dataBuffer.RemoveAt(0);
                     }
                 }
@@ -252,7 +265,11 @@ public class GnssService : BackgroundService
                 // Drop garbage before the frame
                 if (start > 0)
                 {
-                    _logger.LogDebug("🗑️ Dropping {Count} garbage bytes before {Kind} frame", start, kind);
+                    // Show hex dump of garbage data for analysis
+                    var garbageBytes = _dataBuffer.Take(Math.Min(start, 32)).ToArray();
+                    var hexDump = string.Join(" ", garbageBytes.Select(b => $"{b:X2}"));
+                    _logger.LogInformation("🗑️ Dropping {Count} garbage bytes before {Kind} frame. Garbage data (first {ShowCount} bytes): {HexDump}", 
+                        start, kind, garbageBytes.Length, hexDump);
                     _dataBuffer.RemoveRange(0, start);
                 }
 
