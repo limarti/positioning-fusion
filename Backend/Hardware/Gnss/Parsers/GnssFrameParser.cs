@@ -114,14 +114,14 @@ public class GnssFrameParser
             // Upper 6 bits of b1 must be 0
             if ((b1 & 0xFC) != 0)
             {
-                _logger.LogDebug("🚫 RTCM3 candidate at {Pos}: invalid reserved bits in b1=0x{B1:X2}", i, b1);
+                _logger.LogInformation("🚫 RTCM3 candidate at {Pos}: invalid reserved bits in b1=0x{B1:X2}", i, b1);
                 continue;
             }
 
             int payloadLen = ((b1 & 0x03) << 8) | b2;
             if (payloadLen <= 0 || payloadLen > 4096)
             {
-                _logger.LogDebug("🚫 RTCM3 candidate at {Pos}: invalid payload length {Len}", i, payloadLen);
+                _logger.LogInformation("🚫 RTCM3 candidate at {Pos}: invalid payload length {Len}", i, payloadLen);
                 continue;
             }
 
@@ -140,7 +140,7 @@ public class GnssFrameParser
             }
             else
             {
-                _logger.LogDebug("❌ RTCM3 candidate at {Pos}: CRC validation failed (payload={PayloadLen})", i, payloadLen);
+                _logger.LogInformation("❌ RTCM3 candidate at {Pos}: CRC validation failed (payload={PayloadLen})", i, payloadLen);
             }
             // bad CRC — keep scanning
         }

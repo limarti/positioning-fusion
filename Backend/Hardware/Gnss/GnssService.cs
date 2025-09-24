@@ -94,8 +94,14 @@ public class GnssService : BackgroundService
         // Time mode polling via CFG-VALGET not supported by this module
         // Status will be determined by presence of NAV-SVIN (active) or RTCM3 (completed) messages
 
-        // Subscribe to serial port data received event
-        _serialPort.DataReceived += OnSerialDataReceived;
+        // Try event-driven approach first, with polling as backup
+        _logger.LogInformation("Setting up GNSS data handling with event + polling hybrid approach");
+
+        // Subscribe to DataReceived event
+        _serialPort.DataReceived += OnDataReceived;
+
+        // Start backup polling only if events stop working
+        _ = BackupPollingLoop(stoppingToken);
         
         // Start background task for periodic rate updates
         _ = Task.Run(async () => await RateUpdateLoop(stoppingToken), stoppingToken);
@@ -111,17 +117,86 @@ public class GnssService : BackgroundService
         }
     }
 
-    private async void OnSerialDataReceived(object sender, SerialDataReceivedEventArgs e)
+    private readonly object _timeLock = new object();
+    private DateTime _lastEventTime = DateTime.UtcNow;
+    private DateTime _lastDataProcessTime = DateTime.UtcNow;
+
+    private async void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
     {
         try
         {
-            await ReadAndProcessGnssDataAsync(CancellationToken.None);
+            lock (_timeLock)
+            {
+                _lastEventTime = DateTime.UtcNow;
+            }
+            // Console.WriteLine("📡 TERMINAL: DataReceived event fired"); // Events working properly
+            await ReadAndProcessGnssDataAsync(CancellationToken.None, fromPolling: false);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in serial data received event handler");
+            _logger.LogError(ex, "Error in DataReceived event handler");
         }
     }
+
+    private async Task BackupPollingLoop(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("GNSS backup polling started (only runs if events fail)");
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (_serialPort != null && _serialPort.IsOpen)
+                {
+                    var now = DateTime.UtcNow;
+                    DateTime lastEvent, lastData;
+
+                    lock (_timeLock)
+                    {
+                        lastEvent = _lastEventTime;
+                        lastData = _lastDataProcessTime;
+                    }
+
+                    var timeSinceLastEvent = now - lastEvent;
+                    var timeSinceLastData = now - lastData;
+
+                    // Only poll if events haven't fired for 2+ seconds AND there might be data
+                    if (timeSinceLastEvent.TotalSeconds >= 2.0 && timeSinceLastData.TotalSeconds >= 1.0)
+                    {
+                        var bytesToRead = _serialPort.BytesToRead;
+                        if (bytesToRead > 0)
+                        {
+                            _logger.LogInformation("🔍 BACKUP POLL: Events stopped working! Found {BytesToRead} bytes after {TimeSinceEvent:F1}s without events",
+                                bytesToRead, timeSinceLastEvent.TotalSeconds);
+
+                            await ReadAndProcessGnssDataAsync(stoppingToken, fromPolling: true);
+                        }
+                    }
+
+                    // Warn if we haven't processed any data for a while
+                    if (timeSinceLastData.TotalSeconds >= 10.0)
+                    {
+                        _logger.LogInformation("⚠️ No GNSS data processed for {Seconds} seconds", (int)timeSinceLastData.TotalSeconds);
+
+                        lock (_timeLock)
+                        {
+                            _lastDataProcessTime = now; // Reset to avoid spam
+                        }
+                    }
+                }
+
+                // Check every 2 seconds (much less frequent)
+                await Task.Delay(2000, stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in backup polling loop");
+                await Task.Delay(2000, stoppingToken);
+            }
+        }
+    }
+
+    // Note: DataReceived event removed - using continuous polling instead for better reliability on Linux
 
     private async Task RateUpdateLoop(CancellationToken stoppingToken)
     {
@@ -144,7 +219,7 @@ public class GnssService : BackgroundService
         }
     }
 
-    private async Task ReadAndProcessGnssDataAsync(CancellationToken stoppingToken)
+    private async Task ReadAndProcessGnssDataAsync(CancellationToken stoppingToken, bool fromPolling = false)
     {
         if (_serialPort == null || !_serialPort.IsOpen)
             return;
@@ -159,6 +234,17 @@ public class GnssService : BackgroundService
 
                 // Track bytes received for data rate calculation
                 _bytesReceived += bytesRead;
+
+                lock (_timeLock)
+                {
+                    _lastDataProcessTime = DateTime.UtcNow;
+                }
+
+                // Log when backup polling reads data (indicates event system failed)
+                if (fromPolling)
+                {
+                    _logger.LogInformation("📥 BACKUP POLL: Read {BytesRead} bytes from GNSS", bytesRead);
+                }
 
                 //_logger.LogInformation("📥 Read {BytesRead} bytes from GNSS, buffer now has {BufferSize} bytes", bytesRead, _dataBuffer.Count + bytesRead);
 
@@ -229,7 +315,7 @@ public class GnssService : BackgroundService
                     // Show first few bytes for debugging garbage data
                     var debugBytes = Math.Min(_dataBuffer.Count, 8);
                     var hexDump = string.Join(" ", _dataBuffer.Take(debugBytes).Select(b => $"{b:X2}"));
-                    _logger.LogDebug("🔍 No frames found. Buffer: {HexDump} (total {Count} bytes)", hexDump, _dataBuffer.Count);
+                    _logger.LogInformation("🔍 No frames found. Buffer: {HexDump} (total {Count} bytes)", hexDump, _dataBuffer.Count);
                 }
             }
             
@@ -729,7 +815,7 @@ public class GnssService : BackgroundService
         // Unsubscribe from serial port events
         if (_serialPort != null)
         {
-            _serialPort.DataReceived -= OnSerialDataReceived;
+            _serialPort.DataReceived -= OnDataReceived;
             _logger.LogInformation("📡 Unsubscribed from serial port data events");
         }
 
