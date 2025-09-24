@@ -53,18 +53,15 @@ public class GnssFrameParser
             // Check if we have the second sync byte
             if (i + 1 >= dataBuffer.Count)
             {
-                // Found B5 but need 62 - this is a partial frame
-                _logger.LogDebug("⏳ UBX partial sync at {Pos}: need 1 more byte for sync", i);
                 return (FrameKind.Ubx, i, 2, 1);
             }
             
             if (dataBuffer[i + 1] != 0x62) continue;
 
             // need at least header to read length
-            if (i + 6 > dataBuffer.Count) 
+            if (i + 6 > dataBuffer.Count)
             {
                 int needed = (i + 6) - dataBuffer.Count;
-                _logger.LogDebug("⏳ UBX partial header at {Pos}: need {Need} more bytes", i, needed);
                 return (FrameKind.Ubx, i, 6, needed);
             }
 
@@ -79,15 +76,11 @@ public class GnssFrameParser
             int total = 6 + len + 2;
             if (i + total > dataBuffer.Count)
             {
-                _logger.LogDebug("⏳ UBX partial frame at {Pos}: need {Need} more bytes (payload={PayloadLen}, total={Total})", 
-                    i, (i + total) - dataBuffer.Count, len, total);
                 return (FrameKind.Ubx, i, total, (i + total) - dataBuffer.Count);
             }
 
             if (ValidateUbxChecksum(dataBuffer, i, total))
             {
-                _logger.LogDebug("✅ Valid UBX frame found at {Pos}: payload={PayloadLen}, total={Total} (class=0x{Class:X2}, id=0x{Id:X2})", 
-                    i, len, total, dataBuffer[i + 2], dataBuffer[i + 3]);
                 return (FrameKind.Ubx, i, total, 0);
             }
             else
@@ -114,33 +107,38 @@ public class GnssFrameParser
             // Upper 6 bits of b1 must be 0
             if ((b1 & 0xFC) != 0)
             {
-                _logger.LogInformation("🚫 RTCM3 candidate at {Pos}: invalid reserved bits in b1=0x{B1:X2}", i, b1);
+                // Log discarded chunk for reserved bits violation
+                var chunkSize = Math.Min(8, dataBuffer.Count - i);
+                var chunkHex = string.Join(" ", dataBuffer.Skip(i).Take(chunkSize).Select(b => $"{b:X2}"));
+                _logger.LogInformation("🚫 RTCM3 candidate at {Pos}: invalid reserved bits in b1=0x{B1:X2}. Discarded chunk: {ChunkHex}", i, b1, chunkHex);
                 continue;
             }
 
             int payloadLen = ((b1 & 0x03) << 8) | b2;
             if (payloadLen <= 0 || payloadLen > 4096)
             {
-                _logger.LogInformation("🚫 RTCM3 candidate at {Pos}: invalid payload length {Len}", i, payloadLen);
+                // Log discarded chunk for invalid payload length
+                var chunkSize = Math.Min(8, dataBuffer.Count - i);
+                var chunkHex = string.Join(" ", dataBuffer.Skip(i).Take(chunkSize).Select(b => $"{b:X2}"));
+                _logger.LogInformation("🚫 RTCM3 candidate at {Pos}: invalid payload length {Len}. Discarded chunk: {ChunkHex}", i, payloadLen, chunkHex);
                 continue;
             }
 
             int total = 3 + payloadLen + 3;
             if (i + total > dataBuffer.Count)
             {
-                _logger.LogDebug("⏳ RTCM3 partial frame at {Pos}: need {Need} more bytes (payload={PayloadLen}, total={Total})", 
-                    i, (i + total) - dataBuffer.Count, payloadLen, total);
                 return (FrameKind.Rtcm3, i, total, (i + total) - dataBuffer.Count);
             }
 
             if (ValidateRtcmCrc24Q(dataBuffer, i, total))
             {
-                _logger.LogDebug("✅ Valid RTCM3 frame found at {Pos}: payload={PayloadLen}, total={Total}", i, payloadLen, total);
                 return (FrameKind.Rtcm3, i, total, 0);
             }
             else
             {
-                _logger.LogInformation("❌ RTCM3 candidate at {Pos}: CRC validation failed (payload={PayloadLen})", i, payloadLen);
+                // Log the discarded frame data for CRC failure analysis
+                var frameHex = string.Join(" ", dataBuffer.Skip(i).Take(Math.Min(total, 32)).Select(b => $"{b:X2}"));
+                _logger.LogInformation("❌ RTCM3 candidate at {Pos}: CRC validation failed (payload={PayloadLen}). Discarded frame (first 32 bytes): {FrameHex}", i, payloadLen, frameHex);
             }
             // bad CRC — keep scanning
         }
@@ -156,7 +154,7 @@ public class GnssFrameParser
 
         // Must end with CRLF to be complete
         int cr = dataBuffer.IndexOf((byte)'\r', dollar + 1);
-        if (cr < 0 || cr + 1 >= dataBuffer.Count) return (FrameKind.Nmea, dollar, 0, 1); // partial; need at least CRLF
+        if (cr < 0 || cr + 1 >= dataBuffer.Count) return null; // partial frame - don't extract anything
 
         if (dataBuffer[cr + 1] != (byte)'\n') return null;
 
