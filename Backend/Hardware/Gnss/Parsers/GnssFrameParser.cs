@@ -107,20 +107,12 @@ public class GnssFrameParser
             // Upper 6 bits of b1 must be 0
             if ((b1 & 0xFC) != 0)
             {
-                // Log discarded chunk for reserved bits violation
-                var chunkSize = Math.Min(8, dataBuffer.Count - i);
-                var chunkHex = string.Join(" ", dataBuffer.Skip(i).Take(chunkSize).Select(b => $"{b:X2}"));
-                _logger.LogInformation("🚫 RTCM3 candidate at {Pos}: invalid reserved bits in b1=0x{B1:X2}. Discarded chunk: {ChunkHex}", i, b1, chunkHex);
                 continue;
             }
 
             int payloadLen = ((b1 & 0x03) << 8) | b2;
             if (payloadLen <= 0 || payloadLen > 4096)
             {
-                // Log discarded chunk for invalid payload length
-                var chunkSize = Math.Min(8, dataBuffer.Count - i);
-                var chunkHex = string.Join(" ", dataBuffer.Skip(i).Take(chunkSize).Select(b => $"{b:X2}"));
-                _logger.LogInformation("🚫 RTCM3 candidate at {Pos}: invalid payload length {Len}. Discarded chunk: {ChunkHex}", i, payloadLen, chunkHex);
                 continue;
             }
 

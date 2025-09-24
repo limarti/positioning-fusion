@@ -23,6 +23,7 @@ public class GnssService : BackgroundService
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
+    private const int MinBufferSizeBeforeDiscard = 1000; // Don't discard bytes if buffer is smaller than this
 
     // Data rate tracking
     private long _bytesReceived = 0;
@@ -319,8 +320,8 @@ public class GnssService : BackgroundService
             {
                 frameFound = _frameParser.TryFindNextFrame(_dataBuffer, out kind, out start, out totalLen, out partialNeeded);
                 
-                // Only log when no frames found and no partial frames AND we actually have data (potential garbage)
-                if (!frameFound && partialNeeded == 0 && _dataBuffer.Count > 0)
+                // Only log when we're actually going to discard bytes (buffer is large enough)
+                if (!frameFound && partialNeeded == 0 && _dataBuffer.Count >= MinBufferSizeBeforeDiscard)
                 {
                     // Show first few bytes for debugging garbage data
                     var debugBytes = Math.Min(_dataBuffer.Count, 8);
@@ -338,17 +339,22 @@ public class GnssService : BackgroundService
                     break;
                 }
 
-                // Otherwise drop a single garbage byte (don't clear entire buffer).
+                // Only drop bytes if buffer is large enough - small buffers might just need more data
                 lock (_dataBufferLock)
                 {
-                    if (_dataBuffer.Count > 0)
+                    if (_dataBuffer.Count >= MinBufferSizeBeforeDiscard)
                     {
                         // Show more context data for analysis
                         var contextBytes = Math.Min(_dataBuffer.Count, 32);
                         var hexDump = string.Join(" ", _dataBuffer.Take(contextBytes).Select(b => $"{b:X2}"));
-                        _logger.LogInformation("🗑️ No valid frames found, dropping 1 garbage byte (0x{Byte:X2}). Context (next {ContextCount} bytes): {HexDump}", 
-                            _dataBuffer[0], contextBytes, hexDump);
+                        _logger.LogInformation("🗑️ No valid frames found, dropping 1 garbage byte (0x{Byte:X2}). Buffer size: {BufferSize} bytes. Context: {HexDump}",
+                            _dataBuffer[0], _dataBuffer.Count, hexDump);
                         _dataBuffer.RemoveAt(0);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("⏳ Buffer too small ({BufferSize} < {MinSize}) to discard bytes, waiting for more data",
+                            _dataBuffer.Count, MinBufferSizeBeforeDiscard);
                     }
                 }
                 break; // allow more data to arrive before spinning again
