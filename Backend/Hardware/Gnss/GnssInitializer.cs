@@ -14,6 +14,7 @@ public enum UbxResponseType
 public class GnssInitializer
 {
     private readonly ILogger<GnssInitializer> _logger;
+    private readonly GeoConfigurationManager _configurationManager;
     private SerialPort? _serialPort;
 
     private const string DefaultPortName = "/dev/ttyAMA0";
@@ -40,9 +41,10 @@ public class GnssInitializer
         //230400,
     };
 
-    public GnssInitializer(ILogger<GnssInitializer> logger)
+    public GnssInitializer(ILogger<GnssInitializer> logger, GeoConfigurationManager configurationManager)
     {
         _logger = logger;
+        _configurationManager = configurationManager;
     }
 
     public async Task<bool> InitializeAsync(string portName = DefaultPortName)
@@ -360,7 +362,7 @@ public class GnssInitializer
         try
         {
             _logger.LogInformation("ZED-X20P: Using CFG-VALSET for modern UBX configuration");
-            _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz", SystemConfiguration.CorrectionsOperation, UBX_MESSAGES_RATE_HZ);
+            _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz", _configurationManager.OperatingMode, UBX_MESSAGES_RATE_HZ);
 
             await SetNavigationRate(UBX_MESSAGES_RATE_HZ);
 
@@ -376,7 +378,7 @@ public class GnssInitializer
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, 10);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_DOP_UART1, 10);
 
-            if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Send)
+            if (_configurationManager.OperatingMode == OperatingMode.Send)
             {
                 _logger.LogInformation("Configuring Base Station mode - Survey-In with RTCM3 output");
 
@@ -404,7 +406,7 @@ public class GnssInitializer
 
                 _logger.LogInformation("Base Station mode configuration completed");
             }
-            else if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Receive)
+            else if (_configurationManager.OperatingMode == OperatingMode.Receive)
             {
                 _logger.LogInformation("Configuring Rover mode - TMODE3 disabled, RTCM3 reception on UART1");
 

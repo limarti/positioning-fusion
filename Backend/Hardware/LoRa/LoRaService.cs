@@ -1,4 +1,5 @@
 using System.IO.Ports;
+using Backend.Configuration;
 
 namespace Backend.Hardware.LoRa;
 
@@ -8,6 +9,7 @@ public class LoRaService : BackgroundService
     private const int LORA_BAUD_RATE = 57600;
 
     private readonly ILogger<LoRaService> _logger;
+    private readonly GeoConfigurationManager _configurationManager;
     private SerialPort? _loraPort;
     private long _loraBytesSent = 0;
     private long _loraBytesReceived = 0;
@@ -17,9 +19,10 @@ public class LoRaService : BackgroundService
 
     public event EventHandler<byte[]>? DataReceived;
 
-    public LoRaService(ILogger<LoRaService> logger)
+    public LoRaService(ILogger<LoRaService> logger, GeoConfigurationManager configurationManager)
     {
         _logger = logger;
+        _configurationManager = configurationManager;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -36,7 +39,7 @@ public class LoRaService : BackgroundService
                 var now = DateTime.UtcNow;
                 
                 // In Receive mode, try to initialize LoRa port every 5 seconds if not connected
-                if (Backend.Configuration.SystemConfiguration.CorrectionsOperation == Backend.Configuration.SystemConfiguration.CorrectionsMode.Receive)
+                if (_configurationManager.OperatingMode == OperatingMode.Receive)
                 {
                     if ((_loraPort == null || !_loraPort.IsOpen) && (now - lastInitAttempt).TotalSeconds >= 5)
                     {

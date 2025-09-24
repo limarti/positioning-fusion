@@ -11,6 +11,7 @@ public class SystemMonitoringService : BackgroundService
 {
     private readonly IHubContext<DataHub> _hubContext;
     private readonly ILogger<SystemMonitoringService> _logger;
+    private readonly GeoConfigurationManager _configurationManager;
 
     // Track previous totals for /proc/stat deltas
     private long _prevIdleAll = 0;   // idle + iowait
@@ -27,10 +28,11 @@ public class SystemMonitoringService : BackgroundService
     private const int POWER_LOSS_DETECT_PIN = 6;
     private GpioController? _gpioController;
 
-    public SystemMonitoringService(IHubContext<DataHub> hubContext, ILogger<SystemMonitoringService> logger)
+    public SystemMonitoringService(IHubContext<DataHub> hubContext, ILogger<SystemMonitoringService> logger, GeoConfigurationManager configurationManager)
     {
         _hubContext = hubContext;
         _logger = logger;
+        _configurationManager = configurationManager;
         InitializeI2c();
         InitializeGpio();
     }
@@ -114,7 +116,7 @@ public class SystemMonitoringService : BackgroundService
                 // Send corrections status update
                 await _hubContext.Clients.All.SendAsync("CorrectionsStatusUpdate", new CorrectionsStatusUpdate
                 {
-                    Mode = SystemConfiguration.CorrectionsOperation.ToString()
+                    Mode = _configurationManager.OperatingMode.ToString()
                 }, stoppingToken);
 
                 _logger.LogDebug("System health update sent: CPU={CpuUsage:F1}%, Memory={MemoryUsage:F1}%, Temp={Temperature:F1}°C, Battery={BatteryLevel:F1}%, Voltage={BatteryVoltage:F2}V, ExternalPower={IsExternalPowerConnected}",

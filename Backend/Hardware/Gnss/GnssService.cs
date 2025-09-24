@@ -18,6 +18,7 @@ public class GnssService : BackgroundService
     private readonly DataFileWriter _dataFileWriter;
     private readonly BluetoothStreamingService _bluetoothService;
     private LoRaService? _loraService;
+    private readonly GeoConfigurationManager _configurationManager;
     private readonly GnssFrameParser _frameParser;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
@@ -39,11 +40,12 @@ public class GnssService : BackgroundService
     private DateTime _lastBluetoothSend = DateTime.UtcNow;
     
     
-    public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory, IServiceProvider serviceProvider)
+    public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, GeoConfigurationManager configurationManager)
     {
         _hubContext = hubContext;
         _logger = logger;
         _gnssInitializer = gnssInitializer;
+        _configurationManager = configurationManager;
         _dataFileWriter = new DataFileWriter("GNSS.raw", loggerFactory.CreateLogger<DataFileWriter>());
         _bluetoothService = new BluetoothStreamingService(loggerFactory.CreateLogger<BluetoothStreamingService>());
         _frameParser = new GnssFrameParser(loggerFactory.CreateLogger<GnssFrameParser>());
@@ -52,7 +54,7 @@ public class GnssService : BackgroundService
         _loraService = serviceProvider.GetService<LoRaService>();
 
         // Subscribe to LoRa data events if in Receive mode
-        if (SystemConfiguration.CorrectionsOperation == SystemConfiguration.CorrectionsMode.Receive && _loraService != null)
+        if (_configurationManager.OperatingMode == OperatingMode.Receive && _loraService != null)
         {
             _loraService.DataReceived += OnLoRaDataReceived;
             _logger.LogInformation("📡 Subscribed to LoRa data events for RTCM forwarding to GNSS");

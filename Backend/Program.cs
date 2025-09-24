@@ -50,6 +50,9 @@ builder.Services.AddSwaggerGen();
 // Add SignalR
 builder.Services.AddSignalR();
 
+// Add configuration manager
+builder.Services.AddSingleton<GeoConfigurationManager>();
+
 // Add background services
 builder.Services.AddHostedService<SystemMonitoringService>();
 
@@ -88,10 +91,11 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Load existing operating mode
-var existingRtkMode = SystemConfiguration.LoadRtkMode();
+// Get configuration manager and load existing operating mode
+var configManager = app.Services.GetRequiredService<GeoConfigurationManager>();
+var existingRtkMode = configManager.OperatingMode;
 
-SystemConfiguration.CorrectionsMode operatingMode;
+OperatingMode operatingMode;
 
 // Check if running interactively (has console input available)
 bool isInteractive = Environment.UserInteractive && !Console.IsInputRedirected;
@@ -106,10 +110,7 @@ if (isInteractive)
     Console.WriteLine("(B) Base Station Mode");
     Console.WriteLine("(R) Rover Mode");
     Console.WriteLine("(D) Disabled");
-    if (existingRtkMode.HasValue)
-    {
-        Console.WriteLine($"Current mode: {existingRtkMode.Value}");
-    }
+    Console.WriteLine($"Current mode: {existingRtkMode}");
     Console.Write("Press B, R, or D: ");
 
     inputTask = Task.Run(() =>
@@ -137,32 +138,30 @@ if (isInteractive && inputTask != null)
     if (!inputTask.IsCompleted)
     {
         // Timeout occurred - use existing mode if available, otherwise default to Disabled
-        operatingMode = existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled;
+        operatingMode = existingRtkMode;
         Console.WriteLine($"\rTimeout reached. Using {operatingMode} mode.              ");
     }
     else
     {
         operatingMode = userInput?.ToString().ToUpper() switch
         {
-            "B" => SystemConfiguration.CorrectionsMode.Send,
-            "R" => SystemConfiguration.CorrectionsMode.Receive,
-            "D" => SystemConfiguration.CorrectionsMode.Disabled,
-            _ => existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled
+            "B" => OperatingMode.Send,
+            "R" => OperatingMode.Receive,
+            "D" => OperatingMode.Disabled,
+            _ => existingRtkMode
         };
     }
 }
 else
 {
     // Not running interactively (service mode) - use existing configuration or default
-    operatingMode = existingRtkMode ?? SystemConfiguration.CorrectionsMode.Disabled;
+    operatingMode = existingRtkMode;
     Console.WriteLine($"Running in service mode. Using {operatingMode} mode from configuration.");
 }
 
 // Save the selected operating mode
-SystemConfiguration.SaveOperatingMode(operatingMode);
-
-// Update the corrections operation
-SystemConfiguration.CorrectionsOperation = operatingMode;
+configManager.OperatingMode = operatingMode;
+configManager.SaveConfiguration();
 
 Console.WriteLine($"Operating mode selected: {operatingMode}");
 Console.WriteLine();
