@@ -300,17 +300,27 @@ public class GnssService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested && processed < maxMessagesPerLoop)
         {
+            // Check if buffer is empty before trying to parse
+            lock (_dataBufferLock)
+            {
+                if (_dataBuffer.Count == 0)
+                {
+                    _logger.LogDebug("📭 ProcessBufferedDataAsync: Buffer became empty during processing");
+                    break;
+                }
+            }
+
             // Try to locate earliest valid frame among UBX / RTCM3 / NMEA
             bool frameFound;
             FrameKind kind;
             int start, totalLen, partialNeeded;
-            
+
             lock (_dataBufferLock)
             {
                 frameFound = _frameParser.TryFindNextFrame(_dataBuffer, out kind, out start, out totalLen, out partialNeeded);
                 
-                // Only log when no frames found and no partial frames (potential garbage)
-                if (!frameFound && partialNeeded == 0)
+                // Only log when no frames found and no partial frames AND we actually have data (potential garbage)
+                if (!frameFound && partialNeeded == 0 && _dataBuffer.Count > 0)
                 {
                     // Show first few bytes for debugging garbage data
                     var debugBytes = Math.Min(_dataBuffer.Count, 8);
