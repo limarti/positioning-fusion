@@ -177,16 +177,15 @@ if (!Directory.Exists(frontendPath))
     logger.LogInformation("Created frontend directory at: {FrontendPath}", frontendPath);
 }
 
-// Enable default files from custom path
-app.UseDefaultFiles(new DefaultFilesOptions
-{
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendPath)
-});
+// Enable default files and static files from custom path
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
-// Serve static files from custom frontend directory
+// Add custom static file middleware for frontend path
 app.UseStaticFiles(new StaticFileOptions
 {
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendPath)
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(frontendPath),
+    RequestPath = ""
 });
 
 // Disable HTTPS redirection for development
@@ -212,6 +211,27 @@ app.MapGet("/weatherforecast", () =>
 .WithName("GetWeatherForecast")
 .WithOpenApi();
 
+
+// Map route for root to serve index.html from custom path
+app.MapGet("/", async (HttpContext context, ILogger<Program> logger) =>
+{
+    var indexPath = Path.Combine(frontendPath, "index.html");
+    logger.LogInformation("Attempting to serve index.html from: {IndexPath}", indexPath);
+    logger.LogInformation("File exists: {FileExists}", File.Exists(indexPath));
+
+    if (File.Exists(indexPath))
+    {
+        context.Response.ContentType = "text/html";
+        await context.Response.SendFileAsync(indexPath);
+        logger.LogInformation("Successfully served index.html");
+    }
+    else
+    {
+        context.Response.StatusCode = 404;
+        await context.Response.WriteAsync($"index.html not found at: {indexPath}");
+        logger.LogWarning("index.html not found at: {IndexPath}", indexPath);
+    }
+});
 
 // Map SignalR hub
 app.MapHub<DataHub>("/datahub");
