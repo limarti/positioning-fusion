@@ -48,7 +48,7 @@ const selectSection = (sectionId) => {
       <button
         @click="selectSection('gnss')"
         :class="[
-          'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+          'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
           activeSection === 'gnss'
             ? 'bg-blue-600 text-white shadow-lg'
             : 'text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -64,7 +64,7 @@ const selectSection = (sectionId) => {
       <button
         @click="selectSection('camera')"
         :class="[
-          'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+          'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
           activeSection === 'camera'
             ? 'bg-blue-600 text-white shadow-lg'
             : 'text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -80,7 +80,7 @@ const selectSection = (sectionId) => {
       <button
         @click="selectSection('imu')"
         :class="[
-          'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+          'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
           activeSection === 'imu'
             ? 'bg-blue-600 text-white shadow-lg'
             : 'text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -96,7 +96,7 @@ const selectSection = (sectionId) => {
       <button
         @click="selectSection('encoder')"
         :class="[
-          'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+          'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
           activeSection === 'encoder'
             ? 'bg-blue-600 text-white shadow-lg'
             : 'text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -112,7 +112,7 @@ const selectSection = (sectionId) => {
       <button
         @click="selectSection('wifi')"
         :class="[
-          'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+          'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
           activeSection === 'wifi'
             ? 'bg-blue-600 text-white shadow-lg'
             : 'text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -128,7 +128,7 @@ const selectSection = (sectionId) => {
       <button
         @click="selectSection('logging')"
         :class="[
-          'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+          'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
           activeSection === 'logging'
             ? 'bg-blue-600 text-white shadow-lg'
             : 'text-slate-300 hover:bg-slate-700 hover:text-white'
@@ -144,7 +144,7 @@ const selectSection = (sectionId) => {
       <button
         @click="selectSection('system')"
         :class="[
-          'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+          'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
           activeSection === 'system'
             ? 'bg-blue-600 text-white shadow-lg'
             : 'text-slate-300 hover:bg-slate-700 hover:text-white'
