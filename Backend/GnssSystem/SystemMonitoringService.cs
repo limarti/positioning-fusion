@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using System.Globalization;
 using System.Device.I2c;
 using System.Device.Gpio;
+using System.Diagnostics;
 
 namespace Backend.GnssSystem;
 
@@ -103,6 +104,8 @@ public class SystemMonitoringService : BackgroundService
             {
                 var systemHealth = await GatherSystemHealth();
 
+                var currentHostname = await GetCurrentHostnameAsync();
+
                 await _hubContext.Clients.All.SendAsync("SystemHealthUpdate", new SystemHealthUpdate
                 {
                     CpuUsage = systemHealth.CpuUsage,
@@ -110,7 +113,8 @@ public class SystemMonitoringService : BackgroundService
                     Temperature = systemHealth.Temperature,
                     BatteryLevel = systemHealth.BatteryLevel,
                     BatteryVoltage = systemHealth.BatteryVoltage,
-                    IsExternalPowerConnected = systemHealth.IsExternalPowerConnected
+                    IsExternalPowerConnected = systemHealth.IsExternalPowerConnected,
+                    Hostname = currentHostname
                 }, stoppingToken);
 
                 // Send corrections status update
@@ -375,6 +379,207 @@ public class SystemMonitoringService : BackgroundService
         }
         
         //_logger.LogInformation("Power Detection Diagnostics: {Diagnostics}", string.Join(" | ", diagnostics));
+    }
+
+    /// <summary>
+    /// Updates the system hostname by modifying /etc/hostname and /etc/hosts
+    /// </summary>
+    public async Task<HostnameUpdateResponse> UpdateHostnameAsync(string newHostname)
+    {
+        try
+        {
+            // Validate hostname format (basic validation)
+            if (string.IsNullOrWhiteSpace(newHostname) ||
+                newHostname.Length > 63 ||
+                !newHostname.All(c => char.IsLetterOrDigit(c) || c == '-') ||
+                newHostname.StartsWith('-') || newHostname.EndsWith('-'))
+            {
+                return new HostnameUpdateResponse
+                {
+                    Success = false,
+                    Message = "Invalid hostname format. Hostname must be 1-63 characters, contain only letters, digits, and hyphens, and not start or end with a hyphen.",
+                    CurrentHostname = await GetCurrentHostnameAsync()
+                };
+            }
+
+            var currentHostname = await GetCurrentHostnameAsync();
+
+            // Update /etc/hostname
+            await File.WriteAllTextAsync("/etc/hostname", newHostname + "\n");
+            _logger.LogInformation("Updated /etc/hostname to: {NewHostname}", newHostname);
+
+            // Update /etc/hosts - replace old hostname with new one
+            var hostsContent = await File.ReadAllTextAsync("/etc/hosts");
+            var hostsLines = hostsContent.Split('\n');
+
+            for (int i = 0; i < hostsLines.Length; i++)
+            {
+                var line = hostsLines[i].Trim();
+                if (line.StartsWith("127.0.0.1") || line.StartsWith("127.0.1.1"))
+                {
+                    // Replace the hostname in the line
+                    var parts = line.Split('\t', ' ');
+                    if (parts.Length >= 2)
+                    {
+                        // Reconstruct line with new hostname, preserving IP and any additional entries
+                        var ip = parts[0];
+                        var otherEntries = parts.Skip(2).Where(p => !string.IsNullOrWhiteSpace(p) && p != currentHostname);
+                        hostsLines[i] = $"{ip}\t{newHostname}" + (otherEntries.Any() ? $"\t{string.Join("\t", otherEntries)}" : "");
+                    }
+                }
+            }
+
+            await File.WriteAllTextAsync("/etc/hosts", string.Join("\n", hostsLines));
+            _logger.LogInformation("Updated /etc/hosts to replace {OldHostname} with {NewHostname}", currentHostname, newHostname);
+
+            // Apply hostname change immediately using hostnamectl
+            var immediateSuccess = await ApplyHostnameImmediately(newHostname);
+
+            return new HostnameUpdateResponse
+            {
+                Success = true,
+                Message = immediateSuccess
+                    ? $"Hostname successfully updated from '{currentHostname}' to '{newHostname}' and applied immediately."
+                    : $"Hostname files updated from '{currentHostname}' to '{newHostname}'. Changes will take effect after reboot (immediate application failed).",
+                CurrentHostname = newHostname
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update hostname to {NewHostname}", newHostname);
+            return new HostnameUpdateResponse
+            {
+                Success = false,
+                Message = $"Failed to update hostname: {ex.Message}",
+                CurrentHostname = await GetCurrentHostnameAsync()
+            };
+        }
+    }
+
+    /// <summary>
+    /// Applies hostname change immediately using hostnamectl command and restarts network services
+    /// </summary>
+    private async Task<bool> ApplyHostnameImmediately(string newHostname)
+    {
+        try
+        {
+            _logger.LogInformation("Attempting to apply hostname '{NewHostname}' immediately using hostnamectl", newHostname);
+
+            // Step 1: Set hostname using hostnamectl
+            var hostnameSuccess = await ExecuteCommand("hostnamectl", $"set-hostname {newHostname}");
+            if (!hostnameSuccess)
+            {
+                _logger.LogWarning("hostnamectl failed, hostname change may not be fully applied");
+                return false;
+            }
+
+            _logger.LogInformation("Successfully applied hostname '{NewHostname}' with hostnamectl", newHostname);
+
+            // Step 2: Restart Avahi daemon for mDNS updates (critical for .local domain resolution)
+            var avahiSuccess = await ExecuteCommand("systemctl", "restart avahi-daemon");
+            if (avahiSuccess)
+            {
+                _logger.LogInformation("Successfully restarted Avahi daemon for mDNS updates");
+            }
+            else
+            {
+                _logger.LogWarning("Failed to restart Avahi daemon - .local domain resolution may be affected");
+            }
+
+            // Step 3: Restart systemd-resolved if available (helps with DNS resolution)
+            var resolvedSuccess = await ExecuteCommand("systemctl", "restart systemd-resolved");
+            if (resolvedSuccess)
+            {
+                _logger.LogInformation("Successfully restarted systemd-resolved");
+            }
+            else
+            {
+                _logger.LogDebug("systemd-resolved restart failed or not available (this is okay on some systems)");
+            }
+
+            // Small delay to allow services to fully restart
+            await Task.Delay(2000);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception while applying hostname '{NewHostname}' immediately", newHostname);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Executes a shell command and returns success status
+    /// </summary>
+    private async Task<bool> ExecuteCommand(string fileName, string arguments)
+    {
+        try
+        {
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(processStartInfo);
+            if (process == null)
+            {
+                _logger.LogWarning("Failed to start process: {FileName} {Arguments}", fileName, arguments);
+                return false;
+            }
+
+            await process.WaitForExitAsync();
+
+            var stdout = await process.StandardOutput.ReadToEndAsync();
+            var stderr = await process.StandardError.ReadToEndAsync();
+
+            if (process.ExitCode == 0)
+            {
+                _logger.LogDebug("Command succeeded: {FileName} {Arguments}", fileName, arguments);
+                return true;
+            }
+            else
+            {
+                _logger.LogWarning("Command failed: {FileName} {Arguments} - Exit code: {ExitCode}, Stderr: {Stderr}",
+                    fileName, arguments, process.ExitCode, stderr);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception executing command: {FileName} {Arguments}", fileName, arguments);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Gets the current system hostname
+    /// </summary>
+    public async Task<string> GetCurrentHostnameAsync()
+    {
+        try
+        {
+            var hostname = await File.ReadAllTextAsync("/etc/hostname");
+            return hostname.Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read current hostname from /etc/hostname");
+            try
+            {
+                // Fallback to system hostname
+                return Environment.MachineName;
+            }
+            catch
+            {
+                return "unknown";
+            }
+        }
     }
 
     public override void Dispose()

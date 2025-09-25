@@ -64,7 +64,8 @@ builder.Services.AddSingleton<ModeManagementService>();
 builder.Services.AddHostedService<ModeManagementService>(provider => provider.GetRequiredService<ModeManagementService>());
 
 // Add background services
-builder.Services.AddHostedService<SystemMonitoringService>();
+builder.Services.AddSingleton<SystemMonitoringService>();
+builder.Services.AddHostedService<SystemMonitoringService>(provider => provider.GetRequiredService<SystemMonitoringService>());
 
 // Add IMU services
 builder.Services.AddSingleton<ImuInitializer>();
@@ -206,6 +207,7 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast")
 .WithOpenApi();
+
 
 // Map SignalR hub
 app.MapHub<DataHub>("/datahub");

@@ -14,12 +14,14 @@ public class DataHub : Hub
 {
     private readonly ModeManagementService _modeManagementService;
     private readonly WiFiService _wifiService;
+    private readonly SystemMonitoringService _systemMonitoringService;
     private readonly ILogger<DataHub> _logger;
 
-    public DataHub(ModeManagementService modeManagementService, WiFiService wifiService, ILogger<DataHub> logger)
+    public DataHub(ModeManagementService modeManagementService, WiFiService wifiService, SystemMonitoringService systemMonitoringService, ILogger<DataHub> logger)
     {
         _modeManagementService = modeManagementService;
         _wifiService = wifiService;
+        _systemMonitoringService = systemMonitoringService;
         _logger = logger;
     }
     public async Task SendImuUpdate(ImuData imuData)
@@ -236,6 +238,64 @@ public class DataHub : Hub
         {
             _logger.LogError(ex, "Exception setting WiFi preferred mode to '{Mode}' for client: {ConnectionId}", mode, connectionId);
             return false;
+        }
+    }
+
+    // Hostname management methods
+    public async Task<string> GetCurrentHostname()
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogDebug("GetCurrentHostname called by client: {ConnectionId}", connectionId);
+
+        try
+        {
+            var hostname = await _systemMonitoringService.GetCurrentHostnameAsync();
+            _logger.LogDebug("Returning current hostname '{Hostname}' to client: {ConnectionId}", hostname, connectionId);
+            return hostname;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception getting current hostname for client: {ConnectionId}", connectionId);
+            return "unknown";
+        }
+    }
+
+    public async Task<HostnameUpdateResponse> UpdateHostname(string newHostname)
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogInformation("UpdateHostname called with hostname '{Hostname}' by client: {ConnectionId}", newHostname, connectionId);
+
+        try
+        {
+            var result = await _systemMonitoringService.UpdateHostnameAsync(newHostname);
+
+            if (result.Success)
+            {
+                // Broadcast hostname update to all clients
+                await Clients.All.SendAsync("HostnameUpdated", new {
+                    hostname = result.CurrentHostname,
+                    message = result.Message
+                });
+
+                _logger.LogInformation("Hostname update to '{Hostname}' succeeded for client: {ConnectionId}", newHostname, connectionId);
+            }
+            else
+            {
+                _logger.LogWarning("Hostname update to '{Hostname}' failed for client: {ConnectionId}. Error: {Error}",
+                    newHostname, connectionId, result.Message);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception updating hostname to '{Hostname}' for client: {ConnectionId}", newHostname, connectionId);
+            return new HostnameUpdateResponse
+            {
+                Success = false,
+                Message = $"An error occurred while updating hostname: {ex.Message}",
+                CurrentHostname = await _systemMonitoringService.GetCurrentHostnameAsync()
+            };
         }
     }
 }

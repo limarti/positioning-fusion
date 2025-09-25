@@ -454,7 +454,17 @@ public class CameraService : BackgroundService, IDisposable
     {
         if (_frameBuffer.Count == 0 || _currentMkvProcess == null)
             return;
-            
+
+        // Check if the process has exited before attempting to write
+        if (_currentMkvProcess.HasExited)
+        {
+            _logger.LogWarning("Cannot flush frames - MKV process has exited (exit code: {ExitCode}). Clearing {FrameCount} buffered frames.",
+                _currentMkvProcess.ExitCode, _frameBuffer.Count);
+            _frameBuffer.Clear();
+            await StopMkvProcess(); // Clean up the dead process
+            return;
+        }
+
         try
         {
             // Write all buffered frames to FFmpeg stdin for MKV creation
@@ -464,13 +474,20 @@ public class CameraService : BackgroundService, IDisposable
                 await stdin.WriteAsync(frameData);
             }
             await stdin.FlushAsync();
-            
+
             _logger.LogDebug("Flushed {FrameCount} frames to MKV process", _frameBuffer.Count);
             _frameBuffer.Clear();
+        }
+        catch (System.IO.IOException ex) when (ex.Message.Contains("Pipe is broken") || ex.Message.Contains("pipe"))
+        {
+            _logger.LogWarning("MKV process pipe is broken - process likely died unexpectedly. Clearing {FrameCount} buffered frames.", _frameBuffer.Count);
+            _frameBuffer.Clear();
+            await StopMkvProcess(); // Clean up the dead process
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error writing frames to MKV process");
+            _frameBuffer.Clear(); // Clear buffer to prevent repeated errors
         }
     }
     

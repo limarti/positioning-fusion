@@ -118,7 +118,8 @@ const systemHealth = ref({
   temperature: null,
   batteryLevel: null,
   batteryVoltage: null,
-  isExternalPowerConnected: false
+  isExternalPowerConnected: false,
+  hostname: null
 })
 
 const powerStatus = ref({
@@ -309,7 +310,8 @@ onMounted(async () => {
     systemHealth.value.batteryLevel = data.batteryLevel
     systemHealth.value.batteryVoltage = data.batteryVoltage
     systemHealth.value.isExternalPowerConnected = data.isExternalPowerConnected
-    
+    systemHealth.value.hostname = data.hostname
+
     // Update powerStatus with battery data for the SystemPanel
     powerStatus.value.batteryLevel = data.batteryLevel
     powerStatus.value.batteryVoltage = data.batteryVoltage
@@ -465,6 +467,14 @@ onMounted(async () => {
     console.log(`SignalR ModeChanged event received:`, data)
     console.log(`Setting current mode from ${currentMode.value} to: ${data.Mode}`)
     currentMode.value = data.Mode
+  })
+
+  connection.on("HostnameUpdated", (data) => {
+    console.log(`Hostname updated to: ${data.hostname}`)
+    systemHealth.value.hostname = data.hostname
+
+    // Optional: Show a toast or notification
+    console.log(`Hostname update message: ${data.message}`)
   })
 
   // Set the connection ref for child components immediately
