@@ -8,6 +8,7 @@ using Backend.Storage;
 using Backend.GnssSystem;
 using Backend.Configuration;
 using Backend.Services;
+using Backend.WiFi;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
 using Serilog;
@@ -81,6 +82,10 @@ builder.Services.AddHostedService<LoRaService>(provider => provider.GetRequiredS
 
 // Add file logging status service
 builder.Services.AddHostedService<FileLoggingStatusService>();
+
+// Add WiFi services
+builder.Services.AddSingleton<WiFiService>();
+builder.Services.AddHostedService<WiFiService>(provider => provider.GetRequiredService<WiFiService>());
 
 // Add CORS for frontend
 builder.Services.AddCors(options =>

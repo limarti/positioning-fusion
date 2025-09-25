@@ -6,17 +6,20 @@ using Backend.GnssSystem;
 using Backend.Storage;
 using Backend.Configuration;
 using Backend.Services;
+using Backend.WiFi;
 
 namespace Backend.Hubs;
 
 public class DataHub : Hub
 {
     private readonly ModeManagementService _modeManagementService;
+    private readonly WiFiService _wifiService;
     private readonly ILogger<DataHub> _logger;
 
-    public DataHub(ModeManagementService modeManagementService, ILogger<DataHub> logger)
+    public DataHub(ModeManagementService modeManagementService, WiFiService wifiService, ILogger<DataHub> logger)
     {
         _modeManagementService = modeManagementService;
+        _wifiService = wifiService;
         _logger = logger;
     }
     public async Task SendImuUpdate(ImuData imuData)
@@ -91,5 +94,148 @@ public class DataHub : Hub
         }
 
         return success;
+    }
+
+    // WiFi Hub Methods
+    public async Task<bool> ConnectToWiFi(string ssid, string password)
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogInformation("ConnectToWiFi called for SSID '{SSID}' by client: {ConnectionId}", ssid, connectionId);
+
+        try
+        {
+            var success = await _wifiService.ConnectToNetwork(ssid, password, true);
+            _logger.LogInformation("WiFi connection to '{SSID}' {Result} for client: {ConnectionId}", 
+                ssid, success ? "succeeded" : "failed", connectionId);
+            return success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception during WiFi connection to '{SSID}' for client: {ConnectionId}", ssid, connectionId);
+            return false;
+        }
+    }
+
+    public async Task<bool> SetAPConfiguration(string ssid, string password)
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogInformation("SetAPConfiguration called for SSID '{SSID}' by client: {ConnectionId}", ssid, connectionId);
+
+        try
+        {
+            var success = await _wifiService.ConfigureAPMode(ssid, password);
+            _logger.LogInformation("AP configuration {Result} for client: {ConnectionId}", 
+                success ? "succeeded" : "failed", connectionId);
+            return success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception during AP configuration for client: {ConnectionId}", connectionId);
+            return false;
+        }
+    }
+
+    public async Task<WiFiStatusUpdate> GetWiFiStatus()
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogDebug("GetWiFiStatus called by client: {ConnectionId}", connectionId);
+
+        try
+        {
+            var status = await _wifiService.GetWiFiStatus();
+            _logger.LogDebug("Returning WiFi status (Mode: {Mode}, Connected: {Connected}) to client: {ConnectionId}", 
+                status.CurrentMode, status.IsConnected, connectionId);
+            return status;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception getting WiFi status for client: {ConnectionId}", connectionId);
+            return new WiFiStatusUpdate
+            {
+                CurrentMode = WiFiMode.Disconnected,
+                IsConnected = false,
+                LastUpdated = DateTime.Now
+            };
+        }
+    }
+
+    public async Task<List<KnownWiFiNetwork>> GetKnownNetworks()
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogDebug("GetKnownNetworks called by client: {ConnectionId}", connectionId);
+
+        try
+        {
+            var networks = await _wifiService.GetKnownNetworks();
+            _logger.LogDebug("Returning {Count} known networks to client: {ConnectionId}", 
+                networks.Count, connectionId);
+            return networks;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception getting known networks for client: {ConnectionId}", connectionId);
+            return new List<KnownWiFiNetwork>();
+        }
+    }
+
+    public async Task<bool> RemoveKnownNetwork(string ssid)
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogInformation("RemoveKnownNetwork called for SSID '{SSID}' by client: {ConnectionId}", ssid, connectionId);
+
+        try
+        {
+            await _wifiService.RemoveKnownNetwork(ssid);
+            _logger.LogInformation("Known network '{SSID}' removed by client: {ConnectionId}", ssid, connectionId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception removing known network '{SSID}' for client: {ConnectionId}", ssid, connectionId);
+            return false;
+        }
+    }
+
+    public string GetWiFiPreferredMode()
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogDebug("GetWiFiPreferredMode called by client: {ConnectionId}", connectionId);
+
+        try
+        {
+            var preferredMode = _wifiService.GetPreferredMode();
+            _logger.LogDebug("Returning WiFi preferred mode '{Mode}' to client: {ConnectionId}", preferredMode, connectionId);
+            return preferredMode.ToString();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception getting WiFi preferred mode for client: {ConnectionId}", connectionId);
+            return WiFiMode.Client.ToString();
+        }
+    }
+
+    public async Task<bool> SetWiFiPreferredMode(string mode)
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogInformation("SetWiFiPreferredMode called with mode '{Mode}' by client: {ConnectionId}", mode, connectionId);
+
+        try
+        {
+            if (!Enum.TryParse<WiFiMode>(mode, true, out var wifiMode))
+            {
+                _logger.LogWarning("Invalid WiFi mode '{Mode}' provided by client: {ConnectionId}", mode, connectionId);
+                return false;
+            }
+
+            var success = await _wifiService.SetPreferredMode(wifiMode);
+            _logger.LogInformation("WiFi preferred mode change to '{Mode}' {Result} for client: {ConnectionId}",
+                wifiMode, success ? "succeeded" : "failed", connectionId);
+            return success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception setting WiFi preferred mode to '{Mode}' for client: {ConnectionId}", mode, connectionId);
+            return false;
+        }
     }
 }

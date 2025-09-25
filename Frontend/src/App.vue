@@ -9,6 +9,7 @@ import SystemPanel from './components/SystemPanel.vue'
 import FileLoggingPanel from './components/FileLoggingPanel.vue'
 import ConnectionOverlay from './components/ConnectionOverlay.vue'
 import ModeSelectionPanel from './components/ModeSelectionPanel.vue'
+import WiFiPanel from './components/WiFiPanel.vue'
 
 // SignalR connection
 let connection = null
@@ -561,6 +562,11 @@ onUnmounted(async () => {
         <!-- Mode Selection Panel -->
         <div class="break-inside-avoid mb-6">
           <ModeSelectionPanel :currentMode="currentMode" @modeChanged="handleModeChanged" />
+        </div>
+
+        <!-- WiFi Panel -->
+        <div class="break-inside-avoid mb-6">
+          <WiFiPanel />
         </div>
 
         <!-- IMU Panel -->

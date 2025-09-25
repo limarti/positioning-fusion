@@ -50,8 +50,8 @@ public class ModeManagementService : BackgroundService
             _logger.LogDebug("Updating configuration manager with new mode: {NewMode}", newMode);
             _configManager.OperatingMode = newMode;
 
-            _logger.LogDebug("Saving configuration to disk");
-            _configManager.SaveConfiguration();
+            _logger.LogDebug("Saving operating mode configuration to disk");
+            _configManager.SaveOperatingMode();
 
             _logger.LogInformation("Operating mode successfully changed from {OldMode} to {NewMode}", oldMode, newMode);
 

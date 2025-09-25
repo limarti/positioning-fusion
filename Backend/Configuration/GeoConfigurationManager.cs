@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Backend.WiFi;
 
 namespace Backend.Configuration;
 
@@ -51,23 +52,54 @@ public class GeoConfigurationManager
         }
     }
 
-    public void SaveConfiguration()
+    public WiFiConfiguration WiFiConfiguration
+    {
+        get => _configuration.WiFiConfiguration;
+        set
+        {
+            _logger?.LogDebug("WiFi configuration being updated");
+            _configuration.WiFiConfiguration = value;
+            _logger?.LogInformation("WiFi configuration updated");
+        }
+    }
+
+    public void SaveOperatingMode()
     {
         try
         {
-            _logger?.LogDebug("Serializing configuration to JSON");
-            var json = JsonSerializer.Serialize(_configuration, new JsonSerializerOptions { WriteIndented = true });
-
-            _logger?.LogDebug("Writing configuration to file: {ConfigPath}", _configFilePath);
-            File.WriteAllText(_configFilePath, json);
-
-            _logger?.LogInformation("Configuration saved successfully with mode: {Mode}", _configuration.OperatingMode);
+            _logger?.LogInformation("Saving operating mode: {Mode}", _configuration.OperatingMode);
+            SaveConfigurationInternal();
+            _logger?.LogInformation("Operating mode saved successfully: {Mode}", _configuration.OperatingMode);
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to save configuration to {ConfigPath}", _configFilePath);
+            _logger?.LogError(ex, "Failed to save operating mode configuration");
             throw;
         }
+    }
+
+    public void SaveWiFiConfiguration()
+    {
+        try
+        {
+            _logger?.LogInformation("Saving WiFi configuration with preferred mode: {PreferredMode}", _configuration.WiFiConfiguration.PreferredMode);
+            SaveConfigurationInternal();
+            _logger?.LogInformation("WiFi configuration saved successfully with preferred mode: {PreferredMode}", _configuration.WiFiConfiguration.PreferredMode);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to save WiFi configuration");
+            throw;
+        }
+    }
+
+    private void SaveConfigurationInternal()
+    {
+        _logger?.LogDebug("Serializing configuration to JSON");
+        var json = JsonSerializer.Serialize(_configuration, new JsonSerializerOptions { WriteIndented = true });
+
+        _logger?.LogDebug("Writing configuration to file: {ConfigPath}", _configFilePath);
+        File.WriteAllText(_configFilePath, json);
     }
 
     private AppConfiguration LoadConfiguration()
@@ -109,5 +141,29 @@ public class GeoConfigurationManager
     private class AppConfiguration
     {
         public OperatingMode OperatingMode { get; set; } = OperatingMode.Disabled;
+        public WiFiConfiguration WiFiConfiguration { get; set; } = new();
     }
+}
+
+public class WiFiConfiguration
+{
+    public WiFiAPSettings APSettings { get; set; } = new();
+    public List<StoredWiFiNetwork> KnownNetworks { get; set; } = new();
+    public WiFiMode PreferredMode { get; set; } = WiFiMode.Client;
+}
+
+public class WiFiAPSettings
+{
+    public string SSID { get; set; } = "Subterra-AP";
+    public string Password { get; set; } = "subterra";
+    public string IPAddress { get; set; } = "10.200.1.1";
+    public string Subnet { get; set; } = "24";
+}
+
+public class StoredWiFiNetwork
+{
+    public string SSID { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public DateTime LastConnected { get; set; }
+    public bool AutoConnect { get; set; } = true;
 }

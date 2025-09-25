@@ -97,3 +97,4 @@ dotnet run --project Backend --launch-profile http
 ### CORS Configuration
 - Configured to allow any origin with credentials for frontend communication
 - SignalR hub enables real-time bidirectional communication
+- Never use fallbacks for values that are supposed to be populated. show errors, throw expections, etc
