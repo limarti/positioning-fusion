@@ -274,9 +274,16 @@ const scheduleRetry = () => {
 
 // SignalR connection setup
 onMounted(async () => {
+  // Dynamic URL resolution based on environment
+  const hubUrl = import.meta.env.DEV
+    ? "http://rover.local/datahub"  // Development mode: use hardcoded localhost
+    : `${window.location.protocol}//${window.location.hostname}/datahub`  // Production: use same host as frontend
+
+  console.log(`Environment: ${import.meta.env.DEV ? 'Development' : 'Production'}`)
+  console.log(`SignalR Hub URL: ${hubUrl}`)
+
   connection = new HubConnectionBuilder()
-    //.withUrl("http://localhost:5312/datahub")
-    .withUrl("http://rover.local/datahub")  // Use this for Raspberry Pi deployment
+    .withUrl(hubUrl)
     // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
 

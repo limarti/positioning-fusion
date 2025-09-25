@@ -164,7 +164,11 @@ else
 app.UseCors("AllowFrontend");
 
 // Configure custom static file path
-var frontendPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "frontend");
+var frontendPath = "/opt/positioning-system/frontend";
+
+logger.LogInformation("Current working directory: {CurrentDir}", Directory.GetCurrentDirectory());
+logger.LogInformation("Configured frontend path: {FrontendPath}", frontendPath);
+logger.LogInformation("Frontend path exists: {Exists}", Directory.Exists(frontendPath));
 
 // Ensure frontend directory exists
 if (!Directory.Exists(frontendPath))
