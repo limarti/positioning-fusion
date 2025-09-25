@@ -35,9 +35,9 @@ const selectSection = (sectionId) => {
   ]">
     <!-- Header -->
     <div class="px-4 border-b border-slate-700 py-4">
-      <div class="flex flex-col items-start space-y-2">
-        <img src="/src/assets/logo.svg" alt="Sierra Logo" class="w-24">
-        <h1 class="text-lg font-semibold">Positioning System</h1>
+      <div class="flex flex-col items-start">
+        <img src="/src/assets/logo.svg" alt="Sierra Logo" class="w-32">
+        <h1 class="text">Positioning System</h1>
       </div>
     </div>
 
