@@ -127,23 +127,31 @@ public class WiFiService : BackgroundService
     public async Task<bool> ConnectToNetwork(string ssid, string password, bool saveToKnown = true)
     {
         _logger.LogInformation("Connecting to WiFi network: {SSID}", ssid);
-        
+
         _isAttemptingConnection = true;
         _lastConnectionAttempt = DateTime.Now;
 
         try
         {
             var result = await ExecuteNmcliCommand($"device wifi connect \"{ssid}\" password \"{password}\"");
-            
+
             if (result.Success)
             {
                 _logger.LogInformation("Successfully connected to {SSID}", ssid);
-                
+
+                // Update preferred mode to Client since user manually connected to a network
+                if (_configManager.WiFiConfiguration.PreferredMode != WiFiMode.Client)
+                {
+                    _logger.LogInformation("Setting preferred mode to Client due to manual network connection");
+                    _configManager.WiFiConfiguration.PreferredMode = WiFiMode.Client;
+                    _configManager.SaveWiFiConfiguration();
+                }
+
                 if (saveToKnown)
                 {
                     await AddToKnownNetworks(ssid, password);
                 }
-                
+
                 _isAttemptingConnection = false;
                 await UpdateWiFiStatus();
                 return true;
