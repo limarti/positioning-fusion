@@ -221,9 +221,9 @@ const cancelHostnameEdit = () => {
         <span class="text-slate-500">Voltage:</span>
         <span class="text-blue-600">{{ powerStatus.batteryVoltage !== null ? powerStatus.batteryVoltage.toFixed(2) + 'V' : '—' }}</span>
       </div>
-      <div v-if="dischargeRate !== null && !powerStatus.isExternalPowerConnected" class="flex justify-between">
-        <span class="text-slate-500">Discharge Rate:</span>
-        <span class="text-red-500">{{ dischargeRate.toFixed(2) }}%/min</span>
+      <div v-if="dischargeRate !== null" class="flex justify-between">
+        <span class="text-slate-500">{{ powerStatus.isExternalPowerConnected ? 'Charging Rate:' : 'Discharge Rate:' }}</span>
+        <span :class="powerStatus.isExternalPowerConnected ? 'text-green-500' : 'text-red-500'">{{ Math.abs(dischargeRate).toFixed(2) }}%/min</span>
       </div>
 
       <div class="flex justify-between">
