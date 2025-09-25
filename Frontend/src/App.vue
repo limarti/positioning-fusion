@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr'
 import GnssPanel from './components/GnssPanel.vue'
 import ImuPanel from './components/ImuPanel.vue'
@@ -8,9 +8,11 @@ import EncoderPanel from './components/EncoderPanel.vue'
 import SystemPanel from './components/SystemPanel.vue'
 import FileLoggingPanel from './components/FileLoggingPanel.vue'
 import ConnectionOverlay from './components/ConnectionOverlay.vue'
+import ModeSelectionPanel from './components/ModeSelectionPanel.vue'
 
 // SignalR connection
 let connection = null
+const signalrConnection = ref(null)
 
 // Connection status tracking
 const connectionStatus = ref('Disconnected')
@@ -166,8 +168,20 @@ const cameraData = ref({
   isConnected: false
 })
 
+const currentMode = ref('Disabled')
+
 // Component refs
 const cameraPanelRef = ref(null)
+
+// Mode change handler
+const handleModeChanged = (newMode) => {
+  console.log(`App.vue handleModeChanged called with: ${newMode}`)
+  console.log(`Updating currentMode from ${currentMode.value} to ${newMode}`)
+  currentMode.value = newMode
+}
+
+// Provide SignalR connection to child components
+provide('signalrConnection', signalrConnection)
 
 // Helper functions (moved to components where needed)
 const getSignalColor = (strength) => {
@@ -248,7 +262,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   connection = new HubConnectionBuilder()
     //.withUrl("http://localhost:5312/datahub")
-      .withUrl("http://rover.local/datahub")
+    .withUrl("http://rover.local/datahub")  // Use this for Raspberry Pi deployment
     // Remove automatic reconnect - we'll handle it ourselves with 5s intervals
     .build()
 
@@ -419,7 +433,7 @@ onMounted(async () => {
     cameraData.value.captureTimeMs = data.captureTimeMs
     cameraData.value.encodingTimeMs = data.encodingTimeMs
     cameraData.value.isConnected = data.isConnected
-    
+
     // Log frame size received
     if (data.isConnected && data.imageSizeBytes > 0) {
       const sizeKb = (data.imageSizeBytes / 1024).toFixed(1)
@@ -427,17 +441,39 @@ onMounted(async () => {
     } else if (!data.isConnected) {
       console.log('Camera disconnected')
     }
-    
+
     // Call the CameraPanel's handler method
     if (cameraPanelRef.value && cameraPanelRef.value.handleCameraUpdate) {
       cameraPanelRef.value.handleCameraUpdate(data)
     }
   })
 
+  connection.on("ModeChanged", (data) => {
+    console.log(`SignalR ModeChanged event received:`, data)
+    console.log(`Setting current mode from ${currentMode.value} to: ${data.Mode}`)
+    currentMode.value = data.Mode
+  })
+
+  // Set the connection ref for child components immediately
+  signalrConnection.value = connection
+  console.log("SignalR connection object set for child components")
+
   try {
     connectionStatus.value = 'Reconnecting'
     await connection.start()
     console.log("SignalR Connected successfully!")
+
+    // Get initial mode
+    try {
+      console.log('Requesting initial mode from server...')
+      const initialMode = await connection.invoke('GetCurrentMode')
+      console.log(`Initial mode retrieved: ${initialMode}`)
+      currentMode.value = initialMode
+      console.log(`Current mode state updated to: ${currentMode.value}`)
+    } catch (error) {
+      console.error('Failed to get initial mode:', error)
+    }
+
     updateConnectionStatus()
   } catch (err) {
     console.error("SignalR Connection Error: ", err)
@@ -522,6 +558,11 @@ onUnmounted(async () => {
       
       <!-- Other Panels - Centered Three Column Masonry Layout -->
       <div class="columns-1 md:columns-2 xl:columns-3 gap-6 space-y-6 max-w-7xl mx-auto">
+        <!-- Mode Selection Panel -->
+        <div class="break-inside-avoid mb-6">
+          <ModeSelectionPanel :currentMode="currentMode" @modeChanged="handleModeChanged" />
+        </div>
+
         <!-- IMU Panel -->
         <div class="break-inside-avoid mb-6">
           <ImuPanel :imuData="imuData" :dataRates="dataRates" />

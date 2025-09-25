@@ -17,6 +17,9 @@ public class GnssInitializer
     private readonly GeoConfigurationManager _configurationManager;
     private SerialPort? _serialPort;
 
+    // Shared lock for coordinating serial port access between GnssService and GnssInitializer
+    private static readonly SemaphoreSlim _serialPortLock = new SemaphoreSlim(1, 1);
+
     private const string DefaultPortName = "/dev/ttyAMA0";
     private const Parity DefaultParity = Parity.None;
     private const int DefaultDataBits = 8;
@@ -346,6 +349,12 @@ public class GnssInitializer
     public SerialPort? GetSerialPort()
     {
         return _serialPort;
+    }
+
+    // Provide access to the shared lock for coordination
+    public static SemaphoreSlim GetSerialPortLock()
+    {
+        return _serialPortLock;
     }
 
     const int UBX_MESSAGES_RATE_HZ = 10;    //1, 5, 10 or 20
@@ -849,6 +858,39 @@ public class GnssInitializer
         return (ck_a, ck_b);
     }
 
+
+    public async Task<bool> ReconfigureAsync()
+    {
+        if (_serialPort == null || !_serialPort.IsOpen)
+        {
+            _logger.LogWarning("Cannot reconfigure GNSS - no active serial port connection");
+            return false;
+        }
+
+        _logger.LogInformation("Reconfiguring GNSS for new operating mode: {Mode}", _configurationManager.OperatingMode);
+
+        // Acquire the shared lock to prevent concurrent access during reconfiguration
+        await _serialPortLock.WaitAsync();
+        try
+        {
+            _logger.LogDebug("Acquired serial port lock for GNSS reconfiguration");
+
+            // Reconfigure for satellite data with the current mode
+            await ConfigureForSatelliteDataAsync();
+            _logger.LogInformation("GNSS reconfiguration completed successfully for mode: {Mode}", _configurationManager.OperatingMode);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reconfigure GNSS for mode: {Mode}", _configurationManager.OperatingMode);
+            return false;
+        }
+        finally
+        {
+            _serialPortLock.Release();
+            _logger.LogDebug("Released serial port lock after GNSS reconfiguration");
+        }
+    }
 
     public void Dispose()
     {

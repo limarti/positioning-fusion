@@ -7,6 +7,7 @@ using Backend.Hubs;
 using Backend.Storage;
 using Backend.GnssSystem;
 using Backend.Configuration;
+using Backend.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
 using Serilog;
@@ -53,6 +54,10 @@ builder.Services.AddSignalR();
 // Add configuration manager
 builder.Services.AddSingleton<GeoConfigurationManager>();
 
+// Add mode management service
+builder.Services.AddSingleton<ModeManagementService>();
+builder.Services.AddHostedService<ModeManagementService>(provider => provider.GetRequiredService<ModeManagementService>());
+
 // Add background services
 builder.Services.AddHostedService<SystemMonitoringService>();
 
@@ -91,79 +96,22 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Get configuration manager and load existing operating mode
+// Get configuration manager and use existing operating mode
 var configManager = app.Services.GetRequiredService<GeoConfigurationManager>();
-var existingRtkMode = configManager.OperatingMode;
+var operatingMode = configManager.OperatingMode;
 
-OperatingMode operatingMode;
+// Get logger for Program startup logging
+var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
 
-// Check if running interactively (has console input available)
-bool isInteractive = Environment.UserInteractive && !Console.IsInputRedirected;
+startupLogger.LogInformation("=== GNSS Data Collection System Startup ===");
+startupLogger.LogInformation("Current operating mode: {Mode}", operatingMode);
+startupLogger.LogInformation("Configuration file location: {ConfigPath}",
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "system-config.json"));
+startupLogger.LogInformation("Mode can be changed via the web interface at runtime");
+startupLogger.LogInformation("Web interface will be available at: http://0.0.0.0:5312");
 
-char? userInput = null;
-Task<char>? inputTask = null;
-
-if (isInteractive)
-{
-    // Prompt user for operating mode
-    Console.WriteLine("Select operating mode:");
-    Console.WriteLine("(B) Base Station Mode");
-    Console.WriteLine("(R) Rover Mode");
-    Console.WriteLine("(D) Disabled");
-    Console.WriteLine($"Current mode: {existingRtkMode}");
-    Console.Write("Press B, R, or D: ");
-
-    inputTask = Task.Run(() =>
-    {
-        var keyInfo = Console.ReadKey(true); // true = don't display the key
-        return keyInfo.KeyChar;
-    });
-}
-
-if (isInteractive && inputTask != null)
-{
-    for (int i = 10; i > 0; i--)
-    {
-        if (inputTask.IsCompleted)
-        {
-            userInput = inputTask.Result;
-            Console.WriteLine(userInput); // Display the pressed key
-            break;
-        }
-        
-        Console.Write($"\rPress B, R, or D - timeout in {i} seconds: ");
-        await Task.Delay(1000);
-    }
-
-    if (!inputTask.IsCompleted)
-    {
-        // Timeout occurred - use existing mode if available, otherwise default to Disabled
-        operatingMode = existingRtkMode;
-        Console.WriteLine($"\rTimeout reached. Using {operatingMode} mode.              ");
-    }
-    else
-    {
-        operatingMode = userInput?.ToString().ToUpper() switch
-        {
-            "B" => OperatingMode.Send,
-            "R" => OperatingMode.Receive,
-            "D" => OperatingMode.Disabled,
-            _ => existingRtkMode
-        };
-    }
-}
-else
-{
-    // Not running interactively (service mode) - use existing configuration or default
-    operatingMode = existingRtkMode;
-    Console.WriteLine($"Running in service mode. Using {operatingMode} mode from configuration.");
-}
-
-// Save the selected operating mode
-configManager.OperatingMode = operatingMode;
-configManager.SaveConfiguration();
-
-Console.WriteLine($"Operating mode selected: {operatingMode}");
+Console.WriteLine($"Starting with operating mode: {operatingMode}");
+Console.WriteLine("Mode can now be changed via the web interface.");
 Console.WriteLine();
 
 // Initialize hardware
@@ -194,6 +142,10 @@ var gnssInitialized = await gnssInitializer.InitializeAsync();
 if (!gnssInitialized)
 {
     logger.LogWarning("GNSS initialization failed - continuing without GNSS");
+}
+else
+{
+    logger.LogInformation("GNSS initialization completed successfully");
 }
 
 // Camera service now handles its own initialization
@@ -255,7 +207,12 @@ app.MapHub<DataHub>("/datahub");
 // Fallback for SPA routing - serve index.html for any unmatched routes
 app.MapFallbackToFile("index.html");
 
+startupLogger.LogInformation("=== GNSS Data Collection System Ready ===");
+startupLogger.LogInformation("All services initialized. Starting web server...");
+
 app.Run();
+
+startupLogger.LogInformation("=== GNSS Data Collection System Shutdown ===");
 
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {

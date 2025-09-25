@@ -225,13 +225,19 @@ public class GnssService : BackgroundService
         if (_serialPort == null || !_serialPort.IsOpen)
             return;
 
-        try
+        // Use the shared lock to coordinate with GNSS reconfiguration
+        var serialPortLock = GnssInitializer.GetSerialPortLock();
+
+        // Try to acquire the lock with a short timeout to avoid blocking data flow too long
+        if (await serialPortLock.WaitAsync(50, stoppingToken))
         {
-            if (_serialPort.BytesToRead > 0)
+            try
             {
-                var bytesToRead = Math.Min(_serialPort.BytesToRead, 1024);
-                var buffer = new byte[bytesToRead];
-                var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
+                if (_serialPort.BytesToRead > 0)
+                {
+                    var bytesToRead = Math.Min(_serialPort.BytesToRead, 1024);
+                    var buffer = new byte[bytesToRead];
+                    var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
 
                 // Track bytes received for data rate calculation
                 _bytesReceived += bytesRead;
@@ -257,16 +263,26 @@ public class GnssService : BackgroundService
                     }
                 }
 
-                await ProcessBufferedDataAsync(stoppingToken);
+                    await ProcessBufferedDataAsync(stoppingToken);
+                }
+                else
+                {
+                    _logger.LogDebug("📭 No bytes available to read from GNSS");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                _logger.LogDebug("📭 No bytes available to read from GNSS");
+                _logger.LogError(ex, "Error reading GNSS data");
+            }
+            finally
+            {
+                serialPortLock.Release();
             }
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogError(ex, "Error reading GNSS data");
+            // Could not acquire lock (likely during reconfiguration), skip this read cycle
+            _logger.LogDebug("⏸️ Skipping GNSS data read - serial port locked for reconfiguration");
         }
     }
 
