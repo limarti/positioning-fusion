@@ -55,6 +55,10 @@ builder.Services.AddSignalR();
 // Add configuration manager
 builder.Services.AddSingleton<GeoConfigurationManager>();
 
+// Add WiFi services first (critical for connectivity)
+builder.Services.AddSingleton<WiFiService>();
+builder.Services.AddHostedService<WiFiService>(provider => provider.GetRequiredService<WiFiService>());
+
 // Add mode management service
 builder.Services.AddSingleton<ModeManagementService>();
 builder.Services.AddHostedService<ModeManagementService>(provider => provider.GetRequiredService<ModeManagementService>());
@@ -82,10 +86,6 @@ builder.Services.AddHostedService<LoRaService>(provider => provider.GetRequiredS
 
 // Add file logging status service
 builder.Services.AddHostedService<FileLoggingStatusService>();
-
-// Add WiFi services
-builder.Services.AddSingleton<WiFiService>();
-builder.Services.AddHostedService<WiFiService>(provider => provider.GetRequiredService<WiFiService>());
 
 // Add CORS for frontend
 builder.Services.AddCors(options =>
@@ -119,11 +119,12 @@ Console.WriteLine($"Starting with operating mode: {operatingMode}");
 Console.WriteLine("Mode can now be changed via the web interface.");
 Console.WriteLine();
 
-// Initialize hardware
+// Initialize hardware (WiFi starts first as a background service)
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
 var gnssInitializer = app.Services.GetRequiredService<GnssInitializer>();
 
+logger.LogInformation("WiFi service will initialize first to establish connectivity...");
 logger.LogInformation("Initializing IM19 IMU hardware...");
 try 
 {
