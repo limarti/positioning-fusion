@@ -85,7 +85,7 @@ public class GnssFrameParser
             }
             else
             {
-                _logger.LogInformation("❌ UBX candidate at {Pos}: checksum validation failed (class=0x{Class:X2}, id=0x{Id:X2}, payload={PayloadLen})", 
+                _logger.LogDebug("❌ UBX candidate at {Pos}: checksum validation failed (class=0x{Class:X2}, id=0x{Id:X2}, payload={PayloadLen})",
                     i, dataBuffer[i + 2], dataBuffer[i + 3], len);
             }
 
@@ -130,7 +130,7 @@ public class GnssFrameParser
             {
                 // Log the discarded frame data for CRC failure analysis
                 var frameHex = string.Join(" ", dataBuffer.Skip(i).Take(Math.Min(total, 32)).Select(b => $"{b:X2}"));
-                _logger.LogInformation("❌ RTCM3 candidate at {Pos}: CRC validation failed (payload={PayloadLen}). Discarded frame (first 32 bytes): {FrameHex}", i, payloadLen, frameHex);
+                _logger.LogDebug("❌ RTCM3 candidate at {Pos}: CRC validation failed (payload={PayloadLen}). Invalid candidate (first 32 bytes): {FrameHex}", i, payloadLen, frameHex);
             }
             // bad CRC — keep scanning
         }
