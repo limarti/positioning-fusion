@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Backend.WiFi;
 
@@ -28,9 +29,12 @@ public class GeoConfigurationManager
         _logger = logger;
         _configFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "system-config.json");
 
-        _logger.LogDebug("Configuration file path: {ConfigPath}", _configFilePath);
+        _logger.LogInformation("GeoConfigurationManager starting - Configuration file path: {ConfigPath}", _configFilePath);
+        _logger.LogInformation("File exists check: {FileExists}", File.Exists(_configFilePath));
+
         _configuration = LoadConfiguration();
-        _logger.LogInformation("GeoConfigurationManager initialized with operating mode: {Mode}", _configuration.OperatingMode);
+        _logger.LogInformation("GeoConfigurationManager initialized - OperatingMode: {OperatingMode}, WiFi PreferredMode: {WiFiPreferredMode}",
+            _configuration.OperatingMode, _configuration.WiFiConfiguration.PreferredMode);
     }
 
     public OperatingMode OperatingMode
@@ -96,7 +100,12 @@ public class GeoConfigurationManager
     private void SaveConfigurationInternal()
     {
         _logger?.LogDebug("Serializing configuration to JSON");
-        var json = JsonSerializer.Serialize(_configuration, new JsonSerializerOptions { WriteIndented = true });
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Converters = { new JsonStringEnumConverter() }
+        };
+        var json = JsonSerializer.Serialize(_configuration, options);
 
         _logger?.LogDebug("Writing configuration to file: {ConfigPath}", _configFilePath);
         File.WriteAllText(_configFilePath, json);
@@ -108,10 +117,20 @@ public class GeoConfigurationManager
         {
             if (File.Exists(_configFilePath))
             {
-                _logger?.LogDebug("Loading existing configuration from {ConfigPath}", _configFilePath);
+                _logger?.LogInformation("Loading existing configuration from {ConfigPath}", _configFilePath);
                 var json = File.ReadAllText(_configFilePath);
+                _logger?.LogDebug("Raw configuration JSON: {Json}", json);
 
-                var config = JsonSerializer.Deserialize<AppConfiguration>(json);
+                var options = new JsonSerializerOptions
+                {
+                    Converters = { new JsonStringEnumConverter() }
+                };
+                var config = JsonSerializer.Deserialize<AppConfiguration>(json, options);
+
+                if (config?.WiFiConfiguration != null)
+                {
+                    _logger?.LogInformation("Loaded WiFi PreferredMode from file: {PreferredMode}", config.WiFiConfiguration.PreferredMode);
+                }
 
                 if (config != null)
                 {

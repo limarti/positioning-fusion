@@ -43,11 +43,17 @@ public class WiFiService : BackgroundService
 
         // Check if user prefers to start directly in AP mode
         var preferredMode = _configManager.WiFiConfiguration.PreferredMode;
+        _logger.LogInformation("WiFi Service startup - Preferred mode is: {PreferredMode}", preferredMode);
+
         if (preferredMode == WiFiMode.AP)
         {
             _logger.LogInformation("Preferred mode is AP, starting in AP mode immediately");
             var apSettings = _configManager.WiFiConfiguration.APSettings;
             await ConfigureAPMode(apSettings.SSID, apSettings.Password);
+        }
+        else
+        {
+            _logger.LogInformation("Preferred mode is not AP ({PreferredMode}), skipping automatic AP configuration", preferredMode);
         }
 
         while (!stoppingToken.IsCancellationRequested)
@@ -164,30 +170,48 @@ public class WiFiService : BackgroundService
             var apSettings = _configManager.WiFiConfiguration.APSettings;
             apSettings.SSID = ssid;
             apSettings.Password = password;
-            
+
             _configManager.SaveWiFiConfiguration();
 
-            // Configure nmcli connection
-            var commands = new[]
+            // First, check if connection exists and delete it to start fresh
+            _logger.LogInformation("Removing existing AP connection if it exists");
+            var deleteResult = await ExecuteNmcliCommand($"con delete \"{ssid}\"");
+            if (deleteResult.Success)
             {
-                $"con modify \"{ssid}\" 802-11-wireless.mode ap",
-                $"con modify \"{ssid}\" 802-11-wireless.band bg", 
-                $"con modify \"{ssid}\" wifi-sec.key-mgmt wpa-psk",
-                $"con modify \"{ssid}\" wifi-sec.psk \"{password}\"",
-                $"con modify \"{ssid}\" ipv4.method shared",
-                $"con modify \"{ssid}\" ipv4.addresses {apSettings.IPAddress}/{apSettings.Subnet}",
-                $"con modify \"{ssid}\" connection.autoconnect yes",
-                $"con modify \"{ssid}\" connection.autoconnect-priority 100",
-                $"con up \"{ssid}\""
-            };
+                _logger.LogInformation("Deleted existing connection: {SSID}", ssid);
+            }
 
-            foreach (var command in commands)
+            // Get the WiFi interface name first
+            _logger.LogInformation("Finding WiFi interface...");
+            var wifiInterface = await GetWiFiInterfaceName();
+            if (string.IsNullOrEmpty(wifiInterface))
             {
-                var result = await ExecuteNmcliCommand(command);
-                if (!result.Success)
-                {
-                    _logger.LogWarning("AP configuration command failed: {Command}, Error: {Error}", command, result.Error);
-                }
+                _logger.LogError("No WiFi interface found for AP configuration");
+                return false;
+            }
+            _logger.LogInformation("Using WiFi interface: {Interface}", wifiInterface);
+
+            // Create new AP connection with specific interface
+            _logger.LogInformation("Creating new AP connection: {SSID}", ssid);
+            var createCommand = $"con add type wifi ifname {wifiInterface} con-name \"{ssid}\" autoconnect yes ssid \"{ssid}\" " +
+                               $"802-11-wireless.mode ap 802-11-wireless.band bg " +
+                               $"wifi-sec.key-mgmt wpa-psk wifi-sec.psk \"{password}\" " +
+                               $"ipv4.method shared ipv4.addresses {apSettings.IPAddress}/{apSettings.Subnet} " +
+                               $"connection.autoconnect-priority 100";
+
+            var createResult = await ExecuteNmcliCommand(createCommand);
+            if (!createResult.Success)
+            {
+                _logger.LogError("Failed to create AP connection: {Error}", createResult.Error);
+                return false;
+            }
+
+            // Bring up the connection
+            _logger.LogInformation("Bringing up AP connection: {SSID}", ssid);
+            var upResult = await ExecuteNmcliCommand($"con up \"{ssid}\"");
+            if (!upResult.Success)
+            {
+                _logger.LogWarning("Failed to bring up AP connection: {Error}", upResult.Error);
             }
 
             await UpdateWiFiStatus();
@@ -381,6 +405,35 @@ public class WiFiService : BackgroundService
         await _hubContext.Clients.All.SendAsync("WiFiKnownNetworksUpdate", update);
     }
 
+    private async Task<string> GetWiFiInterfaceName()
+    {
+        try
+        {
+            var result = await ExecuteNmcliCommand("device status");
+            if (result.Success)
+            {
+                var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var line in lines)
+                {
+                    if (line.Contains("wifi") && !line.Contains("unavailable"))
+                    {
+                        var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length > 0)
+                        {
+                            return parts[0]; // First column is the interface name
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception getting WiFi interface name");
+        }
+
+        return null; // No WiFi interface found
+    }
+
     private async Task<(bool Success, string Output, string Error)> ExecuteNmcliCommand(string arguments)
     {
         try
@@ -459,12 +512,19 @@ public class WiFiService : BackgroundService
             _configManager.WiFiConfiguration.PreferredMode = preferredMode;
             _configManager.SaveWiFiConfiguration();
 
-            // If changed to AP mode and we're currently trying to connect, stop and switch to AP
-            if (preferredMode == WiFiMode.AP && _isAttemptingConnection)
+            // Switch modes immediately based on preference
+            if (preferredMode == WiFiMode.AP)
             {
-                _logger.LogInformation("Preferred mode changed to AP, stopping client connection attempts");
+                _logger.LogInformation("Preferred mode changed to AP, switching to AP mode immediately");
+                _isAttemptingConnection = false; // Stop any client connection attempts
                 var apSettings = _configManager.WiFiConfiguration.APSettings;
                 await ConfigureAPMode(apSettings.SSID, apSettings.Password);
+            }
+            else if (preferredMode == WiFiMode.Client)
+            {
+                _logger.LogInformation("Preferred mode changed to Client, attempting to connect to known networks");
+                _isAttemptingConnection = false; // Reset connection attempt state
+                await AttemptKnownNetworkConnection();
             }
 
             return true;
