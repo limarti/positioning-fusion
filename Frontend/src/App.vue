@@ -13,7 +13,6 @@ import EncoderPanel from './components/EncoderPanel.vue'
 import SystemPanel from './components/SystemPanel.vue'
 import FileLoggingPanel from './components/FileLoggingPanel.vue'
 import ConnectionOverlay from './components/ConnectionOverlay.vue'
-import ModeSelectionPanel from './components/ModeSelectionPanel.vue'
 import WiFiPanel from './components/WiFiPanel.vue'
 
 // SignalR connection
@@ -568,7 +567,7 @@ onUnmounted(async () => {
               <SatelliteHealthPanel :gnssData="gnssData" />
             </div>
 
-            <!-- Unified RTK Panel -->
+            <!-- Unified RTK Panel with Mode Selection -->
             <div class="break-inside-avoid mb-6">
               <RtkPanel :gnssData="gnssData" />
             </div>
@@ -581,11 +580,6 @@ onUnmounted(async () => {
             <!-- UBX Message Rates Subsection -->
             <div class="break-inside-avoid mb-6">
               <MessageRatesPanel :messageRates="messageRates" />
-            </div>
-
-            <!-- Mode Selection Panel -->
-            <div class="break-inside-avoid mb-6">
-              <ModeSelectionPanel :currentMode="currentMode" @modeChanged="handleModeChanged" />
             </div>
           </div>
         </div>
