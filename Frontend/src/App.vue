@@ -586,7 +586,7 @@ onUnmounted(async () => {
 
             <!-- Unified RTK Panel with Mode Selection -->
             <div class="break-inside-avoid mb-6">
-              <RtkPanel :gnssData="gnssData" />
+              <RtkPanel :gnssData="gnssData" :dataRates="dataRates" />
             </div>
 
             <!-- Position Scatter Plot -->

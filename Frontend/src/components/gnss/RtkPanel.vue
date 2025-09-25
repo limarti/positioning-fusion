@@ -5,6 +5,10 @@ const props = defineProps({
   gnssData: {
     type: Object,
     required: true
+  },
+  dataRates: {
+    type: Object,
+    required: true
   }
 })
 
@@ -167,6 +171,31 @@ const handleModeChange = async (newMode) => {
         <div class="text-center p-3 bg-blue-50 rounded-xl">
           <div class="text-xs text-slate-600 mb-1">Correction Age</div>
           <div class="text-lg font-bold" :class="gnssData.rtk.correctionAge !== null ? 'text-blue-700' : 'text-slate-400'">{{ gnssData.rtk.correctionAge !== null ? gnssData.rtk.correctionAge.toFixed(1) + 's' : '—' }}</div>
+        </div>
+      </div>
+
+      <!-- Throughput Indicators -->
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Base Station Mode: Show LoRa Out (corrections being sent) -->
+        <div v-if="gnssData.corrections.mode === 'Send'" class="text-center p-3 bg-orange-50 rounded-xl">
+          <div class="text-xs text-slate-600 mb-1">LoRa Throughput (Out)</div>
+          <div class="text-lg font-bold" :class="dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut > 0 ? 'text-orange-700' : 'text-slate-400'">
+            {{ dataRates.kbpsLoRaOut !== null ? dataRates.kbpsLoRaOut.toFixed(1) + ' kbps' : '—' }}
+          </div>
+          <div class="text-xs text-slate-500 mt-1" v-if="dataRates.kbpsLoRaOut === 0">No corrections sent</div>
+        </div>
+        <!-- Rover Mode: Show LoRa In (corrections being received) -->
+        <div v-if="gnssData.corrections.mode === 'Receive'" class="text-center p-3 bg-purple-50 rounded-xl">
+          <div class="text-xs text-slate-600 mb-1">LoRa Throughput (In)</div>
+          <div class="text-lg font-bold" :class="dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn > 0 ? 'text-purple-700' : 'text-slate-400'">
+            {{ dataRates.kbpsLoRaIn !== null ? dataRates.kbpsLoRaIn.toFixed(1) + ' kbps' : '—' }}
+          </div>
+          <div class="text-xs text-slate-500 mt-1" v-if="dataRates.kbpsLoRaIn === 0">No corrections received</div>
+        </div>
+        <!-- Fill empty space when mode is Send or Receive to maintain layout -->
+        <div v-if="gnssData.corrections.mode === 'Send' || gnssData.corrections.mode === 'Receive'" class="text-center p-3 bg-slate-50 rounded-xl">
+          <div class="text-xs text-slate-600 mb-1">—</div>
+          <div class="text-lg font-bold text-slate-400">—</div>
         </div>
       </div>
 
