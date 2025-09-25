@@ -103,14 +103,13 @@ public class WiFiService : BackgroundService
 
         // Only attempt client connection if preferred mode is Client and we have known networks
         return wifiConfig.PreferredMode == WiFiMode.Client &&
-               knownNetworks.Any(n => n.AutoConnect) &&
+               knownNetworks.Any() &&
                !_isAttemptingConnection;
     }
 
     private async Task AttemptKnownNetworkConnection()
     {
         var knownNetworks = _configManager.WiFiConfiguration.KnownNetworks
-            .Where(n => n.AutoConnect)
             .OrderByDescending(n => n.LastConnected)
             .ToList();
 
@@ -267,8 +266,7 @@ public class WiFiService : BackgroundService
             {
                 SSID = ssid,
                 Password = password,
-                LastConnected = DateTime.Now,
-                AutoConnect = true
+                LastConnected = DateTime.Now
             });
         }
         
@@ -404,8 +402,7 @@ public class WiFiService : BackgroundService
             Networks = _configManager.WiFiConfiguration.KnownNetworks.Select(n => new KnownWiFiNetwork
             {
                 SSID = n.SSID,
-                LastConnected = n.LastConnected,
-                AutoConnect = n.AutoConnect
+                LastConnected = n.LastConnected
             }).ToList(),
             LastUpdated = DateTime.Now
         };
@@ -501,8 +498,7 @@ public class WiFiService : BackgroundService
         return _configManager.WiFiConfiguration.KnownNetworks.Select(n => new KnownWiFiNetwork
         {
             SSID = n.SSID,
-            LastConnected = n.LastConnected,
-            AutoConnect = n.AutoConnect
+            LastConnected = n.LastConnected
         }).ToList();
     }
 

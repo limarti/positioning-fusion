@@ -184,5 +184,4 @@ public class StoredWiFiNetwork
     public string SSID { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public DateTime LastConnected { get; set; }
-    public bool AutoConnect { get; set; } = true;
 }

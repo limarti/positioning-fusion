@@ -28,7 +28,6 @@ public class KnownWiFiNetwork
 {
     public string SSID { get; set; } = string.Empty;
     public DateTime LastConnected { get; set; }
-    public bool AutoConnect { get; set; } = true;
 }
 
 public class WiFiConnectionRequest
