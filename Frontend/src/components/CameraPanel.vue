@@ -64,15 +64,31 @@ const imageUrl = computed(() => {
     imageSize: cameraData.value.imageSizeBytes,
     timestamp: cameraData.value.timestamp
   })
-  
+
   if (!cameraData.value.imageBase64 || !cameraData.value.isConnected) {
     console.log('No image URL - missing data or disconnected')
     return null
   }
-  
+
   const dataUrl = `data:image/jpeg;base64,${cameraData.value.imageBase64}`
   console.log('Generated image URL, base64 length:', cameraData.value.imageBase64.length)
   return dataUrl
+})
+
+const aspectRatio = computed(() => {
+  if (cameraData.value.imageWidth > 0 && cameraData.value.imageHeight > 0) {
+    return cameraData.value.imageWidth / cameraData.value.imageHeight
+  }
+  // Default to 16:9 aspect ratio when no image data is available
+  return 16 / 9
+})
+
+const previewStyle = computed(() => {
+  // Calculate height based on aspect ratio for responsive width
+  // Using aspect-ratio CSS property for modern browser support
+  return {
+    aspectRatio: aspectRatio.value.toString()
+  }
 })
 
 // Large preview dialog
@@ -135,9 +151,9 @@ defineExpose({
     <div class="space-y-4">
       <!-- Camera Image Display -->
       <div class="relative">
-        <div v-if="imageUrl" class="h-48 bg-gray-900 rounded-lg overflow-hidden group cursor-pointer" @click="openLargePreview">
-          <img 
-            :src="imageUrl" 
+        <div v-if="imageUrl" class="bg-gray-900 rounded-lg overflow-hidden group cursor-pointer" :style="previewStyle" @click="openLargePreview">
+          <img
+            :src="imageUrl"
             :alt="`Camera frame ${resolution}`"
             class="w-full h-full object-contain transition-transform group-hover:scale-105"
             @load="() => console.log('Small preview image loaded')"
@@ -158,7 +174,7 @@ defineExpose({
             </div>
           </div>
         </div>
-        <div v-else class="aspect-video bg-gray-800 rounded-lg flex items-center justify-center">
+        <div v-else class="bg-gray-800 rounded-lg flex items-center justify-center" :style="previewStyle">
           <div class="text-center text-gray-500">
             <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12,15A2,2 0 0,1 10,13A2,2 0 0,1 12,11A2,2 0 0,1 14,13A2,2 0 0,1 12,15M22,6H19L17.83,4.5C17.42,3.87 16.75,3.5 16,3.5H8C7.25,3.5 6.58,3.87 6.17,4.5L5,6H2A2,2 0 0,0 0,8V18A2,2 0 0,0 2,20H22A2,2 0 0,0 24,18V8A2,2 0 0,0 22,6M12,17A4,4 0 0,0 16,13A4,4 0 0,0 12,9A4,4 0 0,0 8,13A4,4 0 0,0 12,17Z"/>
