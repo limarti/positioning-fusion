@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr'
+import Layout from './components/layout/Layout.vue'
 import GnssPanel from './components/GnssPanel.vue'
 import ImuPanel from './components/ImuPanel.vue'
 import CameraPanel from './components/CameraPanel.vue'
@@ -171,6 +172,9 @@ const cameraData = ref({
 
 const currentMode = ref('Disabled')
 
+// Navigation state
+const activeSection = ref('gnss')
+
 // Component refs
 const cameraPanelRef = ref(null)
 
@@ -179,6 +183,11 @@ const handleModeChanged = (newMode) => {
   console.log(`App.vue handleModeChanged called with: ${newMode}`)
   console.log(`Updating currentMode from ${currentMode.value} to ${newMode}`)
   currentMode.value = newMode
+}
+
+// Section navigation handler
+const handleSectionChanged = (sectionId) => {
+  activeSection.value = sectionId
 }
 
 // Provide SignalR connection to child components
@@ -491,113 +500,102 @@ onUnmounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
-    <!-- Header -->
-    <header class="bg-gradient-to-r from-slate-800 to-slate-900 text-white border-b-2 border-slate-700">
-      <div class="p-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-start space-x-4">
-            <div class="flex flex-col items-start">
-              <img src="/src/assets/logo.svg" alt="Sierra Logo" class="h-12 w-auto">
-              <p class="text-slate-300">Positioning Data Collection System</p>
-            </div>
-          </div>
-          <div class="flex items-center space-x-4">
-            <!-- Battery Indicator -->
-            <div class="flex items-center space-x-2 text-sm">
-              <div class="flex items-center">
-                <!-- Charging/Plugged icon (left of battery) -->
-                <svg 
-                  v-if="systemHealth.isExternalPowerConnected"
-                  xmlns="http://www.w3.org/2000/svg" 
-                  viewBox="0 0 24 24" 
-                  fill="currentColor" 
-                  class="text-white w-3 h-3 mr-0.5"
-                >
-                  <path 
-                    fill-rule="evenodd" 
-                    d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .913-.143Z" 
-                    clip-rule="evenodd" 
-                  />
-                </svg>
-                <!-- Battery Icon with overlaid percentage -->
-                <div class="relative">
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke-width="1.5" 
-                    stroke="currentColor" 
-                    class="text-white w-8 h-8"
-                  >
-                    <path 
-                      stroke-linecap="round" 
-                      stroke-linejoin="round" 
-                      d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0 0 21 15.75v-6a2.25 2.25 0 0 0-2.25-2.25h-15A2.25 2.25 0 0 0 1.5 9.75v6A2.25 2.25 0 0 0 3.75 18Z" 
-                    />
-                  </svg>
-                  <!-- Battery percentage overlaid -->
-                  <div class="absolute inset-0 flex items-center justify-center">
-                    <span class="text-white text-[0.77rem] font-bold leading-none">
-                      {{ systemHealth.batteryLevel !== null ? Math.round(systemHealth.batteryLevel) : '--' }}
-                    </span>
-                  </div>
-                </div>
+  <div class="h-screen">
+    <Layout
+      :active-section="activeSection"
+      @section-changed="handleSectionChanged"
+    >
+      <template #header-actions>
+        <!-- Battery Indicator -->
+        <div class="flex items-center space-x-2 text-sm">
+          <div class="flex items-center">
+            <!-- Charging/Plugged icon (left of battery) -->
+            <svg
+              v-if="systemHealth.isExternalPowerConnected"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="text-slate-600 w-3 h-3 mr-0.5"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .913-.143Z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <!-- Battery Icon with overlaid percentage -->
+            <div class="relative">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="text-slate-600 w-8 h-8"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0 0 21 15.75v-6a2.25 2.25 0 0 0-2.25-2.25h-15A2.25 2.25 0 0 0 1.5 9.75v6A2.25 2.25 0 0 0 3.75 18Z"
+                />
+              </svg>
+              <!-- Battery percentage overlaid -->
+              <div class="absolute inset-0 flex items-center justify-center">
+                <span class="text-slate-600 text-[0.77rem] font-bold leading-none">
+                  {{ systemHealth.batteryLevel !== null ? Math.round(systemHealth.batteryLevel) : '--' }}
+                </span>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </header>
+      </template>
 
-    <!-- Main Content -->
-    <main class="px-4 py-6 max-w-7xl mx-auto">
-      <!-- GNSS System - Aligned with columns below -->
-      <div class="mb-6 max-w-7xl mx-auto">
-        <GnssPanel :gnssData="gnssData" :dataRates="dataRates" :messageRates="messageRates" />
-      </div>
-      
-      <!-- Other Panels - Centered Three Column Masonry Layout -->
-      <div class="columns-1 md:columns-2 xl:columns-3 gap-6 space-y-6 max-w-7xl mx-auto">
-        <!-- Mode Selection Panel -->
-        <div class="break-inside-avoid mb-6">
-          <ModeSelectionPanel :currentMode="currentMode" @modeChanged="handleModeChanged" />
+      <!-- Dynamic Content Based on Active Section -->
+      <div class="space-y-6">
+        <!-- GNSS Section -->
+        <div v-if="activeSection === 'gnss'">
+          <div class="mb-6">
+            <GnssPanel :gnssData="gnssData" :dataRates="dataRates" :messageRates="messageRates" />
+          </div>
+          <div>
+            <ModeSelectionPanel :currentMode="currentMode" @modeChanged="handleModeChanged" />
+          </div>
         </div>
 
-        <!-- WiFi Panel -->
-        <div class="break-inside-avoid mb-6">
+        <!-- Camera Section -->
+        <div v-if="activeSection === 'camera'">
+          <CameraPanel ref="cameraPanelRef" />
+        </div>
+
+        <!-- IMU Section -->
+        <div v-if="activeSection === 'imu'">
+          <ImuPanel :imuData="imuData" :dataRates="dataRates" />
+        </div>
+
+        <!-- Encoder Section -->
+        <div v-if="activeSection === 'encoder'">
+          <EncoderPanel :encoderData="encoderData" />
+        </div>
+
+        <!-- WiFi Section -->
+        <div v-if="activeSection === 'wifi'">
           <WiFiPanel />
         </div>
 
-        <!-- IMU Panel -->
-        <div class="break-inside-avoid mb-6">
-          <ImuPanel :imuData="imuData" :dataRates="dataRates" />
-        </div>
-        
-        <!-- Camera Panel -->
-        <div class="break-inside-avoid mb-6">
-          <CameraPanel ref="cameraPanelRef" />
-        </div>
-        
-        <!-- Encoder Panel -->
-        <div class="break-inside-avoid mb-6">
-          <EncoderPanel :encoderData="encoderData" />
-        </div>
-        
-        <!-- File Logging Panel -->
-        <div class="break-inside-avoid mb-6">
+        <!-- Logging Section -->
+        <div v-if="activeSection === 'logging'">
           <FileLoggingPanel :fileLoggingStatus="fileLoggingStatus" />
         </div>
-        
-        <!-- System Panel -->
-        <div class="break-inside-avoid mb-6">
+
+        <!-- System Section -->
+        <div v-if="activeSection === 'system'">
           <SystemPanel :systemHealth="systemHealth" :powerStatus="powerStatus" :dataRates="dataRates" />
         </div>
       </div>
-    </main>
+    </Layout>
 
     <!-- Connection Overlay -->
-    <ConnectionOverlay 
+    <ConnectionOverlay
       :connection-status="connectionStatus"
       :retry-attempt="retryAttempt"
       :next-retry-in="nextRetryIn"

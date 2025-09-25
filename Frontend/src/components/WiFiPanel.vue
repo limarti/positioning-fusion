@@ -43,55 +43,6 @@ let statusUpdateHandler = null
 let fallbackNotificationHandler = null
 let knownNetworksUpdateHandler = null
 
-const initializeWiFiData = async () => {
-  if (signalrConnection.value?.state === 'Connected' && preferredMode.value === null) {
-    console.log('Initializing WiFi data...')
-    await setupSignalRHandlers()
-    await loadInitialData()
-  }
-}
-
-onMounted(async () => {
-  console.log('WiFiPanel mounted, SignalR connection available:', !!signalrConnection.value)
-  await initializeWiFiData()
-})
-
-// Watch for SignalR connection to become available - only initialize once
-watch(signalrConnection, async (newConnection, oldConnection) => {
-  console.log('WiFiPanel - SignalR connection changed:', !!newConnection, 'state:', newConnection?.state)
-
-  if (newConnection && preferredMode.value === null) {
-    // Set up a one-time connected handler instead of polling state
-    if (newConnection.state === 'Connected') {
-      console.log('Connection already connected, initializing WiFi data...')
-      await initializeWiFiData()
-    } else {
-      console.log('Waiting for connection to be established...')
-      // Use a simple retry approach instead of onconnected to avoid conflicts with App.vue
-      const checkAndInitialize = async () => {
-        if (newConnection.state === 'Connected' && preferredMode.value === null) {
-          console.log('Connection now ready, initializing WiFi data...')
-          await initializeWiFiData()
-        } else if (preferredMode.value === null) {
-          // Retry after a short delay
-          setTimeout(checkAndInitialize, 100)
-        }
-      }
-
-      // Start checking after a brief delay to let the connection establish
-      setTimeout(checkAndInitialize, 100)
-    }
-  }
-}, { immediate: true })
-
-onUnmounted(() => {
-  if (signalrConnection.value) {
-    signalrConnection.value.off("WiFiStatusUpdate", statusUpdateHandler)
-    signalrConnection.value.off("WiFiFallbackNotification", fallbackNotificationHandler)
-    signalrConnection.value.off("WiFiKnownNetworksUpdate", knownNetworksUpdateHandler)
-  }
-})
-
 const setupSignalRHandlers = async () => {
   statusUpdateHandler = (data) => {
     console.log('WiFi status update:', data)
@@ -152,6 +103,55 @@ const loadInitialData = async () => {
     throw error // Don't hide the error
   }
 }
+
+const initializeWiFiData = async () => {
+  if (signalrConnection.value?.state === 'Connected' && preferredMode.value === null) {
+    console.log('Initializing WiFi data...')
+    await setupSignalRHandlers()
+    await loadInitialData()
+  }
+}
+
+onMounted(async () => {
+  console.log('WiFiPanel mounted, SignalR connection available:', !!signalrConnection.value)
+  await initializeWiFiData()
+})
+
+// Watch for SignalR connection to become available - only initialize once
+watch(signalrConnection, async (newConnection, oldConnection) => {
+  console.log('WiFiPanel - SignalR connection changed:', !!newConnection, 'state:', newConnection?.state)
+
+  if (newConnection && preferredMode.value === null) {
+    // Set up a one-time connected handler instead of polling state
+    if (newConnection.state === 'Connected') {
+      console.log('Connection already connected, initializing WiFi data...')
+      await initializeWiFiData()
+    } else {
+      console.log('Waiting for connection to be established...')
+      // Use a simple retry approach instead of onconnected to avoid conflicts with App.vue
+      const checkAndInitialize = async () => {
+        if (newConnection.state === 'Connected' && preferredMode.value === null) {
+          console.log('Connection now ready, initializing WiFi data...')
+          await initializeWiFiData()
+        } else if (preferredMode.value === null) {
+          // Retry after a short delay
+          setTimeout(checkAndInitialize, 100)
+        }
+      }
+
+      // Start checking after a brief delay to let the connection establish
+      setTimeout(checkAndInitialize, 100)
+    }
+  }
+}, { immediate: true })
+
+onUnmounted(() => {
+  if (signalrConnection.value) {
+    signalrConnection.value.off("WiFiStatusUpdate", statusUpdateHandler)
+    signalrConnection.value.off("WiFiFallbackNotification", fallbackNotificationHandler)
+    signalrConnection.value.off("WiFiKnownNetworksUpdate", knownNetworksUpdateHandler)
+  }
+})
 
 const connectToWiFi = async () => {
   if (!clientConfig.value.ssid || !clientConfig.value.password) {

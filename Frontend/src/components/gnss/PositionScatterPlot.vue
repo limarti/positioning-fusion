@@ -56,38 +56,6 @@ const formatSpan = (meters) => {
   return (meters / 1000).toFixed(1) + 'km'
 }
 
-// Watch for new GNSS position data
-watch(() => [props.gnssData.latitude, props.gnssData.longitude, props.gnssData.fixType], 
-  ([lat, lng, fixType]) => {
-    if (lat !== null && lng !== null) {
-      if (!referencePoint.value) {
-        referencePoint.value = { lat, lng }
-      }
-      
-      const meters = convertToMeters(lat, lng, referencePoint.value.lat, referencePoint.value.lng)
-      
-      const newPoint = {
-        x: meters.x,
-        y: meters.y,
-        lat: lat,
-        lng: lng,
-        fixType: fixType || 'Unknown',
-        timestamp: new Date(),
-        color: getPointColor(fixType)
-      }
-      
-      positionHistory.push(newPoint)
-      
-      if (positionHistory.length > maxPoints.value) {
-        positionHistory.splice(0, positionHistory.length - maxPoints.value)
-      }
-      
-      updatePlot()
-    }
-  }, 
-  { immediate: true }
-)
-
 // Create/update the plot
 const updatePlot = () => {
   if (!plotContainer.value || positionHistory.length === 0) return
@@ -181,6 +149,38 @@ const updatePlot = () => {
   
   plotContainer.value.appendChild(currentPlot)
 }
+
+// Watch for new GNSS position data
+watch(() => [props.gnssData.latitude, props.gnssData.longitude, props.gnssData.fixType],
+  ([lat, lng, fixType]) => {
+    if (lat !== null && lng !== null) {
+      if (!referencePoint.value) {
+        referencePoint.value = { lat, lng }
+      }
+
+      const meters = convertToMeters(lat, lng, referencePoint.value.lat, referencePoint.value.lng)
+
+      const newPoint = {
+        x: meters.x,
+        y: meters.y,
+        lat: lat,
+        lng: lng,
+        fixType: fixType || 'Unknown',
+        timestamp: new Date(),
+        color: getPointColor(fixType)
+      }
+
+      positionHistory.push(newPoint)
+
+      if (positionHistory.length > maxPoints.value) {
+        positionHistory.splice(0, positionHistory.length - maxPoints.value)
+      }
+
+      updatePlot()
+    }
+  },
+  { immediate: true }
+)
 
 // Control functions
 const zoomIn = () => {
