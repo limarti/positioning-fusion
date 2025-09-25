@@ -2,7 +2,11 @@
 import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr'
 import Layout from './components/layout/Layout.vue'
-import GnssPanel from './components/GnssPanel.vue'
+import GnssStatus from './components/gnss/GnssStatus.vue'
+import SatelliteHealthPanel from './components/gnss/SatelliteHealthPanel.vue'
+import RtkPanel from './components/gnss/RtkPanel.vue'
+import PositionScatterPlot from './components/gnss/PositionScatterPlot.vue'
+import MessageRatesPanel from './components/MessageRatesPanel.vue'
 import ImuPanel from './components/ImuPanel.vue'
 import CameraPanel from './components/CameraPanel.vue'
 import EncoderPanel from './components/EncoderPanel.vue'
@@ -553,12 +557,36 @@ onUnmounted(async () => {
       <!-- Dynamic Content Based on Active Section -->
       <div class="space-y-6">
         <!-- GNSS Section -->
-        <div v-if="activeSection === 'gnss'">
-          <div class="mb-6">
-            <GnssPanel :gnssData="gnssData" :dataRates="dataRates" :messageRates="messageRates" />
-          </div>
-          <div>
-            <ModeSelectionPanel :currentMode="currentMode" @modeChanged="handleModeChanged" />
+        <div v-if="activeSection === 'gnss'" class="space-y-6">
+          <!-- GNSS Status Summary -->
+          <GnssStatus :gnssData="gnssData" />
+
+          <!-- GNSS Subpanels -->
+          <div class="columns-1 lg:columns-2 gap-6 space-y-6">
+            <!-- Satellite Health Subsection -->
+            <div class="break-inside-avoid mb-6">
+              <SatelliteHealthPanel :gnssData="gnssData" />
+            </div>
+
+            <!-- Unified RTK Panel -->
+            <div class="break-inside-avoid mb-6">
+              <RtkPanel :gnssData="gnssData" />
+            </div>
+
+            <!-- Position Scatter Plot -->
+            <div class="break-inside-avoid mb-6">
+              <PositionScatterPlot :gnssData="gnssData" />
+            </div>
+
+            <!-- UBX Message Rates Subsection -->
+            <div class="break-inside-avoid mb-6">
+              <MessageRatesPanel :messageRates="messageRates" />
+            </div>
+
+            <!-- Mode Selection Panel -->
+            <div class="break-inside-avoid mb-6">
+              <ModeSelectionPanel :currentMode="currentMode" @modeChanged="handleModeChanged" />
+            </div>
           </div>
         </div>
 
