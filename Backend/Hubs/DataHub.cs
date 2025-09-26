@@ -169,7 +169,7 @@ public class DataHub : Hub
         try
         {
             var networks = await _wifiService.GetKnownNetworks();
-            _logger.LogDebug("Returning {Count} known networks to client: {ConnectionId}", 
+            _logger.LogDebug("Returning {Count} known networks to client: {ConnectionId}",
                 networks.Count, connectionId);
             return networks;
         }
@@ -178,6 +178,17 @@ public class DataHub : Hub
             _logger.LogError(ex, "Exception getting known networks for client: {ConnectionId}", connectionId);
             return new List<KnownWiFiNetwork>();
         }
+    }
+
+    public WiFiAPConfiguration GetAPConfiguration()
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogDebug("GetAPConfiguration called by client: {ConnectionId}", connectionId);
+
+        var config = _wifiService.GetAPConfiguration();
+        _logger.LogDebug("Returning AP configuration (SSID: {SSID}) to client: {ConnectionId}",
+            config.SSID, connectionId);
+        return config;
     }
 
     public async Task<bool> RemoveKnownNetwork(string ssid)

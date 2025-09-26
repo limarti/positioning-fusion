@@ -44,16 +44,24 @@ public class WiFiConnectionRequest
 public class WiFiAPConfigurationRequest
 {
     [Required]
-    public string SSID { get; set; } = "Subterra-AP";
-    
+    public string SSID { get; set; } = string.Empty;
+
     [Required]
-    public string Password { get; set; } = "subterra";
+    public string Password { get; set; } = string.Empty;
 }
 
 public class WiFiModePreferenceRequest
 {
     [Required]
     public WiFiMode PreferredMode { get; set; }
+}
+
+public class WiFiAPConfiguration
+{
+    public string SSID { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string IPAddress { get; set; } = string.Empty;
+    public string Subnet { get; set; } = string.Empty;
 }
 
 public enum WiFiMode

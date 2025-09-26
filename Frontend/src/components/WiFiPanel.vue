@@ -22,8 +22,8 @@ const preferredMode = ref(null)
 
 // AP Configuration
 const apConfig = ref({
-  ssid: 'Subterra-AP',
-  password: 'subterra'
+  ssid: '',
+  password: ''
 })
 
 // Client Connection
@@ -96,7 +96,15 @@ const loadInitialData = async () => {
     console.log('Preferred mode received:', mode)
     preferredMode.value = mode
 
-    console.log('All initial WiFi data loaded successfully:', { status, networks, preferredMode: mode })
+    console.log('Loading AP configuration...')
+    const apConfiguration = await signalrConnection.value.invoke('GetAPConfiguration')
+    console.log('AP configuration received:', apConfiguration)
+    apConfig.value = {
+      ssid: apConfiguration.ssid || '',
+      password: apConfiguration.password || ''
+    }
+
+    console.log('All initial WiFi data loaded successfully:', { status, networks, preferredMode: mode, apConfig: apConfiguration })
   } catch (error) {
     console.error('Error loading initial WiFi data:', error)
     console.error('Error details:', error.message, error.stack)

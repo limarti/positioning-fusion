@@ -357,7 +357,7 @@ public class GnssInitializer
         return _serialPortLock;
     }
 
-    const int UBX_MESSAGES_RATE_HZ = 10;    //1, 5, 10 or 20
+    const int UBX_MESSAGES_RATE_HZ = 5;    //1, 5, 10 or 20
     private async Task ConfigureForSatelliteDataAsync()
     {
         if (_serialPort == null || !_serialPort.IsOpen)
@@ -376,16 +376,16 @@ public class GnssInitializer
             await SetNavigationRate(UBX_MESSAGES_RATE_HZ);
 
             // Enable messages at full rate (10Hz) - every navigation solution
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SIG_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_SFRBX_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_COR_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TM2_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, 10);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_DOP_UART1, 10);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SIG_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_SFRBX_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_COR_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TM2_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_DOP_UART1, 5);
 
             if (_configurationManager.OperatingMode == OperatingMode.Send)
             {

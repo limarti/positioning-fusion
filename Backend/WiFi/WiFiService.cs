@@ -82,7 +82,7 @@ public class WiFiService : BackgroundService
         await UpdateWiFiStatus();
         
         // Check if we should attempt to connect to known networks
-        if (_currentStatus.CurrentMode == WiFiMode.AP && ShouldAttemptClientConnection())
+        if (ShouldAttemptClientConnection())
         {
             await AttemptKnownNetworkConnection();
         }
@@ -101,10 +101,19 @@ public class WiFiService : BackgroundService
         var wifiConfig = _configManager.WiFiConfiguration;
         var knownNetworks = wifiConfig.KnownNetworks;
 
-        // Only attempt client connection if preferred mode is Client and we have known networks
-        return wifiConfig.PreferredMode == WiFiMode.Client &&
-               knownNetworks.Any() &&
-               !_isAttemptingConnection;
+        var shouldAttempt = wifiConfig.PreferredMode == WiFiMode.Client &&
+                           knownNetworks.Any() &&
+                           !_isAttemptingConnection &&
+                           !(_currentStatus.CurrentMode == WiFiMode.Client && _currentStatus.IsConnected);
+
+        // Debug logging to understand why connections are being attempted
+        if (!shouldAttempt && wifiConfig.PreferredMode == WiFiMode.Client)
+        {
+            _logger.LogDebug("Not attempting client connection - PreferredMode: {PreferredMode}, HasKnownNetworks: {HasKnownNetworks}, IsAttempting: {IsAttempting}, CurrentMode: {CurrentMode}, IsConnected: {IsConnected}",
+                wifiConfig.PreferredMode, knownNetworks.Any(), _isAttemptingConnection, _currentStatus.CurrentMode, _currentStatus.IsConnected);
+        }
+
+        return shouldAttempt;
     }
 
     private async Task AttemptKnownNetworkConnection()
@@ -180,6 +189,16 @@ public class WiFiService : BackgroundService
 
             _configManager.SaveWiFiConfiguration();
 
+            // Check if AP is already running with the same SSID
+            var currentStatus = await GetCurrentWiFiStatus();
+            if (currentStatus.CurrentMode == WiFiMode.AP && 
+                currentStatus.IsConnected && 
+                currentStatus.ConnectedNetworkSSID == ssid)
+            {
+                _logger.LogDebug("AP mode already configured and running with SSID: {SSID}", ssid);
+                return true;
+            }
+
             // First, check if connection exists and delete it to start fresh
             _logger.LogInformation("Removing existing AP connection if it exists");
             var deleteResult = await ExecuteNmcliCommand($"con delete \"{ssid}\"");
@@ -236,6 +255,14 @@ public class WiFiService : BackgroundService
         _logger.LogInformation("Falling back to AP mode. Reason: {Reason}", reason);
         
         _isAttemptingConnection = false;
+        
+        // Check if we're already in AP mode to avoid unnecessary reconfiguration
+        var currentStatus = await GetCurrentWiFiStatus();
+        if (currentStatus.CurrentMode == WiFiMode.AP && currentStatus.IsConnected)
+        {
+            _logger.LogDebug("Already in AP mode, skipping fallback reconfiguration");
+            return;
+        }
         
         var apSettings = _configManager.WiFiConfiguration.APSettings;
         await ConfigureAPMode(apSettings.SSID, apSettings.Password);
@@ -296,62 +323,87 @@ public class WiFiService : BackgroundService
             status.ConnectedNetworkSSID != _currentStatus.ConnectedNetworkSSID ||
             status.IsConnected != _currentStatus.IsConnected)
         {
-            _currentStatus = status;
             await _hubContext.Clients.All.SendAsync("WiFiStatusUpdate", status);
         }
+        
+        // Always update current status to ensure it reflects actual state
+        _currentStatus = status;
     }
 
     private async Task<WiFiStatusUpdate> GetCurrentWiFiStatus()
     {
         try
         {
-            var result = await ExecuteNmcliCommand("device wifi");
-            var connectionResult = await ExecuteNmcliCommand("connection show --active");
+            // Use device status which is more reliable than parsing connection output
+            var deviceResult = await ExecuteNmcliCommand("device status");
             
             var status = new WiFiStatusUpdate
             {
                 LastUpdated = DateTime.Now
             };
 
-            // Check if we're in AP mode or connected as client
-            if (connectionResult.Success && connectionResult.Output.Contains("wifi"))
+            _logger.LogDebug("GetCurrentWiFiStatus - deviceResult.Success: {Success}", deviceResult.Success);
+
+            if (deviceResult.Success)
             {
-                var lines = connectionResult.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                var lines = deviceResult.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
                 foreach (var line in lines)
                 {
-                    if (line.Contains("wifi") && line.Contains("802-11-wireless"))
+                    _logger.LogDebug("Checking device line: {Line}", line);
+                    
+                    // Look for wifi device that's connected
+                    if (line.Contains("wifi") && (line.Contains("connected") || line.Contains("connecting")))
                     {
-                        var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length > 0)
+                        var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 4) // DEVICE, TYPE, STATE, CONNECTION
                         {
-                            var connectionName = parts[0];
+                            var deviceName = parts[0];  // e.g., wlan0
+                            var deviceType = parts[1];  // wifi
+                            var state = parts[2];       // connected/connecting/disconnected
+                            var connectionName = parts.Length > 3 ? parts[3] : "";
                             
-                            // Check if this is our AP connection
-                            var apSettings = _configManager.WiFiConfiguration.APSettings;
-                            if (connectionName.Contains(apSettings.SSID) || line.Contains("ap"))
+                            _logger.LogDebug("Found wifi device - Device: {Device}, State: {State}, Connection: {Connection}", 
+                                deviceName, state, connectionName);
+
+                            if (state == "connected" && !string.IsNullOrEmpty(connectionName))
                             {
-                                status.CurrentMode = WiFiMode.AP;
-                                status.ConnectedNetworkSSID = apSettings.SSID;
-                                status.IsConnected = true;
-                            }
-                            else
-                            {
-                                status.CurrentMode = WiFiMode.Client;
-                                status.ConnectedNetworkSSID = connectionName;
-                                status.IsConnected = true;
+                                // Check if this is our AP connection
+                                var apSettings = _configManager.WiFiConfiguration.APSettings;
+                                if (connectionName.Contains(apSettings.SSID))
+                                {
+                                    status.CurrentMode = WiFiMode.AP;
+                                    status.ConnectedNetworkSSID = apSettings.SSID;
+                                    status.IsConnected = true;
+                                    _logger.LogDebug("Detected AP mode - SSID: {SSID}", apSettings.SSID);
+                                }
+                                else
+                                {
+                                    status.CurrentMode = WiFiMode.Client;
+                                    status.ConnectedNetworkSSID = connectionName;
+                                    status.IsConnected = true;
+                                    _logger.LogDebug("Detected Client mode - ConnectionName: {ConnectionName}", connectionName);
+                                    
+                                    // Try to get signal strength
+                                    status.SignalStrength = await GetSignalStrength(connectionName);
+                                }
                                 
-                                // Try to get signal strength
-                                status.SignalStrength = await GetSignalStrength(connectionName);
+                                break; // Found our wifi connection, stop looking
                             }
                         }
                     }
                 }
             }
-            else
+
+            // If no connected wifi device found, we're disconnected
+            if (!status.IsConnected)
             {
                 status.CurrentMode = WiFiMode.Disconnected;
                 status.IsConnected = false;
+                _logger.LogDebug("Detected Disconnected mode");
             }
+
+            _logger.LogDebug("Final status - Mode: {Mode}, IsConnected: {IsConnected}, SSID: {SSID}", 
+                status.CurrentMode, status.IsConnected, status.ConnectedNetworkSSID);
 
             return status;
         }
@@ -519,16 +571,24 @@ public class WiFiService : BackgroundService
             // Switch modes immediately based on preference
             if (preferredMode == WiFiMode.AP)
             {
-                _logger.LogInformation("Preferred mode changed to AP, switching to AP mode immediately");
-                _isAttemptingConnection = false; // Stop any client connection attempts
-                var apSettings = _configManager.WiFiConfiguration.APSettings;
-                await ConfigureAPMode(apSettings.SSID, apSettings.Password);
+                // Only configure AP mode if not already in AP mode
+                if (_currentStatus.CurrentMode != WiFiMode.AP || !_currentStatus.IsConnected)
+                {
+                    _logger.LogInformation("Preferred mode changed to AP, switching to AP mode immediately");
+                    _isAttemptingConnection = false; // Stop any client connection attempts
+                    var apSettings = _configManager.WiFiConfiguration.APSettings;
+                    await ConfigureAPMode(apSettings.SSID, apSettings.Password);
+                }
             }
             else if (preferredMode == WiFiMode.Client)
             {
-                _logger.LogInformation("Preferred mode changed to Client, attempting to connect to known networks");
-                _isAttemptingConnection = false; // Reset connection attempt state
-                await AttemptKnownNetworkConnection();
+                // Only attempt client connection if not already connected in client mode
+                if (_currentStatus.CurrentMode != WiFiMode.Client || !_currentStatus.IsConnected)
+                {
+                    _logger.LogInformation("Preferred mode changed to Client, attempting to connect to known networks");
+                    _isAttemptingConnection = false; // Reset connection attempt state
+                    await AttemptKnownNetworkConnection();
+                }
             }
 
             return true;
@@ -538,5 +598,17 @@ public class WiFiService : BackgroundService
             _logger.LogError(ex, "Failed to set preferred WiFi mode to: {Mode}", preferredMode);
             return false;
         }
+    }
+
+    public WiFiAPConfiguration GetAPConfiguration()
+    {
+        var apSettings = _configManager.WiFiConfiguration.APSettings;
+        return new WiFiAPConfiguration
+        {
+            SSID = apSettings.SSID,
+            Password = apSettings.Password,
+            IPAddress = apSettings.IPAddress,
+            Subnet = apSettings.Subnet
+        };
     }
 }
