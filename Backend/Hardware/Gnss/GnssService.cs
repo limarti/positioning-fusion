@@ -186,13 +186,13 @@ public class GnssService : BackgroundService
                     }
                 }
 
-                // Check every 2 seconds (much less frequent)
-                await Task.Delay(2000, stoppingToken);
+                // Check every 100ms for more responsive data handling
+                await Task.Delay(100, stoppingToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in backup polling loop");
-                await Task.Delay(2000, stoppingToken);
+                await Task.Delay(100, stoppingToken);
             }
         }
     }
@@ -233,35 +233,50 @@ public class GnssService : BackgroundService
         {
             try
             {
-                if (_serialPort.BytesToRead > 0)
+                // Smart burst reading - keep reading while data is available
+                bool dataRead = false;
+                int totalBytesRead = 0;
+                
+                while (_serialPort.BytesToRead > 0)
                 {
-                    var bytesToRead = Math.Min(_serialPort.BytesToRead, 1024);
+                    var bytesToRead = Math.Min(_serialPort.BytesToRead, 4096);
                     var buffer = new byte[bytesToRead];
                     var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
+                    
+                    if (bytesRead == 0)
+                        break; // No more data available
+                    
+                    dataRead = true;
+                    totalBytesRead += bytesRead;
+                    
+                    // Track bytes received for data rate calculation
+                    _bytesReceived += bytesRead;
 
-                // Track bytes received for data rate calculation
-                _bytesReceived += bytesRead;
-
-                lock (_timeLock)
-                {
-                    _lastDataProcessTime = DateTime.UtcNow;
-                }
-
-                // Log when backup polling reads data (indicates event system failed)
-                if (fromPolling)
-                {
-                    _logger.LogInformation("📥 BACKUP POLL: Read {BytesRead} bytes from GNSS", bytesRead);
-                }
-
-                //_logger.LogInformation("📥 Read {BytesRead} bytes from GNSS, buffer now has {BufferSize} bytes", bytesRead, _dataBuffer.Count + bytesRead);
-
-                lock (_dataBufferLock)
-                {
-                    for (int i = 0; i < bytesRead; i++)
+                    lock (_dataBufferLock)
                     {
-                        _dataBuffer.Add(buffer[i]);
+                        for (int i = 0; i < bytesRead; i++)
+                        {
+                            _dataBuffer.Add(buffer[i]);
+                        }
                     }
+                    
+                    // If we didn't read a full buffer, we've drained the serial port
+                    if (bytesRead < bytesToRead)
+                        break;
                 }
+                
+                if (dataRead)
+                {
+                    lock (_timeLock)
+                    {
+                        _lastDataProcessTime = DateTime.UtcNow;
+                    }
+
+                    // Log when backup polling reads data (indicates event system failed)
+                    if (fromPolling)
+                    {
+                        _logger.LogInformation("📥 BACKUP POLL: Read {BytesRead} bytes from GNSS in burst mode", totalBytesRead);
+                    }
 
                     await ProcessBufferedDataAsync(stoppingToken);
                 }
