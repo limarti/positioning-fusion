@@ -382,7 +382,126 @@ public class SystemMonitoringService : BackgroundService
     }
 
     /// <summary>
-    /// Updates the system hostname by modifying /etc/hostname and /etc/hosts
+    /// Updates the Bluetooth device name in /etc/bluetooth/main.conf to match the hostname
+    /// </summary>
+    private async Task<bool> UpdateBluetoothDeviceNameAsync(string newHostname)
+    {
+        const string bluetoothConfigPath = "/etc/bluetooth/main.conf";
+
+        try
+        {
+            _logger.LogInformation("Updating Bluetooth device name to: {NewHostname}", newHostname);
+
+            if (!File.Exists(bluetoothConfigPath))
+            {
+                _logger.LogWarning("Bluetooth configuration file not found at {Path}", bluetoothConfigPath);
+                return false;
+            }
+
+            // Read current configuration
+            var lines = await File.ReadAllLinesAsync(bluetoothConfigPath);
+            var updatedLines = new List<string>();
+            bool nameUpdated = false;
+
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+
+                // Look for the Name setting (could be commented or not)
+                if (trimmedLine.StartsWith("Name =") || trimmedLine.StartsWith("#Name ="))
+                {
+                    // Replace with new hostname
+                    updatedLines.Add($"Name = {newHostname}");
+                    nameUpdated = true;
+                    _logger.LogDebug("Updated Bluetooth Name setting to: {NewHostname}", newHostname);
+                }
+                else
+                {
+                    updatedLines.Add(line);
+                }
+            }
+
+            // If Name setting wasn't found, add it to the [General] section
+            if (!nameUpdated)
+            {
+                var generalSectionIndex = -1;
+                for (int i = 0; i < updatedLines.Count; i++)
+                {
+                    if (updatedLines[i].Trim() == "[General]")
+                    {
+                        generalSectionIndex = i;
+                        break;
+                    }
+                }
+
+                if (generalSectionIndex >= 0)
+                {
+                    updatedLines.Insert(generalSectionIndex + 1, $"Name = {newHostname}");
+                    _logger.LogDebug("Added new Bluetooth Name setting to [General] section: {NewHostname}", newHostname);
+                }
+                else
+                {
+                    _logger.LogWarning("Could not find [General] section in Bluetooth config to add Name setting");
+                    return false;
+                }
+            }
+
+            // Write updated configuration
+            await File.WriteAllLinesAsync(bluetoothConfigPath, updatedLines);
+            _logger.LogInformation("Updated Bluetooth configuration file successfully");
+
+            // Restart Bluetooth service to apply changes
+            var restartSuccess = await ExecuteCommand("systemctl", "restart bluetooth");
+            if (restartSuccess)
+            {
+                _logger.LogInformation("Successfully restarted Bluetooth service");
+            }
+            else
+            {
+                _logger.LogWarning("Failed to restart Bluetooth service - changes may not take effect until manual restart");
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update Bluetooth device name to {NewHostname}", newHostname);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Updates the device name configuration (which automatically updates AP and Bluetooth names)
+    /// </summary>
+    private bool UpdateDeviceName(string newDeviceName)
+    {
+        try
+        {
+            _logger.LogInformation("Updating device name: {NewDeviceName}", newDeviceName);
+
+            var oldDeviceName = _configurationManager.DeviceName;
+            if (oldDeviceName != newDeviceName)
+            {
+                _configurationManager.DeviceName = newDeviceName;
+                _configurationManager.SaveConfiguration();
+                _logger.LogInformation("Updated device name from '{OldDeviceName}' to '{NewDeviceName}'", oldDeviceName, newDeviceName);
+            }
+            else
+            {
+                _logger.LogDebug("Device name already matches: {DeviceName}", newDeviceName);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update device name: {NewDeviceName}", newDeviceName);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Updates the system hostname by modifying /etc/hostname and /etc/hosts, and syncs Bluetooth and AP names
     /// </summary>
     public async Task<HostnameUpdateResponse> UpdateHostnameAsync(string newHostname)
     {
@@ -435,12 +554,57 @@ public class SystemMonitoringService : BackgroundService
             // Apply hostname change immediately using hostnamectl
             var immediateSuccess = await ApplyHostnameImmediately(newHostname);
 
+            // Update device name (which automatically updates Bluetooth and AP names)
+            var deviceNameSuccess = UpdateDeviceName(newHostname);
+
+            // Update Bluetooth device name to match hostname
+            var bluetoothSuccess = await UpdateBluetoothDeviceNameAsync(newHostname);
+
+            // Prepare success message
+            var successMessages = new List<string>();
+            var warningMessages = new List<string>();
+
+            if (immediateSuccess)
+            {
+                successMessages.Add("hostname applied immediately");
+            }
+            else
+            {
+                warningMessages.Add("hostname changes will take effect after reboot");
+            }
+
+            if (deviceNameSuccess)
+            {
+                successMessages.Add("device name updated");
+            }
+            else
+            {
+                warningMessages.Add("device name update failed");
+            }
+
+            if (bluetoothSuccess)
+            {
+                successMessages.Add("Bluetooth device name updated");
+            }
+            else
+            {
+                warningMessages.Add("Bluetooth device name update failed");
+            }
+
+            var message = $"Hostname updated from '{currentHostname}' to '{newHostname}'";
+            if (successMessages.Any())
+            {
+                message += $" - {string.Join(", ", successMessages)}";
+            }
+            if (warningMessages.Any())
+            {
+                message += $" - Warnings: {string.Join(", ", warningMessages)}";
+            }
+
             return new HostnameUpdateResponse
             {
                 Success = true,
-                Message = immediateSuccess
-                    ? $"Hostname successfully updated from '{currentHostname}' to '{newHostname}' and applied immediately."
-                    : $"Hostname files updated from '{currentHostname}' to '{newHostname}'. Changes will take effect after reboot (immediate application failed).",
+                Message = message,
                 CurrentHostname = newHostname
             };
         }

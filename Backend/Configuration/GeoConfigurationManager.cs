@@ -33,8 +33,9 @@ public class GeoConfigurationManager
         _logger.LogInformation("File exists check: {FileExists}", File.Exists(_configFilePath));
 
         _configuration = LoadConfiguration();
-        _logger.LogInformation("GeoConfigurationManager initialized - OperatingMode: {OperatingMode}, WiFi PreferredMode: {WiFiPreferredMode}",
-            _configuration.OperatingMode, _configuration.WiFiConfiguration.PreferredMode);
+
+        _logger.LogInformation("GeoConfigurationManager initialized - OperatingMode: {OperatingMode}, WiFi PreferredMode: {WiFiPreferredMode}, Device Name: {DeviceName}",
+            _configuration.OperatingMode, _configuration.WiFiConfiguration.PreferredMode, _configuration.DeviceName);
     }
 
     public OperatingMode OperatingMode
@@ -56,6 +57,29 @@ public class GeoConfigurationManager
         }
     }
 
+    public string DeviceName
+    {
+        get => _configuration.DeviceName;
+        set
+        {
+            var oldName = _configuration.DeviceName;
+            if (oldName != value)
+            {
+                _logger?.LogDebug("Device name property changing from {OldName} to {NewName}", oldName, value);
+                _configuration.DeviceName = value;
+                _logger?.LogInformation("Device name property updated: {OldName} → {NewName}", oldName, value);
+            }
+            else
+            {
+                _logger?.LogDebug("Device name property set to same value: {Name}", value);
+            }
+        }
+    }
+
+    public string APName => DeviceName;
+
+    public string BluetoothName => DeviceName;
+
     public WiFiConfiguration WiFiConfiguration
     {
         get => _configuration.WiFiConfiguration;
@@ -67,32 +91,17 @@ public class GeoConfigurationManager
         }
     }
 
-    public void SaveOperatingMode()
+    public void SaveConfiguration()
     {
         try
         {
-            _logger?.LogInformation("Saving operating mode: {Mode}", _configuration.OperatingMode);
+            _logger?.LogInformation("Saving configuration");
             SaveConfigurationInternal();
-            _logger?.LogInformation("Operating mode saved successfully: {Mode}", _configuration.OperatingMode);
+            _logger?.LogInformation("Configuration saved successfully");
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to save operating mode configuration");
-            throw;
-        }
-    }
-
-    public void SaveWiFiConfiguration()
-    {
-        try
-        {
-            _logger?.LogInformation("Saving WiFi configuration with preferred mode: {PreferredMode}", _configuration.WiFiConfiguration.PreferredMode);
-            SaveConfigurationInternal();
-            _logger?.LogInformation("WiFi configuration saved successfully with preferred mode: {PreferredMode}", _configuration.WiFiConfiguration.PreferredMode);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Failed to save WiFi configuration");
+            _logger?.LogError(ex, "Failed to save configuration");
             throw;
         }
     }
@@ -159,8 +168,29 @@ public class GeoConfigurationManager
 
     private class AppConfiguration
     {
+        public string DeviceName { get; set; } = GetDefaultDeviceName();
         public OperatingMode OperatingMode { get; set; } = OperatingMode.Disabled;
         public WiFiConfiguration WiFiConfiguration { get; set; } = new();
+
+        private static string GetDefaultDeviceName()
+        {
+            try
+            {
+                if (File.Exists("/etc/hostname"))
+                {
+                    var hostname = File.ReadAllText("/etc/hostname").Trim();
+                    if (!string.IsNullOrEmpty(hostname))
+                    {
+                        return hostname;
+                    }
+                }
+                return Environment.MachineName;
+            }
+            catch
+            {
+                return "raspberrypi";
+            }
+        }
     }
 }
 
@@ -173,10 +203,7 @@ public class WiFiConfiguration
 
 public class WiFiAPSettings
 {
-    public string SSID { get; set; } = "Subterra-AP";
     public string Password { get; set; } = "subterra";
-    public string IPAddress { get; set; } = "10.200.1.1";
-    public string Subnet { get; set; } = "24";
 }
 
 public class StoredWiFiNetwork

@@ -121,12 +121,13 @@ public class DataHub : Hub
     public async Task<bool> SetAPConfiguration(string ssid, string password)
     {
         var connectionId = Context.ConnectionId;
-        _logger.LogInformation("SetAPConfiguration called for SSID '{SSID}' by client: {ConnectionId}", ssid, connectionId);
+        _logger.LogInformation("SetAPConfiguration called for password update by client: {ConnectionId} (SSID parameter '{SSID}' ignored - using device name)", connectionId, ssid);
 
         try
         {
-            var success = await _wifiService.ConfigureAPMode(ssid, password);
-            _logger.LogInformation("AP configuration {Result} for client: {ConnectionId}", 
+            // SSID is now computed from device name in WiFiService, so we just pass password
+            var success = await _wifiService.SetAPPassword(password);
+            _logger.LogInformation("AP password configuration {Result} for client: {ConnectionId}",
                 success ? "succeeded" : "failed", connectionId);
             return success;
         }

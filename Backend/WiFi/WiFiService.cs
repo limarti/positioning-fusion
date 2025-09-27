@@ -8,6 +8,10 @@ namespace Backend.WiFi;
 
 public class WiFiService : BackgroundService
 {
+    // AP network constants
+    private const string AP_IP_ADDRESS = "10.200.1.1";
+    private const string AP_SUBNET = "24";
+
     private readonly IHubContext<DataHub> _hubContext;
     private readonly GeoConfigurationManager _configManager;
     private readonly ILogger<WiFiService> _logger;
@@ -48,8 +52,8 @@ public class WiFiService : BackgroundService
         if (preferredMode == WiFiMode.AP)
         {
             _logger.LogInformation("Preferred mode is AP, starting in AP mode immediately");
-            var apSettings = _configManager.WiFiConfiguration.APSettings;
-            await ConfigureAPMode(apSettings.SSID, apSettings.Password);
+            var apPassword = _configManager.WiFiConfiguration.APSettings.Password;
+            await ConfigureAPMode(_configManager.APName, apPassword);
         }
         else
         {
@@ -152,7 +156,7 @@ public class WiFiService : BackgroundService
                 {
                     _logger.LogInformation("Setting preferred mode to Client due to manual network connection");
                     _configManager.WiFiConfiguration.PreferredMode = WiFiMode.Client;
-                    _configManager.SaveWiFiConfiguration();
+                    _configManager.SaveConfiguration();
                 }
 
                 if (saveToKnown)
@@ -184,10 +188,9 @@ public class WiFiService : BackgroundService
         try
         {
             var apSettings = _configManager.WiFiConfiguration.APSettings;
-            apSettings.SSID = ssid;
             apSettings.Password = password;
 
-            _configManager.SaveWiFiConfiguration();
+            _configManager.SaveConfiguration();
 
             // Check if AP is already running with the same SSID
             var currentStatus = await GetCurrentWiFiStatus();
@@ -222,7 +225,7 @@ public class WiFiService : BackgroundService
             var createCommand = $"con add type wifi ifname {wifiInterface} con-name \"{ssid}\" autoconnect yes ssid \"{ssid}\" " +
                                $"802-11-wireless.mode ap 802-11-wireless.band bg " +
                                $"wifi-sec.key-mgmt wpa-psk wifi-sec.psk \"{password}\" " +
-                               $"ipv4.method shared ipv4.addresses {apSettings.IPAddress}/{apSettings.Subnet} " +
+                               $"ipv4.method shared ipv4.addresses {AP_IP_ADDRESS}/{AP_SUBNET} " +
                                $"connection.autoconnect-priority 100";
 
             var createResult = await ExecuteNmcliCommand(createCommand);
@@ -264,8 +267,8 @@ public class WiFiService : BackgroundService
             return;
         }
         
-        var apSettings = _configManager.WiFiConfiguration.APSettings;
-        await ConfigureAPMode(apSettings.SSID, apSettings.Password);
+        var apPassword = _configManager.WiFiConfiguration.APSettings.Password;
+        await ConfigureAPMode(_configManager.APName, apPassword);
         
         var notification = new WiFiFallbackNotification
         {
@@ -297,7 +300,7 @@ public class WiFiService : BackgroundService
             });
         }
         
-        _configManager.SaveWiFiConfiguration();
+        _configManager.SaveConfiguration();
         await SendKnownNetworksUpdate();
     }
 
@@ -309,7 +312,7 @@ public class WiFiService : BackgroundService
         if (network != null)
         {
             knownNetworks.Remove(network);
-            _configManager.SaveWiFiConfiguration();
+            _configManager.SaveConfiguration();
             await SendKnownNetworksUpdate();
             _logger.LogInformation("Removed known network: {SSID}", ssid);
         }
@@ -368,13 +371,13 @@ public class WiFiService : BackgroundService
                             if (state == "connected" && !string.IsNullOrEmpty(connectionName))
                             {
                                 // Check if this is our AP connection
-                                var apSettings = _configManager.WiFiConfiguration.APSettings;
-                                if (connectionName.Contains(apSettings.SSID))
+                                var apName = _configManager.APName;
+                                if (connectionName.Contains(apName))
                                 {
                                     status.CurrentMode = WiFiMode.AP;
-                                    status.ConnectedNetworkSSID = apSettings.SSID;
+                                    status.ConnectedNetworkSSID = apName;
                                     status.IsConnected = true;
-                                    _logger.LogDebug("Detected AP mode - SSID: {SSID}", apSettings.SSID);
+                                    _logger.LogDebug("Detected AP mode - SSID: {SSID}", apName);
                                 }
                                 else
                                 {
@@ -566,7 +569,7 @@ public class WiFiService : BackgroundService
             _logger.LogInformation("Setting preferred WiFi mode to: {Mode}", preferredMode);
 
             _configManager.WiFiConfiguration.PreferredMode = preferredMode;
-            _configManager.SaveWiFiConfiguration();
+            _configManager.SaveConfiguration();
 
             // Switch modes immediately based on preference
             if (preferredMode == WiFiMode.AP)
@@ -576,8 +579,8 @@ public class WiFiService : BackgroundService
                 {
                     _logger.LogInformation("Preferred mode changed to AP, switching to AP mode immediately");
                     _isAttemptingConnection = false; // Stop any client connection attempts
-                    var apSettings = _configManager.WiFiConfiguration.APSettings;
-                    await ConfigureAPMode(apSettings.SSID, apSettings.Password);
+                    var apPassword = _configManager.WiFiConfiguration.APSettings.Password;
+                    await ConfigureAPMode(_configManager.APName, apPassword);
                 }
             }
             else if (preferredMode == WiFiMode.Client)
@@ -600,15 +603,36 @@ public class WiFiService : BackgroundService
         }
     }
 
+    public async Task<bool> SetAPPassword(string password)
+    {
+        try
+        {
+            _logger.LogInformation("Setting AP password");
+            var apSettings = _configManager.WiFiConfiguration.APSettings;
+            apSettings.Password = password;
+            _configManager.SaveConfiguration();
+
+            // Reconfigure AP with new password
+            await ConfigureAPMode(_configManager.APName, password);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to set AP password");
+            return false;
+        }
+    }
+
     public WiFiAPConfiguration GetAPConfiguration()
     {
         var apSettings = _configManager.WiFiConfiguration.APSettings;
         return new WiFiAPConfiguration
         {
-            SSID = apSettings.SSID,
+            SSID = _configManager.APName,
             Password = apSettings.Password,
-            IPAddress = apSettings.IPAddress,
-            Subnet = apSettings.Subnet
+            IPAddress = AP_IP_ADDRESS,
+            Subnet = AP_SUBNET
         };
     }
 }

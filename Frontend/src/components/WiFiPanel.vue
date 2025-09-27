@@ -366,13 +366,10 @@ const formatLastConnected = (timestamp) => {
       <h3 class="font-semibold mb-3 text-blue-800">Access Point Configuration</h3>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">SSID</label>
-          <input
-            v-model="apConfig.ssid"
-            type="text"
-            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Network name"
-          />
+          <label class="block text-sm font-medium text-gray-700 mb-1">SSID (Auto-generated from device name)</label>
+          <div class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-gray-600">
+            {{ apConfig.ssid || 'Loading...' }}
+          </div>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
@@ -403,7 +400,7 @@ const formatLastConnected = (timestamp) => {
         @click="configureAP"
         class="mt-3 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
-        Update AP Configuration
+        Update AP Password
       </button>
     </div>
 
