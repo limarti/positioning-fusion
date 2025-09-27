@@ -14,9 +14,11 @@ public class SerialPortManager : IDisposable
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
     private readonly object _timeLock = new();
+    private readonly object _pollingLock = new();
     private DateTime _lastEventTime = DateTime.UtcNow;
     private CancellationTokenSource? _cancellationTokenSource;
     private bool _disposed = false;
+    private bool _isPollingEnabled = true;
 
     // Rate tracking
     private long _bytesReceived = 0;
@@ -28,6 +30,16 @@ public class SerialPortManager : IDisposable
 
     public bool IsConnected => _serialPort?.IsOpen == true;
     public double CurrentReceiveRate => _currentReceiveRate;
+    public bool IsPollingEnabled
+    {
+        get
+        {
+            lock (_pollingLock)
+            {
+                return _isPollingEnabled;
+            }
+        }
+    }
 
     public SerialPortManager(SerialPortConfig config, ILogger<SerialPortManager> logger)
     {
@@ -65,6 +77,22 @@ public class SerialPortManager : IDisposable
         _logger.LogInformation("Event + backup polling setup completed for {DeviceName}", _config.DeviceName);
     }
 
+    /// <summary>
+    /// Enables or disables backup polling. Events will still work when polling is disabled.
+    /// </summary>
+    public void SetPollingEnabled(bool enabled)
+    {
+        lock (_pollingLock)
+        {
+            if (_isPollingEnabled != enabled)
+            {
+                _isPollingEnabled = enabled;
+                _logger.LogInformation("Polling {Status} for {DeviceName}",
+                    enabled ? "enabled" : "disabled", _config.DeviceName);
+            }
+        }
+    }
+
     private async void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
     {
         try
@@ -92,24 +120,34 @@ public class SerialPortManager : IDisposable
             {
                 if (_serialPort != null && _serialPort.IsOpen)
                 {
-                    var now = DateTime.UtcNow;
-                    DateTime lastEvent;
-
-                    lock (_timeLock)
+                    // Check if polling is enabled
+                    bool pollingEnabled;
+                    lock (_pollingLock)
                     {
-                        lastEvent = _lastEventTime;
+                        pollingEnabled = _isPollingEnabled;
                     }
 
-                    var timeSinceLastEvent = now - lastEvent;
-
-                    // Simple logic: if data available and no event within configured interval, poll immediately
-                    var bytesToRead = _serialPort.BytesToRead;
-                    if (bytesToRead > 0 && timeSinceLastEvent.TotalMilliseconds >= _config.BackupPollingIntervalMs)
+                    if (pollingEnabled)
                     {
-                        _logger.LogInformation("🔍 BACKUP POLL ({DeviceName}): Events stopped working! Found {BytesToRead} bytes after {TimeSinceEvent:F1}ms without events",
-                            _config.DeviceName, bytesToRead, timeSinceLastEvent.TotalMilliseconds);
+                        var now = DateTime.UtcNow;
+                        DateTime lastEvent;
 
-                        await ReadAndProcessDataAsync(fromPolling: true);
+                        lock (_timeLock)
+                        {
+                            lastEvent = _lastEventTime;
+                        }
+
+                        var timeSinceLastEvent = now - lastEvent;
+
+                        // Simple logic: if data available and no event within configured interval, poll immediately
+                        var bytesToRead = _serialPort.BytesToRead;
+                        if (bytesToRead > 0 && timeSinceLastEvent.TotalMilliseconds >= _config.BackupPollingIntervalMs)
+                        {
+                            _logger.LogInformation("🔍 BACKUP POLL ({DeviceName}): Events stopped working! Found {BytesToRead} bytes after {TimeSinceEvent:F1}ms without events",
+                                _config.DeviceName, bytesToRead, timeSinceLastEvent.TotalMilliseconds);
+
+                            await ReadAndProcessDataAsync(fromPolling: true);
+                        }
                     }
                 }
 

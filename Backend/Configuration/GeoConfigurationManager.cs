@@ -18,6 +18,9 @@ public class GeoConfigurationManager
     private AppConfiguration _configuration;
     private readonly ILogger<GeoConfigurationManager>? _logger;
 
+    // Event for real-time mode change notifications
+    public event EventHandler<OperatingMode>? OperatingModeChanged;
+
     public GeoConfigurationManager()
     {
         _configFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "system-config.json");
@@ -49,6 +52,17 @@ public class GeoConfigurationManager
                 _logger?.LogDebug("Operating mode property changing from {OldMode} to {NewMode}", oldMode, value);
                 _configuration.OperatingMode = value;
                 _logger?.LogInformation("Operating mode property updated: {OldMode} → {NewMode}", oldMode, value);
+
+                // Fire event to notify subscribers of mode change
+                try
+                {
+                    OperatingModeChanged?.Invoke(this, value);
+                    _logger?.LogDebug("OperatingModeChanged event fired for new mode: {NewMode}", value);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Error firing OperatingModeChanged event for mode: {NewMode}", value);
+                }
             }
             else
             {

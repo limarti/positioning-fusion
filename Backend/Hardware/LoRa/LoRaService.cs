@@ -37,6 +37,12 @@ public class LoRaService : BackgroundService
             RateUpdateIntervalMs = 1000
         };
         _serialPortManager = new SerialPortManager(config, logger);
+
+        // Subscribe to operating mode changes to control polling
+        _configurationManager.OperatingModeChanged += OnOperatingModeChanged;
+
+        // Set initial polling state based on current mode
+        UpdatePollingForMode(_configurationManager.OperatingMode);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -125,6 +131,50 @@ public class LoRaService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "📡 LoRa: Error processing received data");
+        }
+    }
+
+    private void OnOperatingModeChanged(object? sender, OperatingMode newMode)
+    {
+        try
+        {
+            _logger.LogInformation("📡 LoRa: Operating mode changed to {NewMode}, updating polling", newMode);
+            UpdatePollingForMode(newMode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "📡 LoRa: Error handling operating mode change to {NewMode}", newMode);
+        }
+    }
+
+    private void UpdatePollingForMode(OperatingMode mode)
+    {
+        try
+        {
+            bool shouldEnablePolling = mode switch
+            {
+                OperatingMode.Receive => true,  // Rover mode - receiving corrections
+                OperatingMode.Send => false,    // Base mode - only sending corrections
+                OperatingMode.Disabled => false, // No LoRa activity
+                _ => false
+            };
+
+            _serialPortManager?.SetPollingEnabled(shouldEnablePolling);
+
+            string modeDescription = mode switch
+            {
+                OperatingMode.Receive => "Rover (receiving corrections)",
+                OperatingMode.Send => "Base (sending corrections)",
+                OperatingMode.Disabled => "Disabled",
+                _ => "Unknown"
+            };
+
+            _logger.LogInformation("📡 LoRa: Polling {Status} for {ModeDescription}",
+                shouldEnablePolling ? "enabled" : "disabled", modeDescription);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "📡 LoRa: Error updating polling for mode {Mode}", mode);
         }
     }
 
@@ -268,6 +318,9 @@ public class LoRaService : BackgroundService
     {
         _logger.LogInformation("Stopping LoRa Service");
 
+        // Unsubscribe from configuration events
+        _configurationManager.OperatingModeChanged -= OnOperatingModeChanged;
+
         // Stop SerialPortManager
         if (_serialPortManager != null)
         {
@@ -285,6 +338,9 @@ public class LoRaService : BackgroundService
     public override void Dispose()
     {
         _logger.LogInformation("LoRa Service disposing");
+
+        // Unsubscribe from configuration events
+        _configurationManager.OperatingModeChanged -= OnOperatingModeChanged;
 
         // Dispose SerialPortManager
         _serialPortManager?.Dispose();
