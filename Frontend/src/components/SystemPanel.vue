@@ -185,13 +185,14 @@ const cancelHostnameEdit = () => {
 </script>
 
 <template>
-  <!-- System Info (Combined) -->
-  <Card 
-    title="System" 
-    subtitle="—" 
-    :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z'/></svg>`"
-    icon-color="bg-emerald-500"
-  >
+  <div class="space-y-6">
+    <!-- System Info (Combined) -->
+    <Card 
+      title="System" 
+      subtitle="—" 
+      :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z'/></svg>`"
+      icon-color="bg-emerald-500"
+    >
     
     <!-- System data -->
     <div class="space-y-1 text-sm">
@@ -289,10 +290,10 @@ const cancelHostnameEdit = () => {
 
   </Card>
 
-  <!-- Hostname Configuration -->
+  <!-- Device Name -->
   <Card
-    title="Hostname Configuration"
-    subtitle="Edit device hostname"
+    title="Device Name"
+    subtitle="Edit device name"
     :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M12 2C13.1 2 14 2.9 14 4C14 5.1 13.1 6 12 6C10.9 6 10 5.1 10 4C10 2.9 10.9 2 12 2ZM21 9V7L15 1H5C3.89 1 3 1.89 3 3V21C3 22.11 3.89 23 5 23H19C20.11 23 21 22.11 21 21V9H21ZM19 21H5V3H13V9H19V21Z'/></svg>`"
     icon-color="bg-blue-500"
   >
@@ -370,16 +371,7 @@ const cancelHostnameEdit = () => {
         {{ hostnameError }}
       </div>
 
-      <!-- Hostname format help -->
-      <div class="text-xs text-slate-400">
-        <p>Hostname requirements:</p>
-        <ul class="list-disc list-inside ml-2 mt-1 space-y-0.5">
-          <li>2-63 characters long</li>
-          <li>Letters, digits, and hyphens only</li>
-          <li>Cannot start or end with a hyphen</li>
-          <li>No consecutive hyphens</li>
-        </ul>
-      </div>
     </div>
   </Card>
+  </div>
 </template>
