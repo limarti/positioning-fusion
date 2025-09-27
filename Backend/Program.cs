@@ -55,9 +55,8 @@ builder.Services.AddSignalR();
 // Add configuration manager
 builder.Services.AddSingleton<GeoConfigurationManager>();
 
-// Add WiFi services first (critical for connectivity)
+// Add WiFi services first (critical for connectivity) - started manually in Program.cs
 builder.Services.AddSingleton<WiFiService>();
-builder.Services.AddHostedService<WiFiService>(provider => provider.GetRequiredService<WiFiService>());
 
 // Add mode management service
 builder.Services.AddSingleton<ModeManagementService>();
@@ -120,12 +119,15 @@ Console.WriteLine($"Starting with operating mode: {operatingMode}");
 Console.WriteLine("Mode can now be changed via the web interface.");
 Console.WriteLine();
 
-// Initialize hardware (WiFi starts first as a background service)
+// Start WiFi service manually to begin connecting immediately
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
+var wifiService = app.Services.GetRequiredService<WiFiService>();
 var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
 var gnssInitializer = app.Services.GetRequiredService<GnssInitializer>();
 
-logger.LogInformation("WiFi service will initialize first to establish connectivity...");
+logger.LogInformation("Starting WiFi service to begin connection attempts immediately...");
+await wifiService.StartAsync(CancellationToken.None);
+logger.LogInformation("WiFi service started - connecting in parallel with hardware initialization");
 logger.LogInformation("Initializing IM19 IMU hardware...");
 try 
 {

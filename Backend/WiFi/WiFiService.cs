@@ -38,6 +38,10 @@ public class WiFiService : BackgroundService
         };
     }
 
+    // ===========================================================================================
+    // BACKGROUND SERVICE LIFECYCLE
+    // ===========================================================================================
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("WiFi Service starting...");
@@ -55,9 +59,14 @@ public class WiFiService : BackgroundService
             var apPassword = _configManager.WiFiConfiguration.APSettings.Password;
             await ConfigureAPMode(_configManager.APName, apPassword);
         }
+        else if (preferredMode == WiFiMode.Client)
+        {
+            _logger.LogInformation("Preferred mode is Client, attempting to connect to known networks on startup");
+            await AttemptKnownNetworkConnection();
+        }
         else
         {
-            _logger.LogInformation("Preferred mode is not AP ({PreferredMode}), skipping automatic AP configuration", preferredMode);
+            _logger.LogInformation("Preferred mode is ({PreferredMode}), no automatic configuration", preferredMode);
         }
 
         while (!stoppingToken.IsCancellationRequested)
@@ -80,6 +89,10 @@ public class WiFiService : BackgroundService
             }
         }
     }
+
+    // ===========================================================================================
+    // CONNECTION MANAGEMENT - CLIENT MODE
+    // ===========================================================================================
 
     private async Task CheckAndUpdateWiFiStatus()
     {
@@ -129,11 +142,69 @@ public class WiFiService : BackgroundService
         if (!knownNetworks.Any())
             return;
 
+        // Start the 2-minute retry period if not already attempting
+        if (!_isAttemptingConnection)
+        {
+            _isAttemptingConnection = true;
+            _lastConnectionAttempt = DateTime.Now;
+            _currentKnownNetworkIndex = 0;
+            _logger.LogInformation("Starting 2-minute connection attempt period for known networks");
+        }
+
         var network = knownNetworks[_currentKnownNetworkIndex % knownNetworks.Count];
         _currentKnownNetworkIndex++;
 
-        _logger.LogInformation("Attempting to connect to known network: {SSID}", network.SSID);
-        await ConnectToNetwork(network.SSID, network.Password, false);
+        _logger.LogInformation("Attempting to connect to known network: {SSID} (attempt in 2-minute window)", network.SSID);
+        var success = await ConnectToNetworkDuringRetry(network.SSID, network.Password);
+
+        if (success)
+        {
+            _logger.LogInformation("Successfully connected to {SSID} during retry period", network.SSID);
+            _isAttemptingConnection = false;
+        }
+    }
+
+    private async Task<bool> ConnectToNetworkDuringRetry(string ssid, string password)
+    {
+        try
+        {
+            var result = await ExecuteNmcliCommand(BuildWiFiConnectCommand(ssid, password));
+
+            if (result.Success)
+            {
+                _logger.LogInformation("Successfully connected to {SSID} during retry period", ssid);
+
+                // Update preferred mode to Client
+                if (_configManager.WiFiConfiguration.PreferredMode != WiFiMode.Client)
+                {
+                    _logger.LogInformation("Setting preferred mode to Client due to successful connection");
+                    _configManager.WiFiConfiguration.PreferredMode = WiFiMode.Client;
+                    _configManager.SaveConfiguration();
+                }
+
+                // Update the LastConnected time for this network
+                var knownNetworks = _configManager.WiFiConfiguration.KnownNetworks;
+                var existingNetwork = knownNetworks.FirstOrDefault(n => n.SSID == ssid);
+                if (existingNetwork != null)
+                {
+                    existingNetwork.LastConnected = DateTime.Now;
+                    _configManager.SaveConfiguration();
+                }
+
+                await UpdateWiFiStatus();
+                return true;
+            }
+            else
+            {
+                _logger.LogDebug("Failed to connect to {SSID} during retry period: {Error}", ssid, result.Error);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception connecting to {SSID} during retry period", ssid);
+            return false;
+        }
     }
 
     public async Task<bool> ConnectToNetwork(string ssid, string password, bool saveToKnown = true)
@@ -145,7 +216,7 @@ public class WiFiService : BackgroundService
 
         try
         {
-            var result = await ExecuteNmcliCommand($"device wifi connect \"{ssid}\" password \"{password}\"");
+            var result = await ExecuteNmcliCommand(BuildWiFiConnectCommand(ssid, password));
 
             if (result.Success)
             {
@@ -171,15 +242,21 @@ public class WiFiService : BackgroundService
             else
             {
                 _logger.LogWarning("Failed to connect to {SSID}: {Error}", ssid, result.Error);
+                _isAttemptingConnection = false;
                 return false;
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception connecting to {SSID}", ssid);
+            _isAttemptingConnection = false;
             return false;
         }
     }
+
+    // ===========================================================================================
+    // ACCESS POINT (AP) MODE MANAGEMENT
+    // ===========================================================================================
 
     public async Task<bool> ConfigureAPMode(string ssid, string password)
     {
@@ -204,7 +281,7 @@ public class WiFiService : BackgroundService
 
             // First, check if connection exists and delete it to start fresh
             _logger.LogInformation("Removing existing AP connection if it exists");
-            var deleteResult = await ExecuteNmcliCommand($"con delete \"{ssid}\"");
+            var deleteResult = await ExecuteNmcliCommand(BuildConnectionDeleteCommand(ssid));
             if (deleteResult.Success)
             {
                 _logger.LogInformation("Deleted existing connection: {SSID}", ssid);
@@ -222,11 +299,7 @@ public class WiFiService : BackgroundService
 
             // Create new AP connection with specific interface
             _logger.LogInformation("Creating new AP connection: {SSID}", ssid);
-            var createCommand = $"con add type wifi ifname {wifiInterface} con-name \"{ssid}\" autoconnect yes ssid \"{ssid}\" " +
-                               $"802-11-wireless.mode ap 802-11-wireless.band bg " +
-                               $"wifi-sec.key-mgmt wpa-psk wifi-sec.psk \"{password}\" " +
-                               $"ipv4.method shared ipv4.addresses {AP_IP_ADDRESS}/{AP_SUBNET} " +
-                               $"connection.autoconnect-priority 100";
+            var createCommand = BuildAPConnectionCommand(wifiInterface, ssid, password);
 
             var createResult = await ExecuteNmcliCommand(createCommand);
             if (!createResult.Success)
@@ -237,7 +310,7 @@ public class WiFiService : BackgroundService
 
             // Bring up the connection
             _logger.LogInformation("Bringing up AP connection: {SSID}", ssid);
-            var upResult = await ExecuteNmcliCommand($"con up \"{ssid}\"");
+            var upResult = await ExecuteNmcliCommand(BuildConnectionUpCommand(ssid));
             if (!upResult.Success)
             {
                 _logger.LogWarning("Failed to bring up AP connection: {Error}", upResult.Error);
@@ -280,6 +353,10 @@ public class WiFiService : BackgroundService
         await _hubContext.Clients.All.SendAsync("WiFiFallbackNotification", notification);
     }
 
+    // ===========================================================================================
+    // KNOWN NETWORKS MANAGEMENT
+    // ===========================================================================================
+
     private async Task AddToKnownNetworks(string ssid, string password)
     {
         var knownNetworks = _configManager.WiFiConfiguration.KnownNetworks;
@@ -318,6 +395,10 @@ public class WiFiService : BackgroundService
         }
     }
 
+    // ===========================================================================================
+    // STATUS MONITORING AND SIGNALR UPDATES
+    // ===========================================================================================
+
     private async Task UpdateWiFiStatus()
     {
         var status = await GetCurrentWiFiStatus();
@@ -338,7 +419,7 @@ public class WiFiService : BackgroundService
         try
         {
             // Use device status which is more reliable than parsing connection output
-            var deviceResult = await ExecuteNmcliCommand("device status");
+            var deviceResult = await ExecuteNmcliCommand(BuildDeviceStatusQuery());
             
             var status = new WiFiStatusUpdate
             {
@@ -353,19 +434,14 @@ public class WiFiService : BackgroundService
                 foreach (var line in lines)
                 {
                     _logger.LogDebug("Checking device line: {Line}", line);
-                    
+
                     // Look for wifi device that's connected
-                    if (line.Contains("wifi") && (line.Contains("connected") || line.Contains("connecting")))
+                    if (IsWiFiConnectedLine(line))
                     {
-                        var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length >= 4) // DEVICE, TYPE, STATE, CONNECTION
+                        var (deviceName, deviceType, state, connectionName) = ParseDeviceStatusLine(line);
+                        if (!string.IsNullOrEmpty(deviceName))
                         {
-                            var deviceName = parts[0];  // e.g., wlan0
-                            var deviceType = parts[1];  // wifi
-                            var state = parts[2];       // connected/connecting/disconnected
-                            var connectionName = parts.Length > 3 ? parts[3] : "";
-                            
-                            _logger.LogDebug("Found wifi device - Device: {Device}, State: {State}, Connection: {Connection}", 
+                            _logger.LogDebug("Found wifi device - Device: {Device}, State: {State}, Connection: {Connection}",
                                 deviceName, state, connectionName);
 
                             if (state == "connected" && !string.IsNullOrEmpty(connectionName))
@@ -426,21 +502,10 @@ public class WiFiService : BackgroundService
     {
         try
         {
-            var result = await ExecuteNmcliCommand($"device wifi list");
+            var result = await ExecuteNmcliCommand(BuildWiFiListQuery());
             if (result.Success)
             {
-                var lines = result.Output.Split('\n');
-                foreach (var line in lines)
-                {
-                    if (line.Contains(ssid) && line.Contains("*"))
-                    {
-                        var signalMatch = Regex.Match(line, @"(\d+)%");
-                        if (signalMatch.Success && int.TryParse(signalMatch.Groups[1].Value, out var signal))
-                        {
-                            return signal;
-                        }
-                    }
-                }
+                return ParseSignalStrengthFromWiFiList(result.Output, ssid);
             }
         }
         catch (Exception ex)
@@ -469,7 +534,7 @@ public class WiFiService : BackgroundService
     {
         try
         {
-            var result = await ExecuteNmcliCommand("device status");
+            var result = await ExecuteNmcliCommand(BuildDeviceStatusQuery());
             if (result.Success)
             {
                 var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
@@ -492,6 +557,76 @@ public class WiFiService : BackgroundService
         }
 
         return null; // No WiFi interface found
+    }
+
+    // ===========================================================================================
+    // UTILITY METHODS - NMCLI AND PARSING
+    // ===========================================================================================
+
+    private string BuildAPConnectionCommand(string wifiInterface, string ssid, string password)
+    {
+        return $"con add type wifi ifname {wifiInterface} con-name \"{ssid}\" autoconnect yes ssid \"{ssid}\" " +
+               $"802-11-wireless.mode ap 802-11-wireless.band bg " +
+               $"wifi-sec.key-mgmt wpa-psk wifi-sec.psk \"{password}\" " +
+               $"ipv4.method shared ipv4.addresses {AP_IP_ADDRESS}/{AP_SUBNET} " +
+               $"connection.autoconnect-priority 100";
+    }
+
+    private string BuildWiFiConnectCommand(string ssid, string password)
+    {
+        return $"device wifi connect \"{ssid}\" password \"{password}\"";
+    }
+
+    private string BuildConnectionDeleteCommand(string connectionName)
+    {
+        return $"con delete \"{connectionName}\"";
+    }
+
+    private string BuildConnectionUpCommand(string connectionName)
+    {
+        return $"con up \"{connectionName}\"";
+    }
+
+    private string BuildDeviceStatusQuery()
+    {
+        return "device status";
+    }
+
+    private string BuildWiFiListQuery()
+    {
+        return "device wifi list";
+    }
+
+    private (string deviceName, string deviceType, string state, string connectionName) ParseDeviceStatusLine(string line)
+    {
+        var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 4)
+        {
+            return (parts[0], parts[1], parts[2], parts[3]);
+        }
+        return (string.Empty, string.Empty, string.Empty, string.Empty);
+    }
+
+    private bool IsWiFiConnectedLine(string line)
+    {
+        return line.Contains("wifi") && (line.Contains("connected") || line.Contains("connecting"));
+    }
+
+    private int? ParseSignalStrengthFromWiFiList(string output, string ssid)
+    {
+        var lines = output.Split('\n');
+        foreach (var line in lines)
+        {
+            if (line.Contains(ssid) && line.Contains("*"))
+            {
+                var signalMatch = Regex.Match(line, @"(\d+)%");
+                if (signalMatch.Success && int.TryParse(signalMatch.Groups[1].Value, out var signal))
+                {
+                    return signal;
+                }
+            }
+        }
+        return null;
     }
 
     private async Task<(bool Success, string Output, string Error)> ExecuteNmcliCommand(string arguments)
@@ -542,6 +677,10 @@ public class WiFiService : BackgroundService
         }
     }
 
+    // ===========================================================================================
+    // PUBLIC API METHODS
+    // ===========================================================================================
+
     public async Task<WiFiStatusUpdate> GetWiFiStatus()
     {
         await UpdateWiFiStatus();
@@ -589,7 +728,6 @@ public class WiFiService : BackgroundService
                 if (_currentStatus.CurrentMode != WiFiMode.Client || !_currentStatus.IsConnected)
                 {
                     _logger.LogInformation("Preferred mode changed to Client, attempting to connect to known networks");
-                    _isAttemptingConnection = false; // Reset connection attempt state
                     await AttemptKnownNetworkConnection();
                 }
             }
