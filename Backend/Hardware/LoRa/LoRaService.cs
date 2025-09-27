@@ -1,5 +1,6 @@
 using System.IO.Ports;
 using Backend.Configuration;
+using Backend.Hardware.Common;
 
 namespace Backend.Hardware.LoRa;
 
@@ -11,6 +12,7 @@ public class LoRaService : BackgroundService
     private readonly ILogger<LoRaService> _logger;
     private readonly GeoConfigurationManager _configurationManager;
     private SerialPort? _loraPort;
+    private SerialPortManager? _serialPortManager;
     private long _loraBytesSent = 0;
     private long _loraBytesReceived = 0;
     private long _totalLoRaBytesSent = 0;
@@ -23,6 +25,18 @@ public class LoRaService : BackgroundService
     {
         _logger = logger;
         _configurationManager = configurationManager;
+
+        // Initialize SerialPortManager with LoRa-specific configuration
+        var config = new SerialPortConfig
+        {
+            DeviceName = "LoRa",
+            BackupPollingIntervalMs = 100,
+            CheckIntervalMs = 100,
+            ReadBufferSize = 2048,
+            MaxBufferSize = 20480, // 20KB (moderate for LoRa)
+            RateUpdateIntervalMs = 1000
+        };
+        _serialPortManager = new SerialPortManager(config, logger);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -80,13 +94,14 @@ public class LoRaService : BackgroundService
             _logger.LogDebug("📡 LoRa: Creating SerialPort for {Port} at {BaudRate} baud", LORA_PORT, LORA_BAUD_RATE);
             _loraPort = new SerialPort(LORA_PORT, LORA_BAUD_RATE, Parity.None, 8, StopBits.One);
 
-            // Set up data received event handler
-            _loraPort.DataReceived += OnSerialDataReceived;
-
             _logger.LogDebug("📡 LoRa: Opening port connection...");
             _loraPort.Open();
 
-            _logger.LogInformation("📡 LoRa: Successfully connected to {Port}", LORA_PORT);
+            // Set up SerialPortManager for reliable data collection
+            _serialPortManager!.DataReceived += OnSerialDataReceived;
+            await _serialPortManager.StartAsync(_loraPort);
+
+            _logger.LogInformation("📡 LoRa: Successfully connected to {Port} with SerialPortManager", LORA_PORT);
         }
         catch (Exception ex)
         {
@@ -95,37 +110,21 @@ public class LoRaService : BackgroundService
         }
     }
 
-    private void OnSerialDataReceived(object sender, SerialDataReceivedEventArgs e)
+    private void OnSerialDataReceived(object? sender, byte[] data)
     {
         try
         {
-            if (_loraPort?.IsOpen == true)
-            {
-                var bytesToRead = _loraPort.BytesToRead;
-                if (bytesToRead > 0)
-                {
-                    var buffer = new byte[bytesToRead];
-                    var bytesRead = _loraPort.Read(buffer, 0, bytesToRead);
+            _loraBytesReceived += data.Length;
+            _totalLoRaBytesReceived += data.Length;
 
-                    if (bytesRead > 0)
-                    {
-                        var data = new byte[bytesRead];
-                        Array.Copy(buffer, data, bytesRead);
+            _logger.LogDebug("📡 LoRa: Received {Length} bytes - Session Total: {TotalBytes} bytes", data.Length, _totalLoRaBytesReceived);
 
-                        _loraBytesReceived += bytesRead;
-                        _totalLoRaBytesReceived += bytesRead;
-
-                        _logger.LogDebug("📡 LoRa: Received {Length} bytes - Session Total: {TotalBytes} bytes", bytesRead, _totalLoRaBytesReceived);
-
-                        // Notify subscribers
-                        DataReceived?.Invoke(this, data);
-                    }
-                }
-            }
+            // Notify subscribers
+            DataReceived?.Invoke(this, data);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "📡 LoRa: Error reading received data");
+            _logger.LogWarning(ex, "📡 LoRa: Error processing received data");
         }
     }
 
@@ -196,9 +195,16 @@ public class LoRaService : BackgroundService
         try
         {
             _logger.LogInformation("📡 LoRa: Attempting to reconnect...");
+
+            // Stop SerialPortManager first
+            if (_serialPortManager != null)
+            {
+                _serialPortManager.DataReceived -= OnSerialDataReceived;
+                await _serialPortManager.StopAsync();
+            }
+
             if (_loraPort != null)
             {
-                _loraPort.DataReceived -= OnSerialDataReceived;
                 _loraPort.Close();
                 _loraPort.Dispose();
             }
@@ -262,23 +268,31 @@ public class LoRaService : BackgroundService
     {
         _logger.LogInformation("Stopping LoRa Service");
 
+        // Stop SerialPortManager
+        if (_serialPortManager != null)
+        {
+            _serialPortManager.DataReceived -= OnSerialDataReceived;
+            await _serialPortManager.StopAsync();
+            _logger.LogInformation("📡 LoRa SerialPortManager stopped");
+        }
+
         await base.StopAsync(cancellationToken);
 
         // Clean up serial port reference
-        if (_loraPort != null)
-        {
-            _loraPort.DataReceived -= OnSerialDataReceived;
-            _loraPort = null;
-        }
+        _loraPort = null;
     }
 
     public override void Dispose()
     {
+        _logger.LogInformation("LoRa Service disposing");
+
+        // Dispose SerialPortManager
+        _serialPortManager?.Dispose();
+
         if (_loraPort != null)
         {
             try
             {
-                _loraPort.DataReceived -= OnSerialDataReceived;
                 if (_loraPort.IsOpen)
                 {
                     _loraPort.Close();
@@ -294,7 +308,7 @@ public class LoRaService : BackgroundService
                 _loraPort = null;
             }
         }
-        
+
         base.Dispose();
     }
 }

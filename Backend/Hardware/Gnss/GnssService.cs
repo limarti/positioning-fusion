@@ -3,6 +3,7 @@ using Backend.Hardware.Bluetooth;
 using Backend.Hardware.LoRa;
 using Backend.Hardware.Gnss;
 using Backend.Hardware.Gnss.Parsers;
+using Backend.Hardware.Common;
 using Backend.Storage;
 using Backend.Configuration;
 using Microsoft.AspNetCore.SignalR;
@@ -21,12 +22,12 @@ public class GnssService : BackgroundService
     private readonly GeoConfigurationManager _configurationManager;
     private readonly GnssFrameParser _frameParser;
     private SerialPort? _serialPort;
+    private SerialPortManager? _serialPortManager;
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
     private const int MinBufferSizeBeforeDiscard = 1000; // Don't discard bytes if buffer is smaller than this
 
     // Data rate tracking
-    private long _bytesReceived = 0;
     private long _bytesSent = 0;
     private DateTime _lastRateUpdate = DateTime.UtcNow;
     
@@ -50,6 +51,18 @@ public class GnssService : BackgroundService
         _dataFileWriter = new DataFileWriter("GNSS.raw", loggerFactory.CreateLogger<DataFileWriter>());
         _bluetoothService = new BluetoothStreamingService(loggerFactory.CreateLogger<BluetoothStreamingService>());
         _frameParser = new GnssFrameParser(loggerFactory.CreateLogger<GnssFrameParser>());
+
+        // Initialize SerialPortManager with GNSS-specific configuration
+        var config = new SerialPortConfig
+        {
+            DeviceName = "GNSS",
+            BackupPollingIntervalMs = 100,
+            CheckIntervalMs = 100,
+            ReadBufferSize = 4096,
+            MaxBufferSize = 1048576, // 1MB
+            RateUpdateIntervalMs = 1000
+        };
+        _serialPortManager = new SerialPortManager(config, loggerFactory.CreateLogger<SerialPortManager>());
 
         // Get LoRa service from the service provider
         _loraService = serviceProvider.GetService<LoRaService>();
@@ -77,7 +90,6 @@ public class GnssService : BackgroundService
         {
             _logger.LogWarning("GNSS serial port not available - service will not collect data");
 
-
             // Send zero data rates since GNSS is disconnected
             await _hubContext.Clients.All.SendAsync("DataRatesUpdate", new DataRatesUpdate
             {
@@ -88,22 +100,15 @@ public class GnssService : BackgroundService
             return;
         }
 
-
         _logger.LogInformation("GNSS Service connected to {PortName} at {BaudRate} baud",
             _serialPort.PortName, _serialPort.BaudRate);
 
-        // Time mode polling via CFG-VALGET not supported by this module
-        // Status will be determined by presence of NAV-SVIN (active) or RTCM3 (completed) messages
+        // Set up SerialPortManager for reliable data collection
+        _serialPortManager!.DataReceived += OnSerialDataReceived;
+        _serialPortManager.RateUpdated += OnRateUpdated;
 
-        // Try event-driven approach first, with polling as backup
-        _logger.LogInformation("Setting up GNSS data handling with event + polling hybrid approach");
+        await _serialPortManager.StartAsync(_serialPort, stoppingToken);
 
-        // Subscribe to DataReceived event
-        _serialPort.DataReceived += OnDataReceived;
-
-        // Start backup polling only if events stop working
-        _ = BackupPollingLoop(stoppingToken);
-        
         // Start background task for periodic rate updates
         _ = Task.Run(async () => await RateUpdateLoop(stoppingToken), stoppingToken);
         
@@ -118,69 +123,31 @@ public class GnssService : BackgroundService
         }
     }
 
-    private readonly object _timeLock = new object();
-    private DateTime _lastEventTime = DateTime.UtcNow;
 
-    private async void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
+    private void OnSerialDataReceived(object? sender, byte[] data)
     {
         try
         {
-            lock (_timeLock)
+            // Add data to our processing buffer for frame parsing
+            lock (_dataBufferLock)
             {
-                _lastEventTime = DateTime.UtcNow;
+                _dataBuffer.AddRange(data);
             }
-            // Console.WriteLine("📡 TERMINAL: DataReceived event fired"); // Events working properly
-            await ReadAndProcessGnssDataAsync(CancellationToken.None, fromPolling: false);
+
+            // Process the buffered data asynchronously
+            _ = Task.Run(async () => await ProcessBufferedDataAsync(CancellationToken.None));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in DataReceived event handler");
+            _logger.LogError(ex, "Error in SerialPortManager data received handler");
         }
     }
 
-    private async Task BackupPollingLoop(CancellationToken stoppingToken)
+    private void OnRateUpdated(object? sender, double rate)
     {
-        _logger.LogInformation("GNSS backup polling started (only runs if events fail)");
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen)
-                {
-                    var now = DateTime.UtcNow;
-                    DateTime lastEvent;
-
-                    lock (_timeLock)
-                    {
-                        lastEvent = _lastEventTime;
-                    }
-
-                    var timeSinceLastEvent = now - lastEvent;
-
-                    // Simple logic: if data available and no event within 100ms, poll immediately
-                    var bytesToRead = _serialPort.BytesToRead;
-                    if (bytesToRead > 0 && timeSinceLastEvent.TotalMilliseconds >= 100)
-                    {
-                        _logger.LogInformation("🔍 BACKUP POLL: Events stopped working! Found {BytesToRead} bytes after {TimeSinceEvent:F1}ms without events",
-                            bytesToRead, timeSinceLastEvent.TotalMilliseconds);
-
-                        await ReadAndProcessGnssDataAsync(stoppingToken, fromPolling: true);
-                    }
-                }
-
-                // Check every 100ms for more responsive data handling
-                await Task.Delay(100, stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in backup polling loop");
-                await Task.Delay(100, stoppingToken);
-            }
-        }
+        // SerialPortManager provides the receive rate, we'll use it in our rate updates
+        // The actual rate broadcasting is still handled by RateUpdateLoop
     }
-
-    // Note: DataReceived event removed - using continuous polling instead for better reliability on Linux
 
     private async Task RateUpdateLoop(CancellationToken stoppingToken)
     {
@@ -203,81 +170,6 @@ public class GnssService : BackgroundService
         }
     }
 
-    private async Task ReadAndProcessGnssDataAsync(CancellationToken stoppingToken, bool fromPolling = false)
-    {
-        if (_serialPort == null || !_serialPort.IsOpen)
-            return;
-
-        // Use the shared lock to coordinate with GNSS reconfiguration
-        var serialPortLock = GnssInitializer.GetSerialPortLock();
-
-        // Try to acquire the lock with a short timeout to avoid blocking data flow too long
-        if (await serialPortLock.WaitAsync(50, stoppingToken))
-        {
-            try
-            {
-                // Smart burst reading - keep reading while data is available
-                bool dataRead = false;
-                int totalBytesRead = 0;
-                
-                while (_serialPort.BytesToRead > 0)
-                {
-                    var bytesToRead = Math.Min(_serialPort.BytesToRead, 4096);
-                    var buffer = new byte[bytesToRead];
-                    var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
-                    
-                    if (bytesRead == 0)
-                        break; // No more data available
-                    
-                    dataRead = true;
-                    totalBytesRead += bytesRead;
-                    
-                    // Track bytes received for data rate calculation
-                    _bytesReceived += bytesRead;
-
-                    lock (_dataBufferLock)
-                    {
-                        for (int i = 0; i < bytesRead; i++)
-                        {
-                            _dataBuffer.Add(buffer[i]);
-                        }
-                    }
-                    
-                    // If we didn't read a full buffer, we've drained the serial port
-                    if (bytesRead < bytesToRead)
-                        break;
-                }
-                
-                if (dataRead)
-                {
-                    // Log when backup polling reads data (indicates event system failed)
-                    if (fromPolling)
-                    {
-                        _logger.LogInformation("📥 BACKUP POLL: Read {BytesRead} bytes from GNSS in burst mode", totalBytesRead);
-                    }
-
-                    await ProcessBufferedDataAsync(stoppingToken);
-                }
-                else
-                {
-                    _logger.LogDebug("📭 No bytes available to read from GNSS");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error reading GNSS data");
-            }
-            finally
-            {
-                serialPortLock.Release();
-            }
-        }
-        else
-        {
-            // Could not acquire lock (likely during reconfiguration), skip this read cycle
-            _logger.LogDebug("⏸️ Skipping GNSS data read - serial port locked for reconfiguration");
-        }
-    }
 
     private async Task ProcessBufferedDataAsync(CancellationToken stoppingToken)
     {
@@ -666,12 +558,11 @@ public class GnssService : BackgroundService
         // Update rates every second
         if (timeDelta >= 1.0)
         {
-            // Calculate rates in kbps (kilobits per second)
-            _currentInRate = (_bytesReceived * 8.0) / (timeDelta * 1000.0);
+            // Get rates from SerialPortManager and calculate output rate
+            _currentInRate = _serialPortManager?.CurrentReceiveRate ?? 0.0;
             _currentOutRate = (_bytesSent * 8.0) / (timeDelta * 1000.0);
 
-            // Reset counters
-            _bytesReceived = 0;
+            // Reset output counter
             _bytesSent = 0;
             _lastRateUpdate = now;
 
@@ -837,11 +728,13 @@ public class GnssService : BackgroundService
     {
         _logger.LogInformation("GNSS Service StopAsync starting");
 
-        // Unsubscribe from serial port events
-        if (_serialPort != null)
+        // Stop SerialPortManager
+        if (_serialPortManager != null)
         {
-            _serialPort.DataReceived -= OnDataReceived;
-            _logger.LogInformation("📡 Unsubscribed from serial port data events");
+            _serialPortManager.DataReceived -= OnSerialDataReceived;
+            _serialPortManager.RateUpdated -= OnRateUpdated;
+            await _serialPortManager.StopAsync();
+            _logger.LogInformation("📡 SerialPortManager stopped");
         }
 
         // Unsubscribe from LoRa events
@@ -867,6 +760,7 @@ public class GnssService : BackgroundService
     public override void Dispose()
     {
         _logger.LogInformation("GNSS Service disposing");
+        _serialPortManager?.Dispose();
         _dataFileWriter.Dispose();
         _bluetoothService.Dispose();
         base.Dispose();

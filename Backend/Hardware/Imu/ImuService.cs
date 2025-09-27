@@ -1,4 +1,5 @@
 using Backend.Hubs;
+using Backend.Hardware.Common;
 using Backend.Storage;
 using Microsoft.AspNetCore.SignalR;
 using System.IO.Ports;
@@ -13,6 +14,7 @@ public class ImuService : BackgroundService
     private readonly ImuParser _imuParser;
     private readonly DataFileWriter _dataFileWriter;
     private SerialPort? _serialPort;
+    private SerialPortManager? _serialPortManager;
     private readonly byte[] _buffer = new byte[1024];
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
@@ -20,7 +22,6 @@ public class ImuService : BackgroundService
     private readonly TimeSpan _signalRThrottleInterval = TimeSpan.FromMilliseconds(1000); // 1Hz = 1000ms interval
     private readonly object _throttleLock = new object();
     private bool _headerWritten = false;
-    private DateTime _lastEventTime = DateTime.UtcNow;
     
     // Kbps tracking
     private long _totalBytesReceived = 0;
@@ -38,6 +39,18 @@ public class ImuService : BackgroundService
         _imuInitializer = imuInitializer;
         _imuParser = new ImuParser(loggerFactory.CreateLogger<ImuParser>());
         _dataFileWriter = new DataFileWriter("IMU.txt", loggerFactory.CreateLogger<DataFileWriter>());
+
+        // Initialize SerialPortManager with IMU-specific configuration
+        var config = new SerialPortConfig
+        {
+            DeviceName = "IMU",
+            BackupPollingIntervalMs = 100,
+            CheckIntervalMs = 100,
+            ReadBufferSize = 1024,
+            MaxBufferSize = 10240, // 10KB (smaller for IMU)
+            RateUpdateIntervalMs = 1000
+        };
+        _serialPortManager = new SerialPortManager(config, loggerFactory.CreateLogger<SerialPortManager>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -58,28 +71,11 @@ public class ImuService : BackgroundService
 
         _logger.LogInformation("IMU Service connected to serial port - listening for MEMS data at 50Hz, sending SignalR updates at 1Hz");
 
-        // Subscribe to serial port data received event
-        _serialPort.DataReceived += OnSerialDataReceived;
-        _logger.LogInformation("🔗 IMU DataReceived event subscription completed");
-        
-        // Prime the event system with an initial read (fixes Linux DataReceived event issues)
-        _ = Task.Run(async () => 
-        {
-            await Task.Delay(1000); // Wait for initialization to complete
-            try
-            {
-                if (_serialPort != null && _serialPort.IsOpen && _serialPort.BytesToRead > 0)
-                {
-                    _logger.LogInformation("🔧 Priming IMU event system with initial read");
-                    int bytesRead = _serialPort.Read(_buffer, 0, _buffer.Length);
-                    ProcessIncomingData(_buffer, bytesRead);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error during IMU event priming");
-            }
-        });
+        // Set up SerialPortManager for reliable data collection
+        _serialPortManager!.DataReceived += OnSerialDataReceived;
+
+        await _serialPortManager.StartAsync(_serialPort, stoppingToken);
+        _logger.LogInformation("🔗 IMU SerialPortManager started with backup polling");
         
         // Keep the service running until cancellation
         try
@@ -95,30 +91,15 @@ public class ImuService : BackgroundService
     }
 
 
-    private void OnSerialDataReceived(object sender, SerialDataReceivedEventArgs e)
+    private void OnSerialDataReceived(object? sender, byte[] data)
     {
         try
         {
-            _lastEventTime = DateTime.UtcNow; // Track when events fire
-            
-            if (_serialPort == null || !_serialPort.IsOpen)
-            {
-                _logger.LogWarning("IMU serial port is null or not open in event handler");
-                return;
-            }
-
-            if (_serialPort.BytesToRead > 0)
-            {
-                int bytesRead = _serialPort.Read(_buffer, 0, _buffer.Length);
-                ProcessIncomingData(_buffer, bytesRead);
-            }
-            else
-            {
-            }
+            ProcessIncomingData(data, data.Length);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in IMU serial data received event handler");
+            _logger.LogError(ex, "Error in IMU SerialPortManager data received handler");
         }
     }
 
@@ -291,15 +272,24 @@ public class ImuService : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Stopping IMU Service");
-        
-        // Unsubscribe from serial port events
-        if (_serialPort != null)
+
+        // Stop SerialPortManager
+        if (_serialPortManager != null)
         {
-            _serialPort.DataReceived -= OnSerialDataReceived;
-            _logger.LogInformation("📡 Unsubscribed from IMU serial port data events");
+            _serialPortManager.DataReceived -= OnSerialDataReceived;
+            await _serialPortManager.StopAsync();
+            _logger.LogInformation("📡 IMU SerialPortManager stopped");
         }
-        
+
         await _dataFileWriter.StopAsync(cancellationToken);
         await base.StopAsync(cancellationToken);
+    }
+
+    public override void Dispose()
+    {
+        _logger.LogInformation("IMU Service disposing");
+        _serialPortManager?.Dispose();
+        _dataFileWriter.Dispose();
+        base.Dispose();
     }
 }
