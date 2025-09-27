@@ -19,7 +19,7 @@ const props = defineProps({
     title="IMU" 
     subtitle=""
     :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M12 2L15.5 8.5L22 12L15.5 15.5L12 22L8.5 15.5L2 12L8.5 8.5L12 2Z'/></svg>`"
-    icon-color="bg-purple-500"
+    icon-color="bg-gray-500"
   >
     <div class="grid grid-cols-3 gap-2 text-sm">
       <div class="text-center">

@@ -1,5 +1,59 @@
 @import "tailwindcss";
 
+/* Panel Styles */
+.panel {
+  @apply bg-white border border-gray-200 rounded-lg shadow-sm;
+}
+
+.panel-header {
+  @apply px-6 py-4 border-b border-gray-100;
+}
+
+.panel-content {
+  @apply px-6 py-5;
+}
+
+.panel-title {
+  @apply text-lg font-medium text-gray-900;
+}
+
+.panel-subtitle {
+  @apply text-sm text-gray-600 mt-1;
+}
+
+/* Main Layout */
+.main-container {
+  @apply space-y-6;
+}
+
+.main-centered {
+  @apply max-w-4xl mx-auto p-6;
+}
+
+/* Form Elements */
+.form-group {
+  @apply space-y-4;
+}
+
+.form-label {
+  @apply block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2;
+}
+
+.form-input {
+  @apply w-full px-4 py-3 border border-gray-200 rounded-lg;
+  @apply focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent;
+  @apply transition-all duration-200;
+}
+
+.form-input-readonly {
+  @apply w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg;
+  @apply text-gray-700 font-mono text-sm;
+}
+
+.form-helper-text {
+  @apply text-xs text-gray-500 mt-1;
+}
+
 /* Button Styles */
 .btn-primary {
   @apply px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg cursor-pointer;

@@ -185,7 +185,7 @@ const cancelHostnameEdit = () => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="main-container">
     <!-- System Info (Combined) -->
     <Card 
       title="System" 
@@ -311,10 +311,10 @@ const cancelHostnameEdit = () => {
             type="text"
             placeholder="Device hostname"
             :class="[
-              'w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:border-transparent text-sm',
+              'form-input text-sm',
               !isHostnameValid && hostnameValidationError
                 ? 'border-red-300 focus:ring-red-500 bg-red-50'
-                : 'border-slate-300 focus:ring-blue-500'
+                : ''
             ]"
             :disabled="isUpdatingHostname"
             @keyup.enter="saveHostname"

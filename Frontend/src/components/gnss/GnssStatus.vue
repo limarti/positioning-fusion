@@ -1,4 +1,6 @@
 <script setup>
+import Card from '../common/Card.vue'
+
 const props = defineProps({
   gnssData: {
     type: Object,
@@ -29,55 +31,62 @@ const formatAccuracy = (meters) => {
 </script>
 
 <template>
-  <div class="bg-slate-100 rounded-lg border border-slate-200 px-4 py-3 mb-4">
-    <div class="flex items-center justify-between mb-3">
-      <div class="flex items-center space-x-4">
-        <div>
-          <div class="text-sm text-slate-600">Current Position</div>
-          <div class="text-base font-mono text-slate-800">
-            {{ gnssData.latitude !== null && gnssData.longitude !== null
-                ? `${gnssData.latitude.toFixed(7)}°, ${gnssData.longitude.toFixed(7)}°`
-                : 'Waiting for GNSS fix...' }}
+  <Card
+    title="GNSS Status"
+  >
+    <div class="space-y-6">
+      <!-- Position and Fix Status -->
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+          <div>
+            <div class="text-sm text-gray-600">Current Position</div>
+            <div class="text-base font-mono text-gray-800">
+              {{ gnssData.latitude !== null && gnssData.longitude !== null
+                  ? `${gnssData.latitude.toFixed(7)}°, ${gnssData.longitude.toFixed(7)}°`
+                  : 'Waiting for GNSS fix...' }}
+            </div>
+            <div v-if="gnssData.altitude !== null" class="text-sm text-gray-600 font-mono mt-1">
+              Altitude: {{ gnssData.altitude.toFixed(2) }}m
+            </div>
           </div>
-          <div v-if="gnssData.altitude !== null" class="text-sm text-slate-600 font-mono mt-1">
-            Altitude: {{ gnssData.altitude.toFixed(2) }}m
+        </div>
+        <div class="text-right">
+          <div class="text-sm text-gray-600">Fix Type</div>
+          <div class="text-base font-bold text-gray-800">
+            {{ gnssData.fixType || 'No Fix' }}
           </div>
         </div>
       </div>
-      <div class="text-right">
-        <div class="text-sm text-slate-600">Fix Type</div>
-        <div class="text-base font-bold text-indigo-600" >
-          {{ gnssData.fixType || 'No Fix' }}
+      
+      <!-- Core Health Summary -->
+      <div class="border-t border-gray-200 pt-4">
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-center text-sm">
+          <div>
+            <div class="text-sm text-gray-500 mb-1">hAcc</div>
+            <div class="text-base font-bold" :class="gnssData.hAcc !== null ? 'text-gray-800' : 'text-slate-400'">{{ formatAccuracy(gnssData.hAcc) }}</div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-500 mb-1">vAcc</div>
+            <div class="text-base font-bold" :class="gnssData.vAcc !== null ? 'text-gray-800' : 'text-slate-400'">{{ formatAccuracy(gnssData.vAcc) }}</div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-500 mb-1">HDOP</div>
+            <div class="text-base font-bold" :class="gnssData.hdop !== null ? 'text-gray-700' : 'text-slate-400'">{{ gnssData.hdop !== null ? gnssData.hdop.toFixed(2) : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-500 mb-1">VDOP</div>
+            <div class="text-base font-bold" :class="gnssData.vdop !== null ? 'text-gray-700' : 'text-slate-400'">{{ gnssData.vdop !== null ? gnssData.vdop.toFixed(2) : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-500 mb-1">PDOP</div>
+            <div class="text-base font-bold" :class="gnssData.pdop !== null ? 'text-gray-700' : 'text-slate-400'">{{ gnssData.pdop !== null ? gnssData.pdop.toFixed(2) : '—' }}</div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-500 mb-1">Satellites</div>
+            <div class="text-base font-bold" :class="gnssData.satellitesUsed !== null ? 'text-gray-800' : 'text-slate-400'">{{ gnssData.satellitesUsed !== null ? gnssData.satellitesUsed + '/' + gnssData.satellitesTracked : '—' }}</div>
+          </div>
         </div>
       </div>
     </div>
-    
-    <!-- Core Health Summary -->
-    <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-center text-sm">
-      <div>
-        <div class="text-sm text-slate-500 mb-1">hAcc</div>
-        <div class="text-base font-bold" :class="gnssData.hAcc !== null ? 'text-emerald-600' : 'text-slate-400'">{{ formatAccuracy(gnssData.hAcc) }}</div>
-      </div>
-      <div>
-        <div class="text-sm text-slate-500 mb-1">vAcc</div>
-        <div class="text-base font-bold" :class="gnssData.vAcc !== null ? 'text-emerald-600' : 'text-slate-400'">{{ formatAccuracy(gnssData.vAcc) }}</div>
-      </div>
-      <div>
-        <div class="text-sm text-slate-500 mb-1">HDOP</div>
-        <div class="text-base font-bold" :class="gnssData.hdop !== null ? 'text-amber-600' : 'text-slate-400'">{{ gnssData.hdop !== null ? gnssData.hdop.toFixed(2) : '—' }}</div>
-      </div>
-      <div>
-        <div class="text-sm text-slate-500 mb-1">VDOP</div>
-        <div class="text-base font-bold" :class="gnssData.vdop !== null ? 'text-amber-600' : 'text-slate-400'">{{ gnssData.vdop !== null ? gnssData.vdop.toFixed(2) : '—' }}</div>
-      </div>
-      <div>
-        <div class="text-sm text-slate-500 mb-1">PDOP</div>
-        <div class="text-base font-bold" :class="gnssData.pdop !== null ? 'text-amber-600' : 'text-slate-400'">{{ gnssData.pdop !== null ? gnssData.pdop.toFixed(2) : '—' }}</div>
-      </div>
-      <div>
-        <div class="text-sm text-slate-500 mb-1">Satellites</div>
-        <div class="text-base font-bold" :class="gnssData.satellitesUsed !== null ? 'text-blue-600' : 'text-slate-400'">{{ gnssData.satellitesUsed !== null ? gnssData.satellitesUsed + '/' + gnssData.satellitesTracked : '—' }}</div>
-      </div>
-    </div>
-  </div>
+  </Card>
 </template>

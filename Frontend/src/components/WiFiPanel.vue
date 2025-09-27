@@ -258,12 +258,12 @@ const formatLastConnected = (timestamp) => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="main-container">
     <!-- Header Section -->
-    <div class="bg-white border border-gray-200 rounded-lg shadow-sm">
-      <div class="px-6 py-4 border-b border-gray-100">
+    <div class="panel">
+      <div class="panel-header">
         <h1 class="text-xl font-semibold text-gray-900">Network Configuration</h1>
-        <p class="text-sm text-gray-600 mt-1">Manage WiFi connectivity and access point settings</p>
+        <p class="panel-subtitle">Manage WiFi connectivity and access point settings</p>
       </div>
 
       <!-- Fallback Notification -->
@@ -277,7 +277,7 @@ const formatLastConnected = (timestamp) => {
       </div>
 
       <!-- Current Status Section -->
-      <div class="px-6 py-5">
+      <div class="panel-content">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-medium text-gray-900">Connection Status</h2>
           <div class="flex items-center space-x-2">
@@ -325,13 +325,13 @@ const formatLastConnected = (timestamp) => {
     </div>
 
     <!-- Mode Configuration -->
-    <div class="bg-white border border-gray-200 rounded-lg shadow-sm">
-      <div class="px-6 py-4 border-b border-gray-100">
-        <h2 class="text-lg font-medium text-gray-900">Operating Mode</h2>
-        <p class="text-sm text-gray-600 mt-1">Select the preferred WiFi operating mode for this device</p>
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Operating Mode</h2>
+        <p class="panel-subtitle">Select the preferred WiFi operating mode for this device</p>
       </div>
 
-      <div class="px-6 py-5">
+      <div class="panel-content">
         <div v-if="preferredMode === null" class="text-gray-500 text-sm flex items-center">
           <svg class="animate-spin -ml-1 mr-3 h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -355,7 +355,9 @@ const formatLastConnected = (timestamp) => {
                 <div class="flex items-center justify-between">
                   <div>
                     <div class="font-medium text-gray-900">Client Mode</div>
-                    <div class="text-sm text-gray-600">Connect to existing networks</div>
+                    <div class="text-xs text-gray-500 mt-1">
+                      Will try to connect to known networks first, falling back to AP mode if connection fails.
+                    </div>
                   </div>
                   <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
                        :class="preferredMode === 'Client' ? 'border-gray-900' : 'border-gray-300'">
@@ -378,7 +380,9 @@ const formatLastConnected = (timestamp) => {
                 <div class="flex items-center justify-between">
                   <div>
                     <div class="font-medium text-gray-900">Access Point Mode</div>
-                    <div class="text-sm text-gray-600">Create a WiFi hotspot</div>
+                    <div class="text-xs text-gray-500 mt-1">
+                      Will start directly in Access Point mode, creating a WiFi hotspot for other devices to connect to.
+                    </div>
                   </div>
                   <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
                        :class="preferredMode === 'AP' ? 'border-gray-900' : 'border-gray-300'">
@@ -389,37 +393,25 @@ const formatLastConnected = (timestamp) => {
             </label>
           </div>
 
-          <div class="p-3 bg-gray-50 rounded-lg">
-            <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Behavior</div>
-            <div class="text-sm text-gray-700">
-              <span v-if="preferredMode === 'Client'">
-                Device will attempt to connect to known networks first, falling back to Access Point mode if no connection is possible.
-              </span>
-              <span v-if="preferredMode === 'AP'">
-                Device will start directly in Access Point mode, creating a WiFi hotspot for other devices to connect to.
-              </span>
-            </div>
-          </div>
-
           <!-- AP Configuration Form - always show -->
           <div class="space-y-4 pt-4 border-t border-gray-200">
             <div class="text-sm font-medium text-gray-900 mb-3">Access Point Settings</div>
 
             <div>
-              <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Network Name (SSID)</label>
-              <div class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-mono text-sm">
+              <label class="form-label">Network Name (SSID)</label>
+              <div class="form-input-readonly">
                 {{ apConfig.ssid || 'Loading...' }}
               </div>
-              <div class="text-xs text-gray-500 mt-1">Auto-generated from device name</div>
+              <div class="form-helper-text">Auto-generated from device name</div>
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Password</label>
+              <label class="form-label">Password</label>
               <div class="relative">
                 <input
                   v-model="apConfig.password"
                   :type="showAPPassword ? 'text' : 'password'"
-                  class="w-full px-4 py-3 pr-20 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all duration-200"
+                  class="form-input pr-20"
                   placeholder="Enter access point password"
                   @input="isAPPasswordModified = apConfig.password !== originalAPPassword"
                 />
@@ -468,12 +460,12 @@ const formatLastConnected = (timestamp) => {
 
 
     <!-- Known Networks -->
-    <div class="bg-white border border-gray-200 rounded-lg shadow-sm">
-      <div class="px-6 py-4 border-b border-gray-100">
+    <div class="panel">
+      <div class="panel-header">
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-lg font-medium text-gray-900">Saved Networks</h2>
-            <p class="text-sm text-gray-600 mt-1">Manage your stored network credentials</p>
+            <h2 class="panel-title">Saved Networks</h2>
+            <p class="panel-subtitle">Manage your stored network credentials</p>
           </div>
           <button
             @click="showAddNetworkDialog = true"

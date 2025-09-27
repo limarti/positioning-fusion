@@ -276,7 +276,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   // Dynamic URL resolution based on environment
   const hubUrl = import.meta.env.DEV
-    ? "http://rover.local/datahub"  // Development mode: use hardcoded localhost
+    ? "http://base.local/datahub"  // Development mode: use hardcoded localhost
     : `${window.location.protocol}//${window.location.hostname}/datahub`  // Production: use same host as frontend
 
   console.log(`Environment: ${import.meta.env.DEV ? 'Development' : 'Production'}`)
@@ -571,9 +571,10 @@ onUnmounted(async () => {
       </template>
 
       <!-- Dynamic Content Based on Active Section -->
-      <div class="space-y-6">
-        <!-- GNSS Section -->
-        <div v-if="activeSection === 'gnss'" class="space-y-6">
+      <div class="main-centered">
+        <div class="main-container">
+          <!-- GNSS Section -->
+          <div v-if="activeSection === 'gnss'" class="main-container">
           <!-- GNSS Status Summary -->
           <GnssStatus :gnssData="gnssData" />
 
@@ -599,6 +600,7 @@ onUnmounted(async () => {
               <MessageRatesPanel :messageRates="messageRates" />
             </div>
           </div>
+        </div>
         </div>
 
         <!-- Camera Section -->

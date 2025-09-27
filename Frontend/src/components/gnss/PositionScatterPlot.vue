@@ -2,6 +2,7 @@
 import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import * as Plot from '@observablehq/plot'
 import * as d3 from 'd3'
+import Card from '../common/Card.vue'
 
 const props = defineProps({
   gnssData: {
@@ -254,26 +255,20 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bg-white rounded-xl border border-slate-200 p-4 break-inside-avoid mb-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-4">
-      <div class="flex items-center space-x-3">
-        <svg class="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7A1,1 0 0,1 12,8A1,1 0 0,1 11,7V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M21,9V7H15V9H21M21,11H15V13H21V11M21,15H15V17H21V15M12,10A3,3 0 0,1 15,13A3,3 0 0,1 12,16A3,3 0 0,1 9,13A3,3 0 0,1 12,10M12,11A2,2 0 0,0 10,13A2,2 0 0,0 12,15A2,2 0 0,0 14,13A2,2 0 0,0 12,11M3,9V7H9V9H3M3,11H9V13H3V11M3,15H9V17H3V15Z"/>
-        </svg>
-        <h2 class="text-lg font-bold text-slate-800">Position Plot</h2>
-        <div class="text-sm text-slate-600">{{ positionHistory.length }} points</div>
-      </div>
-    </div>
+  <Card
+    title="Position Plot"
+    :subtitle="`${positionHistory.length} points`"
+    icon-color="bg-gray-500"
+  >
 
     <!-- Controls -->
-    <div class="flex flex-wrap items-center gap-3 mb-4 p-3 bg-slate-50 rounded-lg">
+    <div class="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
       <div class="flex items-center space-x-2">
-        <label class="text-sm font-medium text-slate-700">Points:</label>
-        <select 
-          :value="maxPoints" 
+        <label class="text-sm font-medium text-gray-700">Points:</label>
+        <select
+          :value="maxPoints"
           @change="updateMaxPoints"
-          class="px-2 py-1 text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+          class="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-500"
         >
           <option value="50">50</option>
           <option value="100">100</option>
@@ -284,27 +279,27 @@ onMounted(() => {
       </div>
       
       <div class="flex items-center space-x-2">
-        <label class="text-sm font-medium text-slate-700">Auto Range:</label>
-        <input 
-          type="checkbox" 
+        <label class="text-sm font-medium text-gray-700">Auto Range:</label>
+        <input
+          type="checkbox"
           v-model="autoRangeEnabled"
-          class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+          class="w-4 h-4 text-gray-600 bg-gray-100 border-gray-300 rounded focus:ring-gray-500 focus:ring-2"
         >
       </div>
       
       <div class="flex items-center space-x-1">
-        <button 
+        <button
           @click="zoomOut"
-          class="w-8 h-8 flex items-center justify-center text-sm bg-blue-500 text-white rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-8 h-8 flex items-center justify-center text-sm bg-gray-600 text-white rounded hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
           :disabled="positionHistory.length === 0 || zoomLevel <= 0.1"
           title="Zoom Out"
         >
           −
         </button>
-        <span class="text-xs text-slate-600 min-w-16 text-center">{{ formatSpan(spanMeters) }}</span>
-        <button 
+        <span class="text-xs text-gray-600 min-w-16 text-center">{{ formatSpan(spanMeters) }}</span>
+        <button
           @click="zoomIn"
-          class="w-8 h-8 flex items-center justify-center text-sm bg-blue-500 text-white rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-8 h-8 flex items-center justify-center text-sm bg-gray-600 text-white rounded hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
           :disabled="positionHistory.length === 0 || zoomLevel >= 20"
           title="Zoom In"
         >
@@ -312,24 +307,24 @@ onMounted(() => {
         </button>
       </div>
       
-      <button 
+      <button
         @click="reset"
         class="px-3 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500"
         :disabled="positionHistory.length === 0"
       >
         Reset
       </button>
-      
-      <button 
+
+      <button
         @click="clearHistory"
-        class="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500"
+        class="px-3 py-1 text-sm bg-gray-700 text-white rounded hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500"
         :disabled="positionHistory.length === 0"
       >
         Clear
       </button>
       
       
-      <div v-if="referencePoint" class="text-xs text-slate-500 ml-auto">
+      <div v-if="referencePoint" class="text-xs text-gray-500 ml-auto">
         Origin: {{ referencePoint.lat.toFixed(6) }}°, {{ referencePoint.lng.toFixed(6) }}°
       </div>
     </div>
@@ -365,9 +360,6 @@ onMounted(() => {
         <div class="w-3 h-3 bg-gray-500 rounded-full"></div>
         <span>Other</span>
       </div>
-      <div class="text-slate-500 ml-auto">
-        Click +/- to zoom
-      </div>
     </div>
-  </div>
+  </Card>
 </template>
