@@ -1,5 +1,6 @@
 using System.IO.Ports;
 using Backend.Configuration;
+using Backend.Hardware.Common;
 
 namespace Backend.Hardware.Gnss;
 
@@ -14,8 +15,10 @@ public enum UbxResponseType
 public class GnssInitializer
 {
     private readonly ILogger<GnssInitializer> _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly GeoConfigurationManager _configurationManager;
-    private SerialPort? _serialPort;
+    private SerialPortManager? _serialPortManager;
+    private SerialPort? _tempSerialPort; // Only for initialization testing
 
     // Shared lock for coordinating serial port access between GnssService and GnssInitializer
     private static readonly SemaphoreSlim _serialPortLock = new SemaphoreSlim(1, 1);
@@ -44,9 +47,10 @@ public class GnssInitializer
         //230400,
     };
 
-    public GnssInitializer(ILogger<GnssInitializer> logger, GeoConfigurationManager configurationManager)
+    public GnssInitializer(ILogger<GnssInitializer> logger, GeoConfigurationManager configurationManager, ILoggerFactory loggerFactory)
     {
         _logger = logger;
+        _loggerFactory = loggerFactory;
         _configurationManager = configurationManager;
     }
 
@@ -68,10 +72,18 @@ public class GnssInitializer
                 if (await TryBaudRateAsync(portName, baudRate))
                 {
                     _logger.LogInformation("GNSS initialized successfully on port {PortName} at {BaudRate} baud",
-                        portName, _serialPort?.BaudRate ?? baudRate);
+                        portName, _tempSerialPort?.BaudRate ?? baudRate);
 
-                    // Configure GNSS for satellite data output
+                    // Configure GNSS for satellite data output first (while temp SerialPort is still available)
                     await ConfigureForSatelliteDataAsync();
+
+                    // Create SerialPortManager for ongoing operations
+                    await CreateSerialPortManagerAsync(portName, _tempSerialPort?.BaudRate ?? baudRate);
+
+                    // Dispose the temporary SerialPort now that SerialPortManager is ready
+                    _tempSerialPort?.Close();
+                    _tempSerialPort?.Dispose();
+                    _tempSerialPort = null;
 
                     return true;
                 }
@@ -150,13 +162,13 @@ public class GnssInitializer
                 // Try to switch to optimal speed (460800) if not already there
                 if (baudRate != 460800 && await TrySwitchToOptimalBaudRate(testPort, baudRate, portName))
                 {
-                    // Successfully switched - _serialPort is now set to 460800
+                    // Successfully switched - _tempSerialPort is now set to 460800
                     testPort = null; // Prevent disposal
                     return true;
                 }
 
                 // Use current baud rate (either 460800 already, or switch failed)
-                _serialPort = testPort;
+                _tempSerialPort = testPort;
                 testPort = null; // Prevent disposal
                 return true;
             }
@@ -246,7 +258,7 @@ public class GnssInitializer
             if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
             {
                 _logger.LogDebug("Communication confirmed at {BaudRate} baud", baudRate);
-                _serialPort = testPort;
+                _tempSerialPort = testPort;
                 testPort = null; // Prevent disposal
                 return true;
             }
@@ -346,9 +358,35 @@ public class GnssInitializer
         return checksum;
     }
 
-    public SerialPort? GetSerialPort()
+    public SerialPortManager? GetSerialPortManager()
     {
-        return _serialPort;
+        return _serialPortManager;
+    }
+
+    private async Task CreateSerialPortManagerAsync(string portName, int baudRate)
+    {
+        try
+        {
+            _logger.LogInformation("Creating SerialPortManager for ongoing GNSS operations on {PortName} at {BaudRate} baud", portName, baudRate);
+
+            // Create SerialPortManager for ongoing operations
+            _serialPortManager = new SerialPortManager(
+                "GNSS",
+                portName,
+                baudRate,
+                _loggerFactory.CreateLogger<SerialPortManager>()
+            );
+
+            // Start SerialPortManager
+            await _serialPortManager.StartAsync();
+
+            _logger.LogInformation("SerialPortManager created and started successfully for GNSS operations");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create SerialPortManager for GNSS operations");
+            _serialPortManager = null;
+        }
     }
 
     // Provide access to the shared lock for coordination
@@ -360,7 +398,7 @@ public class GnssInitializer
     const int UBX_MESSAGES_RATE_HZ = 5;    //1, 5, 10 or 20
     private async Task ConfigureForSatelliteDataAsync()
     {
-        if (_serialPort == null || !_serialPort.IsOpen)
+        if (_tempSerialPort == null || !_tempSerialPort.IsOpen)
         {
             _logger.LogWarning("Cannot configure GNSS - serial port not available");
             return;
@@ -665,7 +703,7 @@ public class GnssInitializer
 
     private async Task<UbxResponseType> SendUbxConfigMessageAsync(byte messageClass, byte messageId, byte[] payload)
     {
-        if (_serialPort == null || !_serialPort.IsOpen)
+        if (_tempSerialPort == null || !_tempSerialPort.IsOpen)
         {
             return UbxResponseType.Error;
         }
@@ -677,9 +715,9 @@ public class GnssInitializer
             _logger.LogDebug("Sending UBX config: Class=0x{Class:X2}, ID=0x{Id:X2}, Length={Length}",
                 messageClass, messageId, payload.Length);
 
-            _serialPort.DiscardInBuffer();
-            _serialPort.DiscardOutBuffer();
-            _serialPort.Write(ubxMessage, 0, ubxMessage.Length);
+            _tempSerialPort.DiscardInBuffer();
+            _tempSerialPort.DiscardOutBuffer();
+            _tempSerialPort.Write(ubxMessage, 0, ubxMessage.Length);
 
             // Wait for and parse ACK/NAK response
             var response = await WaitForUbxAckResponse(messageClass, messageId);
@@ -712,7 +750,7 @@ public class GnssInitializer
 
     private async Task<bool?> WaitForUbxAckResponse(byte expectedClass, byte expectedId)
     {
-        if (_serialPort == null || !_serialPort.IsOpen)
+        if (_tempSerialPort == null || !_tempSerialPort.IsOpen)
         {
             return null;
         }
@@ -725,10 +763,10 @@ public class GnssInitializer
         {
             try
             {
-                if (_serialPort.BytesToRead > 0)
+                if (_tempSerialPort.BytesToRead > 0)
                 {
-                    var data = new byte[_serialPort.BytesToRead];
-                    var bytesRead = _serialPort.Read(data, 0, data.Length);
+                    var data = new byte[_tempSerialPort.BytesToRead];
+                    var bytesRead = _tempSerialPort.Read(data, 0, data.Length);
                     buffer.AddRange(data.Take(bytesRead));
 
                     // Look for UBX ACK/NAK messages in the buffer
@@ -861,7 +899,7 @@ public class GnssInitializer
 
     public async Task<bool> ReconfigureAsync()
     {
-        if (_serialPort == null || !_serialPort.IsOpen)
+        if (_tempSerialPort == null || !_tempSerialPort.IsOpen)
         {
             _logger.LogWarning("Cannot reconfigure GNSS - no active serial port connection");
             return false;
@@ -896,10 +934,16 @@ public class GnssInitializer
     {
         try
         {
-            _serialPort?.Close();
-            _serialPort?.Dispose();
-            _serialPort = null;
-            _logger.LogInformation("GNSS serial connection disposed");
+            // Dispose SerialPortManager
+            _serialPortManager?.Dispose();
+            _serialPortManager = null;
+
+            // Dispose temporary SerialPort used for initialization
+            _tempSerialPort?.Close();
+            _tempSerialPort?.Dispose();
+            _tempSerialPort = null;
+
+            _logger.LogInformation("GNSS connections disposed");
         }
         catch (Exception ex)
         {

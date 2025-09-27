@@ -9,7 +9,16 @@ namespace Backend.Hardware.Common;
 public class SerialPortManager : IDisposable
 {
     private readonly ILogger<SerialPortManager> _logger;
-    private readonly SerialPortConfig _config;
+    private readonly string _deviceName;
+    private readonly string _portName;
+    private readonly int _baudRate;
+    private readonly Parity _parity;
+    private readonly int _dataBits;
+    private readonly StopBits _stopBits;
+    private readonly int _pollingIntervalMs;
+    private readonly int _readBufferSize;
+    private readonly int _maxBufferSize;
+    private readonly int _rateUpdateIntervalMs;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
@@ -41,10 +50,61 @@ public class SerialPortManager : IDisposable
         }
     }
 
-    public SerialPortManager(SerialPortConfig config, ILogger<SerialPortManager> logger)
+    public SerialPortManager(
+        string deviceName,
+        string portName,
+        int baudRate,
+        ILogger<SerialPortManager> logger,
+        int pollingIntervalMs = 100,
+        int readBufferSize = 4096,
+        int maxBufferSize = 1048576,
+        int rateUpdateIntervalMs = 1000,
+        Parity parity = Parity.None,
+        int dataBits = 8,
+        StopBits stopBits = StopBits.One)
     {
-        _config = config;
+        _deviceName = deviceName;
+        _portName = portName;
+        _baudRate = baudRate;
+        _parity = parity;
+        _dataBits = dataBits;
+        _stopBits = stopBits;
+        _pollingIntervalMs = pollingIntervalMs;
+        _readBufferSize = readBufferSize;
+        _maxBufferSize = maxBufferSize;
+        _rateUpdateIntervalMs = rateUpdateIntervalMs;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Starts the serial port manager by creating a new serial port from config
+    /// </summary>
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(SerialPortManager));
+
+        if (string.IsNullOrEmpty(_portName))
+            throw new InvalidOperationException("PortName must be specified");
+
+        var serialPort = new SerialPort(_portName, _baudRate, _parity, _dataBits, _stopBits)
+        {
+            ReadTimeout = 1000,
+            WriteTimeout = 1000,
+            RtsEnable = true,
+            DtrEnable = true
+        };
+
+        try
+        {
+            serialPort.Open();
+            await StartAsync(serialPort, cancellationToken);
+        }
+        catch
+        {
+            serialPort?.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -60,12 +120,12 @@ public class SerialPortManager : IDisposable
 
         if (_serialPort == null || !_serialPort.IsOpen)
         {
-            _logger.LogWarning("Serial port not available for {DeviceName}", _config.DeviceName);
+            _logger.LogWarning("Serial port not available for {DeviceName}", _deviceName);
             return;
         }
 
         _logger.LogInformation("SerialPortManager started for {DeviceName} on {PortName} at {BaudRate} baud",
-            _config.DeviceName, _serialPort.PortName, _serialPort.BaudRate);
+            _deviceName, _serialPort.PortName, _serialPort.BaudRate);
 
         // Subscribe to DataReceived event
         _serialPort.DataReceived += OnDataReceived;
@@ -74,7 +134,7 @@ public class SerialPortManager : IDisposable
         _ = Task.Run(() => BackupPollingLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
         _ = Task.Run(() => RateUpdateLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
 
-        _logger.LogInformation("Event + backup polling setup completed for {DeviceName}", _config.DeviceName);
+        _logger.LogInformation("Event + backup polling setup completed for {DeviceName}", _deviceName);
     }
 
     /// <summary>
@@ -88,7 +148,7 @@ public class SerialPortManager : IDisposable
             {
                 _isPollingEnabled = enabled;
                 _logger.LogInformation("Polling {Status} for {DeviceName}",
-                    enabled ? "enabled" : "disabled", _config.DeviceName);
+                    enabled ? "enabled" : "disabled", _deviceName);
             }
         }
     }
@@ -106,13 +166,13 @@ public class SerialPortManager : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in DataReceived event handler for {DeviceName}", _config.DeviceName);
+            _logger.LogError(ex, "Error in DataReceived event handler for {DeviceName}", _deviceName);
         }
     }
 
     private async Task BackupPollingLoop(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Backup polling started for {DeviceName} (triggers if events fail)", _config.DeviceName);
+        _logger.LogInformation("Backup polling started for {DeviceName} (triggers if events fail)", _deviceName);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -141,22 +201,22 @@ public class SerialPortManager : IDisposable
 
                         // Simple logic: if data available and no event within configured interval, poll immediately
                         var bytesToRead = _serialPort.BytesToRead;
-                        if (bytesToRead > 0 && timeSinceLastEvent.TotalMilliseconds >= _config.BackupPollingIntervalMs)
+                        if (bytesToRead > 0 && timeSinceLastEvent.TotalMilliseconds >= _pollingIntervalMs)
                         {
                             _logger.LogInformation("🔍 BACKUP POLL ({DeviceName}): Events stopped working! Found {BytesToRead} bytes after {TimeSinceEvent:F1}ms without events",
-                                _config.DeviceName, bytesToRead, timeSinceLastEvent.TotalMilliseconds);
+                                _deviceName, bytesToRead, timeSinceLastEvent.TotalMilliseconds);
 
                             await ReadAndProcessDataAsync(fromPolling: true);
                         }
                     }
                 }
 
-                await Task.Delay(_config.CheckIntervalMs, stoppingToken);
+                await Task.Delay(_pollingIntervalMs, stoppingToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in backup polling loop for {DeviceName}", _config.DeviceName);
-                await Task.Delay(_config.CheckIntervalMs, stoppingToken);
+                _logger.LogError(ex, "Error in backup polling loop for {DeviceName}", _deviceName);
+                await Task.Delay(_pollingIntervalMs, stoppingToken);
             }
         }
     }
@@ -174,7 +234,7 @@ public class SerialPortManager : IDisposable
 
             while (_serialPort.BytesToRead > 0)
             {
-                var bytesToRead = Math.Min(_serialPort.BytesToRead, _config.ReadBufferSize);
+                var bytesToRead = Math.Min(_serialPort.BytesToRead, _readBufferSize);
                 var buffer = new byte[bytesToRead];
                 var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
 
@@ -202,7 +262,7 @@ public class SerialPortManager : IDisposable
                 if (fromPolling)
                 {
                     _logger.LogInformation("📥 BACKUP POLL ({DeviceName}): Read {BytesRead} bytes in burst mode",
-                        _config.DeviceName, totalBytesRead);
+                        _deviceName, totalBytesRead);
                 }
 
                 await ProcessBufferedDataAsync();
@@ -210,7 +270,7 @@ public class SerialPortManager : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error reading data for {DeviceName}", _config.DeviceName);
+            _logger.LogError(ex, "Error reading data for {DeviceName}", _deviceName);
         }
     }
 
@@ -222,11 +282,11 @@ public class SerialPortManager : IDisposable
         // Trim buffer if it exceeds maximum size
         lock (_dataBufferLock)
         {
-            if (_dataBuffer.Count > _config.MaxBufferSize)
+            if (_dataBuffer.Count > _maxBufferSize)
             {
-                int toDrop = _dataBuffer.Count - _config.MaxBufferSize;
+                int toDrop = _dataBuffer.Count - _maxBufferSize;
                 _logger.LogWarning("Buffer exceeded {MaxSize} bytes for {DeviceName}; dropping {Drop} oldest bytes",
-                    _config.MaxBufferSize, _config.DeviceName, toDrop);
+                    _maxBufferSize, _deviceName, toDrop);
                 _dataBuffer.RemoveRange(0, toDrop);
             }
 
@@ -255,7 +315,7 @@ public class SerialPortManager : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in data processing callback for {DeviceName}", _config.DeviceName);
+                _logger.LogError(ex, "Error in data processing callback for {DeviceName}", _deviceName);
             }
 
             processed++;
@@ -269,7 +329,7 @@ public class SerialPortManager : IDisposable
             try
             {
                 await UpdateRateAsync();
-                await Task.Delay(_config.RateUpdateIntervalMs, stoppingToken);
+                await Task.Delay(_rateUpdateIntervalMs, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -277,8 +337,8 @@ public class SerialPortManager : IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in rate update loop for {DeviceName}", _config.DeviceName);
-                await Task.Delay(_config.RateUpdateIntervalMs, stoppingToken);
+                _logger.LogError(ex, "Error in rate update loop for {DeviceName}", _deviceName);
+                await Task.Delay(_rateUpdateIntervalMs, stoppingToken);
             }
         }
     }
@@ -296,7 +356,7 @@ public class SerialPortManager : IDisposable
 
             RateUpdated?.Invoke(this, _currentReceiveRate);
 
-            _logger.LogDebug("Rate updated for {DeviceName}: {Rate:F1} kbps", _config.DeviceName, _currentReceiveRate);
+            _logger.LogDebug("Rate updated for {DeviceName}: {Rate:F1} kbps", _deviceName, _currentReceiveRate);
         }
     }
 
@@ -305,7 +365,7 @@ public class SerialPortManager : IDisposable
         if (_disposed)
             return;
 
-        _logger.LogInformation("Stopping SerialPortManager for {DeviceName}", _config.DeviceName);
+        _logger.LogInformation("Stopping SerialPortManager for {DeviceName}", _deviceName);
 
         if (_serialPort != null)
         {
@@ -319,6 +379,77 @@ public class SerialPortManager : IDisposable
 
         _cancellationTokenSource?.Dispose();
         _cancellationTokenSource = null;
+    }
+
+    /// <summary>
+    /// Writes data to the serial port
+    /// </summary>
+    public void Write(string data)
+    {
+        if (_serialPort?.IsOpen == true)
+        {
+            _serialPort.Write(data);
+        }
+        else
+        {
+            throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+        }
+    }
+
+    /// <summary>
+    /// Writes binary data to the serial port
+    /// </summary>
+    public void Write(byte[] data, int offset, int count)
+    {
+        if (_serialPort?.IsOpen == true)
+        {
+            _serialPort.Write(data, offset, count);
+        }
+        else
+        {
+            throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+        }
+    }
+
+    /// <summary>
+    /// Writes a line to the serial port
+    /// </summary>
+    public void WriteLine(string data)
+    {
+        if (_serialPort?.IsOpen == true)
+        {
+            _serialPort.WriteLine(data);
+        }
+        else
+        {
+            throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+        }
+    }
+
+    /// <summary>
+    /// Reads existing data from the serial port buffer
+    /// </summary>
+    public string ReadExisting()
+    {
+        if (_serialPort?.IsOpen == true)
+        {
+            return _serialPort.ReadExisting();
+        }
+        else
+        {
+            throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+        }
+    }
+
+    /// <summary>
+    /// Discards the input buffer
+    /// </summary>
+    public void DiscardInBuffer()
+    {
+        if (_serialPort?.IsOpen == true)
+        {
+            _serialPort.DiscardInBuffer();
+        }
     }
 
     public void Dispose()
@@ -338,15 +469,3 @@ public class SerialPortManager : IDisposable
     }
 }
 
-/// <summary>
-/// Configuration for SerialPortManager
-/// </summary>
-public class SerialPortConfig
-{
-    public string DeviceName { get; set; } = "Unknown";
-    public int BackupPollingIntervalMs { get; set; } = 100;
-    public int CheckIntervalMs { get; set; } = 100;
-    public int ReadBufferSize { get; set; } = 4096;
-    public int MaxBufferSize { get; set; } = 1048576; // 1MB
-    public int RateUpdateIntervalMs { get; set; } = 1000;
-}

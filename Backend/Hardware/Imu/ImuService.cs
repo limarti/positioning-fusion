@@ -13,7 +13,6 @@ public class ImuService : BackgroundService
     private readonly ImuInitializer _imuInitializer;
     private readonly ImuParser _imuParser;
     private readonly DataFileWriter _dataFileWriter;
-    private SerialPort? _serialPort;
     private SerialPortManager? _serialPortManager;
     private readonly byte[] _buffer = new byte[1024];
     private readonly List<byte> _dataBuffer = new();
@@ -40,17 +39,7 @@ public class ImuService : BackgroundService
         _imuParser = new ImuParser(loggerFactory.CreateLogger<ImuParser>());
         _dataFileWriter = new DataFileWriter("IMU.txt", loggerFactory.CreateLogger<DataFileWriter>());
 
-        // Initialize SerialPortManager with IMU-specific configuration
-        var config = new SerialPortConfig
-        {
-            DeviceName = "IMU",
-            BackupPollingIntervalMs = 100,
-            CheckIntervalMs = 100,
-            ReadBufferSize = 1024,
-            MaxBufferSize = 10240, // 10KB (smaller for IMU)
-            RateUpdateIntervalMs = 1000
-        };
-        _serialPortManager = new SerialPortManager(config, loggerFactory.CreateLogger<SerialPortManager>());
+        // SerialPortManager will be obtained from ImuInitializer after initialization
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -60,22 +49,20 @@ public class ImuService : BackgroundService
         // Start the data file writer
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
 
-        // Get the initialized serial port
-        _serialPort = _imuInitializer.GetSerialPort();
-        
-        if (_serialPort == null || !_serialPort.IsOpen)
+        // Get the initialized SerialPortManager
+        _serialPortManager = _imuInitializer.GetSerialPortManager();
+
+        if (_serialPortManager == null || !_serialPortManager.IsConnected)
         {
-            _logger.LogWarning("IMU serial port not available - IMU service will not start");
+            _logger.LogWarning("IMU not available - IMU service will not start");
             return;
         }
 
-        _logger.LogInformation("IMU Service connected to serial port - listening for MEMS data at 50Hz, sending SignalR updates at 1Hz");
+        _logger.LogInformation("IMU Service using pre-initialized SerialPortManager - listening for MEMS data at 50Hz, sending SignalR updates at 1Hz");
 
-        // Set up SerialPortManager for reliable data collection
-        _serialPortManager!.DataReceived += OnSerialDataReceived;
-
-        await _serialPortManager.StartAsync(_serialPort, stoppingToken);
-        _logger.LogInformation("🔗 IMU SerialPortManager started with backup polling");
+        // Subscribe to the already-started SerialPortManager
+        _serialPortManager.DataReceived += OnSerialDataReceived;
+        _logger.LogInformation("🔗 IMU SerialPortManager subscription completed");
         
         // Keep the service running until cancellation
         try
@@ -273,12 +260,11 @@ public class ImuService : BackgroundService
     {
         _logger.LogInformation("Stopping IMU Service");
 
-        // Stop SerialPortManager
+        // Unsubscribe from SerialPortManager (don't stop it - ImuInitializer owns it)
         if (_serialPortManager != null)
         {
             _serialPortManager.DataReceived -= OnSerialDataReceived;
-            await _serialPortManager.StopAsync();
-            _logger.LogInformation("📡 IMU SerialPortManager stopped");
+            _logger.LogInformation("📡 IMU SerialPortManager unsubscribed");
         }
 
         await _dataFileWriter.StopAsync(cancellationToken);
@@ -288,7 +274,7 @@ public class ImuService : BackgroundService
     public override void Dispose()
     {
         _logger.LogInformation("IMU Service disposing");
-        _serialPortManager?.Dispose();
+        // Don't dispose SerialPortManager - ImuInitializer owns it
         _dataFileWriter.Dispose();
         base.Dispose();
     }

@@ -10,8 +10,8 @@ public class LoRaService : BackgroundService
     private const int LORA_BAUD_RATE = 57600;
 
     private readonly ILogger<LoRaService> _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly GeoConfigurationManager _configurationManager;
-    private SerialPort? _loraPort;
     private SerialPortManager? _serialPortManager;
     private long _loraBytesSent = 0;
     private long _loraBytesReceived = 0;
@@ -21,22 +21,23 @@ public class LoRaService : BackgroundService
 
     public event EventHandler<byte[]>? DataReceived;
 
-    public LoRaService(ILogger<LoRaService> logger, GeoConfigurationManager configurationManager)
+    public LoRaService(ILogger<LoRaService> logger, GeoConfigurationManager configurationManager, ILoggerFactory loggerFactory)
     {
         _logger = logger;
+        _loggerFactory = loggerFactory;
         _configurationManager = configurationManager;
 
         // Initialize SerialPortManager with LoRa-specific configuration
-        var config = new SerialPortConfig
-        {
-            DeviceName = "LoRa",
-            BackupPollingIntervalMs = 100,
-            CheckIntervalMs = 100,
-            ReadBufferSize = 2048,
-            MaxBufferSize = 20480, // 20KB (moderate for LoRa)
-            RateUpdateIntervalMs = 1000
-        };
-        _serialPortManager = new SerialPortManager(config, logger);
+        _serialPortManager = new SerialPortManager(
+            "LoRa",
+            "", // portName will be set later
+            0, // baudRate will be set later
+            loggerFactory.CreateLogger<SerialPortManager>(),
+            100, // pollingIntervalMs
+            2048, // readBufferSize
+            20480 // maxBufferSize (20KB for LoRa)
+            // Using defaults for rateUpdateIntervalMs (1000), parity (None), dataBits (8), stopBits (One)
+        );
 
         // Subscribe to operating mode changes to control polling
         _configurationManager.OperatingModeChanged += OnOperatingModeChanged;
@@ -61,7 +62,7 @@ public class LoRaService : BackgroundService
                 // In Receive mode, try to initialize LoRa port every 5 seconds if not connected
                 if (_configurationManager.OperatingMode == OperatingMode.Receive)
                 {
-                    if ((_loraPort == null || !_loraPort.IsOpen) && (now - lastInitAttempt).TotalSeconds >= 5)
+                    if ((_serialPortManager == null || !_serialPortManager.IsConnected) && (now - lastInitAttempt).TotalSeconds >= 5)
                     {
                         _logger.LogDebug("📡 LoRa: Attempting proactive initialization for Receive mode");
                         await InitializeLoRaPort();
@@ -97,22 +98,36 @@ public class LoRaService : BackgroundService
                 return;
             }
 
-            _logger.LogDebug("📡 LoRa: Creating SerialPort for {Port} at {BaudRate} baud", LORA_PORT, LORA_BAUD_RATE);
-            _loraPort = new SerialPort(LORA_PORT, LORA_BAUD_RATE, Parity.None, 8, StopBits.One);
+            _logger.LogDebug("📡 LoRa: Updating SerialPortManager configuration for {Port} at {BaudRate} baud", LORA_PORT, LORA_BAUD_RATE);
 
-            _logger.LogDebug("📡 LoRa: Opening port connection...");
-            _loraPort.Open();
+            // Dispose old SerialPortManager if exists
+            if (_serialPortManager != null)
+            {
+                _serialPortManager.DataReceived -= OnSerialDataReceived;
+                _serialPortManager.Dispose();
+            }
+
+            // Create new SerialPortManager with proper port and baud rate
+            _serialPortManager = new SerialPortManager(
+                "LoRa",
+                LORA_PORT,
+                LORA_BAUD_RATE,
+                _loggerFactory.CreateLogger<SerialPortManager>(),
+                100, // pollingIntervalMs
+                2048, // readBufferSize
+                20480 // maxBufferSize (20KB for LoRa)
+            );
 
             // Set up SerialPortManager for reliable data collection
-            _serialPortManager!.DataReceived += OnSerialDataReceived;
-            await _serialPortManager.StartAsync(_loraPort);
+            _serialPortManager.DataReceived += OnSerialDataReceived;
+            await _serialPortManager.StartAsync();
 
             _logger.LogInformation("📡 LoRa: Successfully connected to {Port} with SerialPortManager", LORA_PORT);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "📡 LoRa: Failed to open port {Port} - will retry on next operation. Check if LoRa device is connected.", LORA_PORT);
-            _loraPort = null;
+            _serialPortManager = null;
         }
     }
 
@@ -190,11 +205,11 @@ public class LoRaService : BackgroundService
         }
 
         // Initialize connection if needed
-        if (_loraPort == null || !_loraPort.IsOpen)
+        if (_serialPortManager == null || !_serialPortManager.IsConnected)
         {
             _logger.LogInformation("📡 LoRa: Initializing connection to {Port}", LORA_PORT);
             await InitializeLoRaPort();
-            if (_loraPort == null || !_loraPort.IsOpen)
+            if (_serialPortManager == null || !_serialPortManager.IsConnected)
             {
                 _logger.LogWarning("📡 LoRa: Failed to establish connection");
                 return;
@@ -203,21 +218,8 @@ public class LoRaService : BackgroundService
 
         try
         {
-            // Non-blocking write with timeout protection
-            await Task.Run(() =>
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-                try
-                {
-                    _loraPort.WriteTimeout = 100; // 100ms timeout
-                    _loraPort.Write(data, 0, data.Length);
-                }
-                catch (TimeoutException)
-                {
-                    _logger.LogWarning("📡 LoRa: Write timeout - device may be overwhelmed");
-                    throw;
-                }
-            });
+            // Use SerialPortManager's write method
+            _serialPortManager.Write(data, 0, data.Length);
 
             _loraBytesSent += data.Length;
             _totalLoRaBytesSent += data.Length;
@@ -251,12 +253,8 @@ public class LoRaService : BackgroundService
             {
                 _serialPortManager.DataReceived -= OnSerialDataReceived;
                 await _serialPortManager.StopAsync();
-            }
-
-            if (_loraPort != null)
-            {
-                _loraPort.Close();
-                _loraPort.Dispose();
+                _serialPortManager.Dispose();
+                _serialPortManager = null;
             }
             _logger.LogDebug("📡 LoRa: Waiting 2 seconds before reconnection attempt");
             await Task.Delay(2000); // Wait before reconnecting
@@ -309,7 +307,7 @@ public class LoRaService : BackgroundService
         _logger.LogDebug("UpdateDataRatesAsync completed");
     }
 
-    public bool IsConnected => _loraPort?.IsOpen == true;
+    public bool IsConnected => _serialPortManager?.IsConnected == true;
 
     public double CurrentSendRate { get; private set; } = 0.0;
     public double CurrentReceiveRate { get; private set; } = 0.0;
@@ -331,8 +329,7 @@ public class LoRaService : BackgroundService
 
         await base.StopAsync(cancellationToken);
 
-        // Clean up serial port reference
-        _loraPort = null;
+        // SerialPortManager cleanup handled above
     }
 
     public override void Dispose()
@@ -345,25 +342,7 @@ public class LoRaService : BackgroundService
         // Dispose SerialPortManager
         _serialPortManager?.Dispose();
 
-        if (_loraPort != null)
-        {
-            try
-            {
-                if (_loraPort.IsOpen)
-                {
-                    _loraPort.Close();
-                }
-                _loraPort.Dispose();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "📡 LoRa: Error during disposal");
-            }
-            finally
-            {
-                _loraPort = null;
-            }
-        }
+        // SerialPortManager disposal is handled above
 
         base.Dispose();
     }

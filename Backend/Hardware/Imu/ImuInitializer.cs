@@ -1,22 +1,22 @@
 using System.IO.Ports;
+using Backend.Hardware.Common;
 
 namespace Backend.Hardware.Imu;
 
 public class ImuInitializer
 {
     private readonly ILogger<ImuInitializer> _logger;
-    private SerialPort? _serialPort;
+    private readonly ILoggerFactory _loggerFactory;
+    private SerialPortManager? _serialPortManager;
     
     private const string DefaultPortName = "/dev/ttyAMA2";
     private const int DefaultBaudRate = 115200;
-    private const Parity DefaultParity = Parity.None;
-    private const int DefaultDataBits = 8;
-    private const StopBits DefaultStopBits = StopBits.One;
-    private const int InitializationTimeoutMs = 5000;
+    private const int InitializationTimeoutMs = 3000;  // 3-second check for IMU data
 
-    public ImuInitializer(ILogger<ImuInitializer> logger)
+    public ImuInitializer(ILogger<ImuInitializer> logger, ILoggerFactory loggerFactory)
     {
         _logger = logger;
+        _loggerFactory = loggerFactory;
     }
 
     public async Task<bool> InitializeAsync(string portName = DefaultPortName, int baudRate = DefaultBaudRate)
@@ -25,95 +25,97 @@ public class ImuInitializer
         {
             _logger.LogInformation("Initializing IM19 IMU on port {PortName} at {BaudRate} baud", portName, baudRate);
 
-            _serialPort = new SerialPort(portName, baudRate, DefaultParity, DefaultDataBits, DefaultStopBits)
-            {
-                ReadTimeout = 1000,
-                WriteTimeout = 1000,
-                RtsEnable = true,
-                DtrEnable = true
-            };
+            // Create SerialPortManager with IMU configuration
+            _serialPortManager = new SerialPortManager(
+                "IMU",
+                portName,
+                baudRate,
+                _loggerFactory.CreateLogger<SerialPortManager>(),
+                100, // pollingIntervalMs
+                1024, // readBufferSize
+                10240 // maxBufferSize
+                // Using defaults for rateUpdateIntervalMs (1000), parity (None), dataBits (8), stopBits (One)
+            );
 
-            _serialPort.Open();
-            _logger.LogInformation("Serial port {PortName} opened successfully", portName);
+            // Start SerialPortManager (it will create and open the serial port)
+            await _serialPortManager.StartAsync();
+            _logger.LogInformation("SerialPortManager started for IMU on {PortName}", portName);
 
             await Task.Delay(500);
 
+            // Configure IMU and test for data within 3 seconds
             await ConfigureImuOutputAsync();
+
             if (await VerifyImuCommunicationAsync())
             {
-                _logger.LogInformation("IM19 IMU initialized successfully and ready to receive data");
+                _logger.LogInformation("IM19 IMU initialized successfully - data received within 3 seconds, keeping SerialPortManager ready");
                 return true;
             }
             else
             {
-                _logger.LogError("Failed to verify IMU communication after configuration");
-                _serialPort?.Close();
-                _serialPort?.Dispose();
-                _serialPort = null;
+                _logger.LogWarning("IM19 IMU not detected - no data received within 3 seconds, disposing resources");
+                _serialPortManager?.Dispose();
+                _serialPortManager = null;
                 return false;
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to initialize IM19 IMU on port {PortName}", portName);
-            _serialPort?.Close();
-            _serialPort?.Dispose();
-            _serialPort = null;
+            _serialPortManager?.Dispose();
+            _serialPortManager = null;
             return false;
         }
     }
 
     private async Task<bool> VerifyImuCommunicationAsync()
     {
-        if (_serialPort == null || !_serialPort.IsOpen)
+        if (_serialPortManager == null || !_serialPortManager.IsConnected)
             return false;
 
-        _logger.LogDebug("Verifying IM19 IMU communication...");
-        
-        _serialPort.DiscardInBuffer();
-        _serialPort.DiscardOutBuffer();
-        var timeoutTask = Task.Delay(InitializationTimeoutMs);
-        var dataReceiveTask = Task.Run(async () =>
+        _logger.LogInformation("Checking for IMU data within 3 seconds...");
+
+        var dataReceivedEvent = new TaskCompletionSource<bool>();
+
+        // Subscribe to data events
+        _serialPortManager.DataReceived += (sender, data) =>
         {
-            while (_serialPort.IsOpen)
+            if (data.Length > 0)
             {
-                if (_serialPort.BytesToRead > 0)
-                {
-                    return true;
-                }
-                await Task.Delay(100);
+                dataReceivedEvent.TrySetResult(true);
             }
-            return false;
-        });
+        };
 
-        var result = await Task.WhenAny(timeoutTask, dataReceiveTask);
-        
-        if (result == dataReceiveTask && await dataReceiveTask)
+        // Wait for data or timeout (SerialPortManager is already started)
+        using var cts = new CancellationTokenSource(InitializationTimeoutMs);
+        try
         {
-            _logger.LogDebug("IM19 IMU communication verified - receiving data");
+            await dataReceivedEvent.Task.WaitAsync(cts.Token);
+            _logger.LogInformation("IM19 IMU detected - data received within 3 seconds");
             return true;
         }
-        else
+        catch (OperationCanceledException)
         {
-            _logger.LogWarning("IM19 IMU communication verification timed out - no data received");
+            _logger.LogInformation("IM19 IMU not detected - no data received within 3 seconds");
             return false;
         }
+        // Note: Don't stop SerialPortManager here - it will be used by the service
     }
 
     private async Task ConfigureImuOutputAsync()
     {
-        if (_serialPort == null || !_serialPort.IsOpen)
+        if (_serialPortManager == null || !_serialPortManager.IsConnected)
             return;
 
         _logger.LogDebug("Configuring IM19 IMU for continuous data output...");
 
         const string atCommand = "AT+MEMS_OUTPUT=UART1,ON";
         _logger.LogDebug("Sending AT command: {Command}", atCommand);
-        
-        _serialPort.DiscardInBuffer();
-        _serialPort.WriteLine(atCommand);
+
+        _serialPortManager.DiscardInBuffer();
+        _serialPortManager.WriteLine(atCommand);
         var response = await WaitForAtResponseAsync();
-        
+
         if (response.Contains("OK"))
         {
             _logger.LogInformation("IM19 IMU MEMS output enabled successfully");
@@ -127,7 +129,7 @@ public class ImuInitializer
         {
             _logger.LogWarning("IM19 IMU AT command response unclear: {Response}", response);
         }
-        
+
         _logger.LogDebug("IM19 IMU configuration completed");
     }
 
@@ -135,45 +137,51 @@ public class ImuInitializer
     {
         var response = string.Empty;
         var endTime = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        
+
         while (DateTime.UtcNow < endTime)
         {
-            if (_serialPort?.BytesToRead > 0)
+            try
             {
-                var data = _serialPort.ReadExisting();
-                response += data;
-                
-                if (response.Contains("OK") || response.Contains("ERROR"))
+                var data = _serialPortManager?.ReadExisting();
+                if (!string.IsNullOrEmpty(data))
                 {
-                    _logger.LogDebug("AT command response received: {Response}", response.Trim());
-                    return response.Trim();
+                    response += data;
+
+                    if (response.Contains("OK") || response.Contains("ERROR"))
+                    {
+                        _logger.LogDebug("AT command response received: {Response}", response.Trim());
+                        return response.Trim();
+                    }
                 }
             }
-            
+            catch (InvalidOperationException)
+            {
+                // SerialPort not available, continue waiting
+            }
+
             await Task.Delay(50);
         }
-        
+
         _logger.LogWarning("AT command response timeout after {TimeoutMs}ms", timeoutMs);
         return response.Trim();
     }
 
-    public SerialPort? GetSerialPort()
+    public SerialPortManager? GetSerialPortManager()
     {
-        return _serialPort;
+        return _serialPortManager;
     }
 
     public void Dispose()
     {
         try
         {
-            _serialPort?.Close();
-            _serialPort?.Dispose();
-            _serialPort = null;
-            _logger.LogInformation("IM19 IMU serial connection disposed");
+            _serialPortManager?.Dispose();
+            _serialPortManager = null;
+            _logger.LogInformation("IM19 IMU SerialPortManager disposed");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error disposing IM19 IMU serial connection");
+            _logger.LogError(ex, "Error disposing IM19 IMU SerialPortManager");
         }
     }
 }

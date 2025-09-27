@@ -21,7 +21,6 @@ public class GnssService : BackgroundService
     private LoRaService? _loraService;
     private readonly GeoConfigurationManager _configurationManager;
     private readonly GnssFrameParser _frameParser;
-    private SerialPort? _serialPort;
     private SerialPortManager? _serialPortManager;
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
@@ -49,20 +48,20 @@ public class GnssService : BackgroundService
         _gnssInitializer = gnssInitializer;
         _configurationManager = configurationManager;
         _dataFileWriter = new DataFileWriter("GNSS.raw", loggerFactory.CreateLogger<DataFileWriter>());
-        _bluetoothService = new BluetoothStreamingService(loggerFactory.CreateLogger<BluetoothStreamingService>());
+        _bluetoothService = new BluetoothStreamingService(loggerFactory.CreateLogger<BluetoothStreamingService>(), loggerFactory);
         _frameParser = new GnssFrameParser(loggerFactory.CreateLogger<GnssFrameParser>());
 
         // Initialize SerialPortManager with GNSS-specific configuration
-        var config = new SerialPortConfig
-        {
-            DeviceName = "GNSS",
-            BackupPollingIntervalMs = 100,
-            CheckIntervalMs = 100,
-            ReadBufferSize = 4096,
-            MaxBufferSize = 1048576, // 1MB
-            RateUpdateIntervalMs = 1000
-        };
-        _serialPortManager = new SerialPortManager(config, loggerFactory.CreateLogger<SerialPortManager>());
+        _serialPortManager = new SerialPortManager(
+            "GNSS",
+            "", // portName will be set later by initializer
+            0, // baudRate will be set later by initializer
+            loggerFactory.CreateLogger<SerialPortManager>(),
+            100, // pollingIntervalMs
+            4096, // readBufferSize
+            1048576 // maxBufferSize (1MB)
+            // Using defaults for rateUpdateIntervalMs (1000), parity (None), dataBits (8), stopBits (One)
+        );
 
         // Get LoRa service from the service provider
         _loraService = serviceProvider.GetService<LoRaService>();
@@ -85,8 +84,8 @@ public class GnssService : BackgroundService
         // Start the Bluetooth streaming service
         _ = Task.Run(() => _bluetoothService.StartAsync(stoppingToken), stoppingToken);
 
-        _serialPort = _gnssInitializer.GetSerialPort();
-        if (_serialPort == null || !_serialPort.IsOpen)
+        _serialPortManager = _gnssInitializer.GetSerialPortManager();
+        if (_serialPortManager == null || !_serialPortManager.IsConnected)
         {
             _logger.LogWarning("GNSS serial port not available - service will not collect data");
 
@@ -100,14 +99,14 @@ public class GnssService : BackgroundService
             return;
         }
 
-        _logger.LogInformation("GNSS Service connected to {PortName} at {BaudRate} baud",
-            _serialPort.PortName, _serialPort.BaudRate);
+        _logger.LogInformation("GNSS Service connected and using SerialPortManager");
 
         // Set up SerialPortManager for reliable data collection
         _serialPortManager!.DataReceived += OnSerialDataReceived;
         _serialPortManager.RateUpdated += OnRateUpdated;
 
-        await _serialPortManager.StartAsync(_serialPort, stoppingToken);
+        // SerialPortManager should already be started by GnssInitializer
+        // await _serialPortManager.StartAsync(stoppingToken);
 
         // Start background task for periodic rate updates
         _ = Task.Run(async () => await RateUpdateLoop(stoppingToken), stoppingToken);
@@ -593,7 +592,7 @@ public class GnssService : BackgroundService
     // Method to send RTCM data directly to GNSS port (for Receive mode)
     public async Task SendRtcmToGnss(byte[] rtcmData)
     {
-        if (_serialPort == null || !_serialPort.IsOpen)
+        if (_serialPortManager == null || !_serialPortManager.IsConnected)
         {
             _logger.LogWarning("Cannot send RTCM to GNSS - serial port not available");
             return;
@@ -601,7 +600,7 @@ public class GnssService : BackgroundService
 
         try
         {
-            _serialPort.Write(rtcmData, 0, rtcmData.Length);
+            _serialPortManager.Write(rtcmData, 0, rtcmData.Length);
             TrackBytesSent(rtcmData.Length);
             _logger.LogDebug("📤 Sent {Length} bytes of RTCM data to GNSS port", rtcmData.Length);
         }

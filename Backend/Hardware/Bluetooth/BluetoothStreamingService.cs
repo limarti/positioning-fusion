@@ -1,5 +1,6 @@
 using System.IO.Ports;
 using Backend.Configuration;
+using Backend.Hardware.Common;
 
 namespace Backend.Hardware.Bluetooth;
 
@@ -9,14 +10,16 @@ public class BluetoothStreamingService : BackgroundService
     private const int BLUETOOTH_BAUD_RATE = 9600;
     
     private readonly ILogger<BluetoothStreamingService> _logger;
-    private SerialPort? _bluetoothPort;
+    private readonly ILoggerFactory _loggerFactory;
+    private SerialPortManager? _serialPortManager;
     private long _bluetoothBytesSent = 0;
     private long _totalBluetoothBytesSent = 0;
     private DateTime _lastRateUpdate = DateTime.UtcNow;
 
-    public BluetoothStreamingService(ILogger<BluetoothStreamingService> logger)
+    public BluetoothStreamingService(ILogger<BluetoothStreamingService> logger, ILoggerFactory loggerFactory)
     {
         _logger = logger;
+        _loggerFactory = loggerFactory;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,18 +46,27 @@ public class BluetoothStreamingService : BackgroundService
     {
         try
         {
-            _logger.LogDebug("📡 Bluetooth: Creating SerialPort for {Port} at {BaudRate} baud", BLUETOOTH_PORT, BLUETOOTH_BAUD_RATE);
-            _bluetoothPort = new SerialPort(BLUETOOTH_PORT, BLUETOOTH_BAUD_RATE, Parity.None, 8, StopBits.One);
-            
-            _logger.LogDebug("📡 Bluetooth: Opening port connection...");
-            _bluetoothPort.Open();
-            
+            _logger.LogDebug("📡 Bluetooth: Creating SerialPortManager for {Port} at {BaudRate} baud", BLUETOOTH_PORT, BLUETOOTH_BAUD_RATE);
+
+            _serialPortManager = new SerialPortManager(
+                "Bluetooth",
+                BLUETOOTH_PORT,
+                BLUETOOTH_BAUD_RATE,
+                _loggerFactory.CreateLogger<SerialPortManager>(),
+                100, // pollingIntervalMs
+                1024, // readBufferSize
+                10240 // maxBufferSize
+            );
+
+            _logger.LogDebug("📡 Bluetooth: Starting SerialPortManager...");
+            await _serialPortManager.StartAsync();
+
             _logger.LogInformation("📡 Bluetooth: Successfully connected to {Port}", BLUETOOTH_PORT);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "📡 Bluetooth: Failed to open port {Port} - will retry on next data send. Check if device is paired and rfcomm port is bound.", BLUETOOTH_PORT);
-            _bluetoothPort = null;
+            _serialPortManager = null;
         }
     }
 
@@ -72,11 +84,11 @@ public class BluetoothStreamingService : BackgroundService
         _logger.LogDebug("📡 Bluetooth: Port {Port} exists, checking connection", BLUETOOTH_PORT);
 
         // Initialize connection if needed
-        if (_bluetoothPort == null || !_bluetoothPort.IsOpen)
+        if (_serialPortManager == null || !_serialPortManager.IsConnected)
         {
             _logger.LogInformation("📡 Bluetooth: Initializing connection to {Port}", BLUETOOTH_PORT);
             await InitializeBluetoothPort();
-            if (_bluetoothPort == null || !_bluetoothPort.IsOpen)
+            if (_serialPortManager == null || !_serialPortManager.IsConnected)
             {
                 _logger.LogWarning("📡 Bluetooth: Failed to establish connection");
                 return;
@@ -86,7 +98,7 @@ public class BluetoothStreamingService : BackgroundService
         try
         {
             // Write data to Bluetooth
-            _bluetoothPort.Write(data, 0, data.Length);
+            _serialPortManager.Write(data, 0, data.Length);
             _bluetoothBytesSent += data.Length;
             _totalBluetoothBytesSent += data.Length;
 
@@ -106,8 +118,12 @@ public class BluetoothStreamingService : BackgroundService
         try
         {
             _logger.LogInformation("📡 Bluetooth: Attempting to reconnect...");
-            _bluetoothPort?.Close();
-            _bluetoothPort?.Dispose();
+            if (_serialPortManager != null)
+            {
+                await _serialPortManager.StopAsync();
+                _serialPortManager.Dispose();
+                _serialPortManager = null;
+            }
             _logger.LogDebug("📡 Bluetooth: Waiting 2 seconds before reconnection attempt");
             await Task.Delay(2000); // Wait before reconnecting
             await InitializeBluetoothPort();
@@ -142,23 +158,24 @@ public class BluetoothStreamingService : BackgroundService
         }
     }
 
-    public bool IsConnected => _bluetoothPort?.IsOpen == true;
+    public bool IsConnected => _serialPortManager?.IsConnected == true;
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Stopping Bluetooth Streaming Service");
         
-        // Close Bluetooth port if open
-        if (_bluetoothPort?.IsOpen == true)
+        // Stop SerialPortManager if connected
+        if (_serialPortManager != null)
         {
             try
             {
-                _bluetoothPort.Close();
-                _logger.LogInformation("Bluetooth port closed");
+                await _serialPortManager.StopAsync();
+                _serialPortManager.Dispose();
+                _logger.LogInformation("Bluetooth SerialPortManager stopped");
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error closing Bluetooth port");
+                _logger.LogWarning(ex, "Error stopping Bluetooth SerialPortManager");
             }
         }
         
@@ -169,8 +186,7 @@ public class BluetoothStreamingService : BackgroundService
     {
         _logger.LogInformation("Bluetooth Streaming Service disposing");
         
-        // Dispose Bluetooth port
-        _bluetoothPort?.Dispose();
+        // SerialPortManager disposal is handled in StopAsync
         
         base.Dispose();
     }
