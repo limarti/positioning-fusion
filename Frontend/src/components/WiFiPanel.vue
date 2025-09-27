@@ -25,17 +25,20 @@ const apConfig = ref({
   ssid: '',
   password: ''
 })
+const originalAPPassword = ref('')
+const isAPPasswordModified = ref(false)
 
-// Client Connection
-const clientConfig = ref({
+// Dialog state
+const showAddNetworkDialog = ref(false)
+const dialogNetworkConfig = ref({
   ssid: '',
   password: ''
 })
+const showDialogPassword = ref(false)
 
 // UI State
 const isConnecting = ref(false)
 const showAPPassword = ref(false)
-const showClientPassword = ref(false)
 const showNetworkPasswords = ref({})
 
 // Connection handlers
@@ -103,6 +106,7 @@ const loadInitialData = async () => {
       ssid: apConfiguration.ssid || '',
       password: apConfiguration.password || ''
     }
+    originalAPPassword.value = apConfiguration.password || ''
 
     console.log('All initial WiFi data loaded successfully:', { status, networks, preferredMode: mode, apConfig: apConfiguration })
   } catch (error) {
@@ -161,50 +165,36 @@ onUnmounted(() => {
   }
 })
 
-const connectToWiFi = async () => {
-  if (!clientConfig.value.ssid || !clientConfig.value.password) {
+const addNetwork = async () => {
+  if (!dialogNetworkConfig.value.ssid || !dialogNetworkConfig.value.password) {
     return
   }
 
   isConnecting.value = true
-  
+
   try {
-    const success = await signalrConnection.value.invoke('ConnectToWiFi', clientConfig.value.ssid, clientConfig.value.password)
-    
+    const success = await signalrConnection.value.invoke('ConnectToWiFi', dialogNetworkConfig.value.ssid, dialogNetworkConfig.value.password)
+
     if (success) {
-      console.log('WiFi connection initiated successfully')
-      clientConfig.value.ssid = ''
-      clientConfig.value.password = ''
+      console.log('Network connection initiated successfully')
+      closeAddNetworkDialog()
     } else {
-      console.error('WiFi connection failed')
+      console.error('Network connection failed')
     }
   } catch (error) {
-    console.error('Error connecting to WiFi:', error)
+    console.error('Error connecting to network:', error)
   } finally {
     isConnecting.value = false
   }
 }
 
-const connectToKnownNetwork = async (ssid) => {
-  const network = knownNetworks.value.find(n => n.ssid === ssid)
-  if (!network) return
-
-  isConnecting.value = true
-  
-  try {
-    const success = await signalrConnection.value.invoke('ConnectToWiFi', network.ssid, '') // Password stored on server
-    
-    if (success) {
-      console.log('Connected to known network:', ssid)
-    } else {
-      console.error('Failed to connect to known network:', ssid)
-    }
-  } catch (error) {
-    console.error('Error connecting to known network:', error)
-  } finally {
-    isConnecting.value = false
-  }
+const closeAddNetworkDialog = () => {
+  showAddNetworkDialog.value = false
+  dialogNetworkConfig.value.ssid = ''
+  dialogNetworkConfig.value.password = ''
+  showDialogPassword.value = false
 }
+
 
 const removeKnownNetwork = async (ssid) => {
   try {
@@ -220,18 +210,25 @@ const removeKnownNetwork = async (ssid) => {
   }
 }
 
-const configureAP = async () => {
+const saveAPPassword = async () => {
   try {
     const success = await signalrConnection.value.invoke('SetAPConfiguration', apConfig.value.ssid, apConfig.value.password)
 
     if (success) {
-      console.log('AP configuration updated successfully')
+      console.log('AP password updated successfully')
+      originalAPPassword.value = apConfig.value.password
+      isAPPasswordModified.value = false
     } else {
-      console.error('AP configuration failed')
+      console.error('AP password update failed')
     }
   } catch (error) {
-    console.error('Error configuring AP:', error)
+    console.error('Error updating AP password:', error)
   }
+}
+
+const cancelAPPasswordEdit = () => {
+  apConfig.value.password = originalAPPassword.value
+  isAPPasswordModified.value = false
 }
 
 const setPreferredMode = async () => {
@@ -252,20 +249,6 @@ const toggleNetworkPassword = (ssid) => {
   showNetworkPasswords.value[ssid] = !showNetworkPasswords.value[ssid]
 }
 
-const getStatusColor = (mode) => {
-  switch (mode) {
-    case 'Client': return 'text-green-600'
-    case 'AP': return 'text-blue-600'
-    default: return 'text-gray-500'
-  }
-}
-
-const getSignalStrengthColor = (strength) => {
-  if (!strength) return 'text-gray-400'
-  if (strength >= 70) return 'text-green-500'
-  if (strength >= 50) return 'text-yellow-500'
-  return 'text-red-500'
-}
 
 const formatLastConnected = (timestamp) => {
   if (!timestamp) return 'Never'
@@ -275,212 +258,249 @@ const formatLastConnected = (timestamp) => {
 </script>
 
 <template>
-  <Card>
-    <template #title>WiFi Configuration</template>
-    
-    <!-- Fallback Notification -->
-    <div v-if="fallbackNotification" class="mb-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded-lg">
-      <div class="flex items-center">
-        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
-        </svg>
-        <span class="font-medium">{{ fallbackNotification.message }}</span>
+  <div class="space-y-6">
+    <!-- Header Section -->
+    <div class="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h1 class="text-xl font-semibold text-gray-900">Network Configuration</h1>
+        <p class="text-sm text-gray-600 mt-1">Manage WiFi connectivity and access point settings</p>
       </div>
-    </div>
 
-    <!-- WiFi Mode Preference -->
-    <div class="mb-6 p-4 border border-purple-200 bg-purple-50 rounded-lg">
-      <h3 class="font-semibold mb-3 text-purple-800">WiFi Mode Preference</h3>
-      <div v-if="preferredMode === null" class="text-gray-500 text-sm">
-        Loading mode preference...
-      </div>
-      <div v-else class="flex items-center space-x-4">
+      <!-- Fallback Notification -->
+      <div v-if="fallbackNotification" class="mx-6 mt-4 p-4 bg-gray-50 border-l-4 border-gray-400 rounded-r-md">
         <div class="flex items-center">
-          <input
-            id="mode-client"
-            v-model="preferredMode"
-            type="radio"
-            value="Client"
-            @change="setPreferredMode"
-            class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300"
-          />
-          <label for="mode-client" class="ml-2 text-sm font-medium text-gray-700">
-            Client Mode (Try to connect to networks first)
-          </label>
-        </div>
-        <div class="flex items-center">
-          <input
-            id="mode-ap"
-            v-model="preferredMode"
-            type="radio"
-            value="AP"
-            @change="setPreferredMode"
-            class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300"
-          />
-          <label for="mode-ap" class="ml-2 text-sm font-medium text-gray-700">
-            Access Point Mode (Start as AP immediately)
-          </label>
+          <svg class="w-5 h-5 mr-3 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+          </svg>
+          <span class="font-medium text-gray-700">{{ fallbackNotification.message }}</span>
         </div>
       </div>
-      <div v-if="preferredMode" class="mt-2 text-xs text-gray-600">
-        <span v-if="preferredMode === 'Client'">
-          Will try to connect to known networks first, falling back to AP mode if connection fails.
-        </span>
-        <span v-if="preferredMode === 'AP'">
-          Will start directly in Access Point mode, even if known networks are configured.
-        </span>
-      </div>
-    </div>
 
-    <!-- Current Status -->
-    <div class="mb-6 p-4 bg-gray-50 rounded-lg">
-      <h3 class="font-semibold mb-2">Current Status</h3>
-      <div class="grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <span class="text-gray-600">Mode:</span>
-          <span :class="getStatusColor(wifiStatus.currentMode)" class="ml-2 font-medium">
-            {{ wifiStatus.currentMode || 'Disconnected' }}
-          </span>
+      <!-- Current Status Section -->
+      <div class="px-6 py-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-medium text-gray-900">Connection Status</h2>
+          <div class="flex items-center space-x-2">
+            <div class="w-2 h-2 rounded-full" :class="wifiStatus.isConnected ? 'bg-gray-900' : 'bg-gray-400'"></div>
+            <span class="text-sm font-medium" :class="wifiStatus.isConnected ? 'text-gray-900' : 'text-gray-500'">
+              {{ wifiStatus.isConnected ? 'Connected' : 'Disconnected' }}
+            </span>
+          </div>
         </div>
-        <div>
-          <span class="text-gray-600">Connected:</span>
-          <span :class="wifiStatus.isConnected ? 'text-green-600' : 'text-red-600'" class="ml-2">
-            {{ wifiStatus.isConnected ? 'Yes' : 'No' }}
-          </span>
-        </div>
-        <div v-if="wifiStatus.connectedNetworkSSID">
-          <span class="text-gray-600">Network:</span>
-          <span class="ml-2 font-medium">{{ wifiStatus.connectedNetworkSSID }}</span>
-        </div>
-        <div v-if="wifiStatus.signalStrength">
-          <span class="text-gray-600">Signal:</span>
-          <span :class="getSignalStrengthColor(wifiStatus.signalStrength)" class="ml-2 font-medium">
-            {{ wifiStatus.signalStrength }}%
-          </span>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Mode</div>
+            <div class="text-sm font-semibold text-gray-900">
+              {{ wifiStatus.currentMode || 'Disconnected' }}
+            </div>
+          </div>
+
+          <div v-if="wifiStatus.connectedNetworkSSID" class="bg-gray-50 rounded-lg p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Network</div>
+            <div class="text-sm font-semibold text-gray-900 truncate">{{ wifiStatus.connectedNetworkSSID }}</div>
+          </div>
+
+          <div v-if="wifiStatus.signalStrength" class="bg-gray-50 rounded-lg p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Signal Strength</div>
+            <div class="flex items-center space-x-2">
+              <div class="text-sm font-semibold text-gray-900">{{ wifiStatus.signalStrength }}%</div>
+              <div class="flex space-x-1">
+                <div class="w-1 h-3 rounded-full" :class="wifiStatus.signalStrength >= 25 ? 'bg-gray-900' : 'bg-gray-300'"></div>
+                <div class="w-1 h-3 rounded-full" :class="wifiStatus.signalStrength >= 50 ? 'bg-gray-900' : 'bg-gray-300'"></div>
+                <div class="w-1 h-3 rounded-full" :class="wifiStatus.signalStrength >= 75 ? 'bg-gray-900' : 'bg-gray-300'"></div>
+                <div class="w-1 h-3 rounded-full" :class="wifiStatus.signalStrength >= 90 ? 'bg-gray-900' : 'bg-gray-300'"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Status</div>
+            <div class="text-sm font-semibold" :class="wifiStatus.isConnected ? 'text-gray-900' : 'text-gray-500'">
+              {{ wifiStatus.isConnected ? 'Online' : 'Offline' }}
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- AP Configuration -->
-    <div class="mb-6 p-4 border border-blue-200 bg-blue-50 rounded-lg">
-      <h3 class="font-semibold mb-3 text-blue-800">Access Point Configuration</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">SSID (Auto-generated from device name)</label>
-          <div class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-gray-600">
-            {{ apConfig.ssid || 'Loading...' }}
-          </div>
+    <!-- Mode Configuration -->
+    <div class="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h2 class="text-lg font-medium text-gray-900">Operating Mode</h2>
+        <p class="text-sm text-gray-600 mt-1">Select the preferred WiFi operating mode for this device</p>
+      </div>
+
+      <div class="px-6 py-5">
+        <div v-if="preferredMode === null" class="text-gray-500 text-sm flex items-center">
+          <svg class="animate-spin -ml-1 mr-3 h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          Loading configuration...
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-          <div class="relative">
-            <input
-              v-model="apConfig.password"
-              :type="showAPPassword ? 'text' : 'password'"
-              class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="AP password"
-            />
-            <button
-              @click="showAPPassword = !showAPPassword"
-              type="button"
-              class="absolute inset-y-0 right-0 pr-3 flex items-center"
-            >
-              <svg v-if="showAPPassword" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              <svg v-else class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.115 8.114m0 0L6.937 6.937m0 0a8.977 8.977 0 00-1.942-.845m1.942.845A8.977 8.977 0 0012 5c2.14 0 4.135.601 5.828 1.635l-1.937 1.937m0 0a3 3 0 00-4.243 4.243l1.937-1.937z" />
-              </svg>
-            </button>
+
+        <div v-else class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="relative cursor-pointer">
+              <input
+                v-model="preferredMode"
+                type="radio"
+                value="Client"
+                @change="setPreferredMode"
+                class="sr-only"
+              />
+              <div class="p-4 rounded-lg border-2 transition-all duration-200"
+                   :class="preferredMode === 'Client' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="font-medium text-gray-900">Client Mode</div>
+                    <div class="text-sm text-gray-600">Connect to existing networks</div>
+                  </div>
+                  <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                       :class="preferredMode === 'Client' ? 'border-gray-900' : 'border-gray-300'">
+                    <div v-if="preferredMode === 'Client'" class="w-2 h-2 rounded-full bg-gray-900"></div>
+                  </div>
+                </div>
+              </div>
+            </label>
+
+            <label class="relative cursor-pointer">
+              <input
+                v-model="preferredMode"
+                type="radio"
+                value="AP"
+                @change="setPreferredMode"
+                class="sr-only"
+              />
+              <div class="p-4 rounded-lg border-2 transition-all duration-200"
+                   :class="preferredMode === 'AP' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="font-medium text-gray-900">Access Point Mode</div>
+                    <div class="text-sm text-gray-600">Create a WiFi hotspot</div>
+                  </div>
+                  <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                       :class="preferredMode === 'AP' ? 'border-gray-900' : 'border-gray-300'">
+                    <div v-if="preferredMode === 'AP'" class="w-2 h-2 rounded-full bg-gray-900"></div>
+                  </div>
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div class="p-3 bg-gray-50 rounded-lg">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Behavior</div>
+            <div class="text-sm text-gray-700">
+              <span v-if="preferredMode === 'Client'">
+                Device will attempt to connect to known networks first, falling back to Access Point mode if no connection is possible.
+              </span>
+              <span v-if="preferredMode === 'AP'">
+                Device will start directly in Access Point mode, creating a WiFi hotspot for other devices to connect to.
+              </span>
+            </div>
+          </div>
+
+          <!-- AP Configuration Form - always show -->
+          <div class="space-y-4 pt-4 border-t border-gray-200">
+            <div class="text-sm font-medium text-gray-900 mb-3">Access Point Settings</div>
+
+            <div>
+              <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Network Name (SSID)</label>
+              <div class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-mono text-sm">
+                {{ apConfig.ssid || 'Loading...' }}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">Auto-generated from device name</div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Password</label>
+              <div class="relative">
+                <input
+                  v-model="apConfig.password"
+                  :type="showAPPassword ? 'text' : 'password'"
+                  class="w-full px-4 py-3 pr-20 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all duration-200"
+                  placeholder="Enter access point password"
+                  @input="isAPPasswordModified = apConfig.password !== originalAPPassword"
+                />
+                <div class="absolute inset-y-0 right-0 flex items-center">
+                  <button
+                    @click="showAPPassword = !showAPPassword"
+                    type="button"
+                    class="px-2 btn-icon"
+                  >
+                    <svg v-if="showAPPassword" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    <svg v-else class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 711.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.115 8.114m0 0L6.937 6.937m0 0a8.977 8.977 0 00-1.942-.845m1.942.845A8.977 8.977 0 0012 5c2.14 0 4.135.601 5.828 1.635l-1.937 1.937m0 0a3 3 0 00-4.243 4.243l1.937-1.937z" />
+                    </svg>
+                  </button>
+                  <!-- Accept/Cancel buttons - only show when modified -->
+                  <div v-if="isAPPasswordModified" class="flex space-x-1 pr-2">
+                    <button
+                      @click="saveAPPassword"
+                      class="p-1 bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                      title="Save changes"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </button>
+                    <button
+                      @click="cancelAPPasswordEdit"
+                      class="p-1 bg-gray-500 text-white rounded hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                      title="Cancel changes"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <button
-        @click="configureAP"
-        class="mt-3 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        Update AP Password
-      </button>
     </div>
 
-    <!-- Client Connection -->
-    <div class="mb-6 p-4 border border-green-200 bg-green-50 rounded-lg">
-      <h3 class="font-semibold mb-3 text-green-800">Connect to Network</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">SSID</label>
-          <input
-            v-model="clientConfig.ssid"
-            type="text"
-            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-            placeholder="Network name"
-            :disabled="isConnecting"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-          <div class="relative">
-            <input
-              v-model="clientConfig.password"
-              :type="showClientPassword ? 'text' : 'password'"
-              class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Network password"
-              :disabled="isConnecting"
-            />
-            <button
-              @click="showClientPassword = !showClientPassword"
-              type="button"
-              class="absolute inset-y-0 right-0 pr-3 flex items-center"
-            >
-              <svg v-if="showClientPassword" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              <svg v-else class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.115 8.114m0 0L6.937 6.937m0 0a8.977 8.977 0 00-1.942-.845m1.942.845A8.977 8.977 0 0012 5c2.14 0 4.135.601 5.828 1.635l-1.937 1.937m0 0a3 3 0 00-4.243 4.243l1.937-1.937z" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-      <button
-        @click="connectToWiFi"
-        :disabled="isConnecting || !clientConfig.ssid || !clientConfig.password"
-        class="mt-3 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <span v-if="isConnecting">Connecting...</span>
-        <span v-else>Connect</span>
-      </button>
-    </div>
 
     <!-- Known Networks -->
-    <div v-if="knownNetworks.length > 0">
-      <h3 class="font-semibold mb-3">Known Networks</h3>
-      <div class="space-y-2">
+    <div class="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-medium text-gray-900">Saved Networks</h2>
+            <p class="text-sm text-gray-600 mt-1">Manage your stored network credentials</p>
+          </div>
+          <button
+            @click="showAddNetworkDialog = true"
+            class="btn-primary"
+          >
+            Add Network
+          </button>
+        </div>
+      </div>
+
+      <div v-if="knownNetworks.length > 0" class="divide-y divide-gray-100">
         <div
           v-for="network in knownNetworks"
           :key="network.ssid"
-          class="p-3 border border-gray-200 rounded-lg bg-white"
+          class="px-6 py-4"
         >
           <div class="flex items-center justify-between">
-            <div class="flex-1">
-              <div class="font-medium">{{ network.ssid }}</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-gray-900 truncate">{{ network.ssid }}</div>
               <div class="text-sm text-gray-500">
                 Last connected: {{ formatLastConnected(network.lastConnected) }}
               </div>
             </div>
-            <div class="flex items-center space-x-2">
-              <button
-                @click="connectToKnownNetwork(network.ssid)"
-                :disabled="isConnecting"
-                class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                Connect
-              </button>
+            <div class="ml-4">
               <button
                 @click="removeKnownNetwork(network.ssid)"
-                class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                class="btn-danger"
               >
                 Remove
               </button>
@@ -488,10 +508,108 @@ const formatLastConnected = (timestamp) => {
           </div>
         </div>
       </div>
+
+      <div v-else class="px-6 py-8 text-center">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+        </svg>
+        <h3 class="mt-4 text-sm font-medium text-gray-900">No saved networks</h3>
+        <p class="mt-2 text-sm text-gray-500">Get started by adding your first network.</p>
+      </div>
     </div>
-  </Card>
+
+    <!-- Add Network Dialog -->
+    <div v-if="showAddNetworkDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <!-- Background overlay -->
+      <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity" @click="closeAddNetworkDialog"></div>
+
+      <!-- Modal panel -->
+      <div class="relative bg-white border border-gray-200 rounded-lg shadow-xl max-w-md w-full max-h-screen overflow-y-auto">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-gray-100">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-medium text-gray-900">Add Network</h2>
+            <button
+              @click="closeAddNetworkDialog"
+              type="button"
+              class="btn-icon"
+              :disabled="isConnecting"
+            >
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <p class="text-sm text-gray-600 mt-1">Enter network credentials to connect</p>
+        </div>
+
+        <!-- Content -->
+        <div class="px-6 py-5 space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Network Name (SSID)</label>
+            <input
+              v-model="dialogNetworkConfig.ssid"
+              type="text"
+              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all duration-200"
+              placeholder="Enter network name"
+              :disabled="isConnecting"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Password</label>
+            <div class="relative">
+              <input
+                v-model="dialogNetworkConfig.password"
+                :type="showDialogPassword ? 'text' : 'password'"
+                class="w-full px-4 py-3 pr-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all duration-200"
+                placeholder="Enter network password"
+                :disabled="isConnecting"
+              />
+              <button
+                @click="showDialogPassword = !showDialogPassword"
+                type="button"
+                class="absolute inset-y-0 right-0 pr-4 flex items-center btn-icon"
+              >
+                <svg v-if="showDialogPassword" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <svg v-else class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.115 8.114m0 0L6.937 6.937m0 0a8.977 8.977 0 00-1.942-.845m1.942.845A8.977 8.977 0 0012 5c2.14 0 4.135.601 5.828 1.635l-1.937 1.937m0 0a3 3 0 00-4.243 4.243l1.937-1.937z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3">
+          <button
+            @click="closeAddNetworkDialog"
+            type="button"
+            :disabled="isConnecting"
+            class="btn-secondary"
+          >
+            Cancel
+          </button>
+          <button
+            @click="addNetwork"
+            :disabled="isConnecting || !dialogNetworkConfig.ssid || !dialogNetworkConfig.password"
+            class="btn-primary"
+          >
+            <div v-if="isConnecting" class="flex items-center">
+              <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Connecting...
+            </div>
+            <span v-else>Connect to Network</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
-<style scoped>
-/* Additional styling if needed */
-</style>

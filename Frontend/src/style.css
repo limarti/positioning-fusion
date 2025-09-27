@@ -1,1 +1,32 @@
 @import "tailwindcss";
+
+/* Button Styles */
+.btn-primary {
+  @apply px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg cursor-pointer;
+  @apply hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2;
+  @apply transition-all duration-200;
+  @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900;
+}
+
+.btn-primary-large {
+  @apply w-full px-4 py-3 bg-gray-900 text-white rounded-lg font-medium cursor-pointer;
+  @apply hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2;
+  @apply transition-all duration-200;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 text-sm font-medium text-gray-600 cursor-pointer;
+  @apply hover:text-gray-900 transition-colors duration-200;
+  @apply disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-danger {
+  @apply px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md cursor-pointer;
+  @apply hover:bg-red-50 hover:text-red-700 hover:border-red-300;
+  @apply focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2;
+  @apply transition-all duration-200;
+}
+
+.btn-icon {
+  @apply text-gray-400 hover:text-gray-600 transition-colors duration-200 cursor-pointer;
+}
