@@ -120,7 +120,6 @@ public class GnssService : BackgroundService
 
     private readonly object _timeLock = new object();
     private DateTime _lastEventTime = DateTime.UtcNow;
-    private DateTime _lastDataProcessTime = DateTime.UtcNow;
 
     private async void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
     {
@@ -150,39 +149,23 @@ public class GnssService : BackgroundService
                 if (_serialPort != null && _serialPort.IsOpen)
                 {
                     var now = DateTime.UtcNow;
-                    DateTime lastEvent, lastData;
+                    DateTime lastEvent;
 
                     lock (_timeLock)
                     {
                         lastEvent = _lastEventTime;
-                        lastData = _lastDataProcessTime;
                     }
 
                     var timeSinceLastEvent = now - lastEvent;
-                    var timeSinceLastData = now - lastData;
 
-                    // Only poll if events haven't fired for 2+ seconds AND there might be data
-                    if (timeSinceLastEvent.TotalSeconds >= 2.0 && timeSinceLastData.TotalSeconds >= 1.0)
+                    // Simple logic: if data available and no event within 100ms, poll immediately
+                    var bytesToRead = _serialPort.BytesToRead;
+                    if (bytesToRead > 0 && timeSinceLastEvent.TotalMilliseconds >= 100)
                     {
-                        var bytesToRead = _serialPort.BytesToRead;
-                        if (bytesToRead > 0)
-                        {
-                            _logger.LogInformation("🔍 BACKUP POLL: Events stopped working! Found {BytesToRead} bytes after {TimeSinceEvent:F1}s without events",
-                                bytesToRead, timeSinceLastEvent.TotalSeconds);
+                        _logger.LogInformation("🔍 BACKUP POLL: Events stopped working! Found {BytesToRead} bytes after {TimeSinceEvent:F1}ms without events",
+                            bytesToRead, timeSinceLastEvent.TotalMilliseconds);
 
-                            await ReadAndProcessGnssDataAsync(stoppingToken, fromPolling: true);
-                        }
-                    }
-
-                    // Warn if we haven't processed any data for a while
-                    if (timeSinceLastData.TotalSeconds >= 10.0)
-                    {
-                        _logger.LogInformation("⚠️ No GNSS data processed for {Seconds} seconds", (int)timeSinceLastData.TotalSeconds);
-
-                        lock (_timeLock)
-                        {
-                            _lastDataProcessTime = now; // Reset to avoid spam
-                        }
+                        await ReadAndProcessGnssDataAsync(stoppingToken, fromPolling: true);
                     }
                 }
 
@@ -267,11 +250,6 @@ public class GnssService : BackgroundService
                 
                 if (dataRead)
                 {
-                    lock (_timeLock)
-                    {
-                        _lastDataProcessTime = DateTime.UtcNow;
-                    }
-
                     // Log when backup polling reads data (indicates event system failed)
                     if (fromPolling)
                     {
