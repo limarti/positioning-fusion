@@ -106,6 +106,7 @@ public class ImuParser
 
 public class ImuData
 {
+    public long SystemUptimeMs { get; set; }
     public double Timestamp { get; set; }
     public Vector3 Acceleration { get; set; } = new();
     public Vector3 Gyroscope { get; set; } = new();

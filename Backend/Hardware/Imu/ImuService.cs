@@ -154,16 +154,18 @@ public class ImuService : BackgroundService
                 var imuData = _imuParser.ParseMemsPacket(packetData);
                 if (imuData != null)
                 {
+                    // Set system uptime timestamp
+                    imuData.SystemUptimeMs = Environment.TickCount64;
                     // Write CSV header if this is the first data
                     if (!_headerWritten)
                     {
-                        var csvHeader = "timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z";
+                        var csvHeader = "system_uptime_ms,timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z";
                         _dataFileWriter.WriteData(csvHeader);
                         _headerWritten = true;
                     }
 
                     // Log data to file
-                    var csvLine = $"{imuData.Timestamp:F2},{imuData.Acceleration.X:F4},{imuData.Acceleration.Y:F4},{imuData.Acceleration.Z:F4},{imuData.Gyroscope.X:F4},{imuData.Gyroscope.Y:F4},{imuData.Gyroscope.Z:F4},{imuData.Magnetometer.X:F2},{imuData.Magnetometer.Y:F2},{imuData.Magnetometer.Z:F2}";
+                    var csvLine = $"{imuData.SystemUptimeMs},{imuData.Timestamp:F2},{imuData.Acceleration.X:F4},{imuData.Acceleration.Y:F4},{imuData.Acceleration.Z:F4},{imuData.Gyroscope.X:F4},{imuData.Gyroscope.Y:F4},{imuData.Gyroscope.Z:F4},{imuData.Magnetometer.X:F2},{imuData.Magnetometer.Y:F2},{imuData.Magnetometer.Z:F2}";
                     _dataFileWriter.WriteData(csvLine);
 
                     // Send data via SignalR with throttling to 1Hz

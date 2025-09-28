@@ -47,6 +47,7 @@ public class CameraService : BackgroundService, IDisposable
     private DateTime _lastDeviceCheck = DateTime.MinValue;
     private int _connectionAttempts = 0;
     private DateTime _lastConnectionAttempt = DateTime.MinValue;
+    private bool _frameHeaderWritten = false;
 
     public CameraService(
         IHubContext<DataHub> hubContext,
@@ -352,9 +353,24 @@ public class CameraService : BackgroundService, IDisposable
                     // Complete frame found
                     if (ShouldKeepFrame(frameCount))
                     {
+                        // Capture system uptime timestamp as early as possible after frame completion
+                        var systemUptimeMs = Environment.TickCount64;
+
                         // Buffer frame for writing to current video file
                         var frameData = frameBuffer.ToArray();
                         _frameBuffer.Add(frameData);
+
+                        // Write CSV header if this is the first frame
+                        if (!_frameHeaderWritten)
+                        {
+                            var csvHeader = "system_uptime_ms,frame_number,frame_size_bytes,segment_number";
+                            _dataFileWriter.WriteData(csvHeader);
+                            _frameHeaderWritten = true;
+                        }
+
+                        // Log frame data with system uptime timestamp
+                        var csvLine = $"{systemUptimeMs},{frameCount},{frameData.Length},{_currentSegmentNumber}";
+                        _dataFileWriter.WriteData(csvLine);
                         
                         // Write buffered frames every 10 frames to reduce I/O
                         if (_frameBuffer.Count >= 10)
