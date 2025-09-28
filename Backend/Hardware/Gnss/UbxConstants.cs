@@ -35,6 +35,7 @@ namespace Backend.Hardware.Gnss
         public const byte NAV_SAT = 0x35;
         public const byte NAV_SIG = 0x43;
         public const byte NAV_SVIN = 0x3B;
+        public const byte NAV_RELPOSNED = 0x3C;
 
         // --- RXM ids
         public const byte RXM_SFRBX = 0x13;
@@ -136,6 +137,7 @@ namespace Backend.Hardware.Gnss
         public const uint MSGOUT_UBX_NAV_SIG_UART1 = 0x20910346; // FIXED: was 0x20910345 (I2C)
         public const uint MSGOUT_UBX_NAV_SVIN_UART1 = 0x20910089;
         public const uint MSGOUT_UBX_NAV_DOP_UART1 = 0x20910039;
+        public const uint MSGOUT_UBX_NAV_RELPOSNED_UART1 = 0x2091008e;
 
         public const uint MSGOUT_UBX_RXM_RAWX_UART1 = 0x209102A5;
         public const uint MSGOUT_UBX_RXM_SFRBX_UART1 = 0x20910232;

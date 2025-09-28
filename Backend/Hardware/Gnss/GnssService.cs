@@ -429,6 +429,10 @@ public class GnssService : BackgroundService
             {
                 await NavigationSignalParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
             }
+            else if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_RELPOSNED)
+            {
+                await RelativePositionParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
+            }
             else if (messageClass == UbxConstants.CLASS_CFG)
             {
                 _logger.LogInformation("📋 CFG message received: ID=0x{Id:X2}, Length={Length}", messageId, data.Length);

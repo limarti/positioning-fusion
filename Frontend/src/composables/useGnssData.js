@@ -269,6 +269,21 @@ export function registerGnssEvents(connection)
     gnssData.corrections.status.spartn = data.spartnCorrections;
     gnssData.corrections.status.numMessages = data.numMessages;
   });
+
+  connection.on("RelativePositionUpdate", (data) =>
+  {
+    // Update RTK baseline distance and relative accuracy from NAV-RELPOSNED
+    gnssData.rtk.baselineLength = data.relPosValid ? data.relPosLength : null;
+    gnssData.rtk.relativeAccuracy.north = data.relPosValid ? data.accN : null;
+    gnssData.rtk.relativeAccuracy.east = data.relPosValid ? data.accE : null;
+    gnssData.rtk.relativeAccuracy.down = data.relPosValid ? data.accD : null;
+    
+    // Could also add relative position components if needed
+    // gnssData.rtk.relPosN = data.relPosN;
+    // gnssData.rtk.relPosE = data.relPosE;
+    // gnssData.rtk.relPosD = data.relPosD;
+    // gnssData.rtk.relPosHeading = data.relPosHeading;
+  });
 }
 
 // Mode change handler (moved from RtkPanel)
