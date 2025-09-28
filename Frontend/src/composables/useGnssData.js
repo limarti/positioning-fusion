@@ -24,6 +24,10 @@ const gnssData = reactive({
   pdop: null,
   tdop: null,
 
+  // GNSS Time
+  gnssTimestamp: null,
+  timeValid: null,
+
   // Satellite counts
   satellitesUsed: null,
   satellitesTracked: null,
@@ -175,7 +179,7 @@ export function registerGnssEvents(connection)
     gnssData.constellations = constellations;
   });
 
-  connection.on("PvtUpdate", (data) => 
+  connection.on("PvtUpdate", (data) =>
   {
     // Update position and navigation data from NAV-PVT messages
     gnssData.latitude = data.latitude;
@@ -184,15 +188,19 @@ export function registerGnssEvents(connection)
     gnssData.hAcc = data.horizontalAccuracy / 1000; // Convert mm to m
     gnssData.vAcc = data.verticalAccuracy / 1000; // Convert mm to m
 
+    // Update GNSS time data
+    gnssData.gnssTimestamp = data.gnssTimestamp;
+    gnssData.timeValid = data.timeValid;
+
     // Use the enhanced fix type string from backend instead of hardcoded logic
     gnssData.fixType = data.fixTypeString || 'No Fix';
 
     // Update RTK mode based on fix type string
-    if (data.fixTypeString && data.fixTypeString.includes('RTK')) 
+    if (data.fixTypeString && data.fixTypeString.includes('RTK'))
     {
       gnssData.rtkMode = data.fixTypeString.includes('Fixed') ? 'Fixed' : 'Float';
     }
-    else 
+    else
     {
       gnssData.rtkMode = null;
     }

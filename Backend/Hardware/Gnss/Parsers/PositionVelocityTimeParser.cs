@@ -7,6 +7,7 @@ namespace Backend.Hardware.Gnss.Parsers;
 public static class PositionVelocityTimeParser
 {
     private static DateTime _lastSentTime = DateTime.MinValue;
+    private static byte _lastSentSecond = 255; // Track last sent GNSS second
 
     public static async Task ProcessAsync(byte[] data, IHubContext<DataHub> hubContext, ILogger logger, CancellationToken stoppingToken)
     {
@@ -55,6 +56,32 @@ public static class PositionVelocityTimeParser
             _ => $"Unknown({carrSoln})"
         };
 
+        // Convert GNSS time to Unix epoch timestamp (milliseconds)
+        long gnssTimestamp = 0;
+        // Check if we have basic date and time validity (bits 0x01 and 0x02)
+        bool dateValid = (valid & 0x01) != 0;
+        bool timeValid = (valid & 0x02) != 0;
+
+        if (dateValid && timeValid)
+        {
+            try
+            {
+                // Validate ranges before creating DateTime
+                if (year >= 1970 && year <= 3000 &&
+                    month >= 1 && month <= 12 &&
+                    day >= 1 && day <= 31 &&
+                    hour <= 23 && min <= 59 && sec <= 59)
+                {
+                    var gnssDateTime = new DateTime(year, month, day, hour, min, sec, DateTimeKind.Utc);
+                    gnssTimestamp = ((DateTimeOffset)gnssDateTime).ToUnixTimeMilliseconds();
+                }
+            }
+            catch
+            {
+                gnssTimestamp = 0; // Invalid date/time construction
+            }
+        }
+
         var pvtData = new PvtUpdate
         {
             ITow = iTow,
@@ -65,6 +92,7 @@ public static class PositionVelocityTimeParser
             Minute = min,
             Second = sec,
             TimeValid = valid,
+            GnssTimestamp = gnssTimestamp,
             FixType = fixType,
             FixTypeString = fixTypeString,
             GnssFixOk = gnssFixOk,
@@ -81,13 +109,19 @@ public static class PositionVelocityTimeParser
 
         try
         {
-            // Throttle dashboard updates
-            var throttleInterval = TimeSpan.FromMilliseconds(1000.0 / SystemConfiguration.GnssDataRateDashboard);
-            if (DateTime.UtcNow - _lastSentTime < throttleInterval)
-                return; // Skip this update
+            // Always send if the GNSS second has changed (for clock updates)
+            bool shouldSendForClock = sec != _lastSentSecond && gnssTimestamp > 0;
 
-            _lastSentTime = DateTime.UtcNow;
-            await hubContext.Clients.All.SendAsync("PvtUpdate", pvtData, stoppingToken);
+            // Throttle dashboard updates for position data
+            var throttleInterval = TimeSpan.FromMilliseconds(1000.0 / SystemConfiguration.GnssDataRateDashboard);
+            bool shouldSendForPosition = DateTime.UtcNow - _lastSentTime >= throttleInterval;
+
+            if (shouldSendForClock || shouldSendForPosition)
+            {
+                _lastSentTime = DateTime.UtcNow;
+                _lastSentSecond = sec;
+                await hubContext.Clients.All.SendAsync("PvtUpdate", pvtData, stoppingToken);
+            }
         }
         catch (Exception ex)
         {

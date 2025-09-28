@@ -33,6 +33,7 @@ public class PvtUpdate
     public byte Minute { get; set; }
     public byte Second { get; set; }
     public byte TimeValid { get; set; }
+    public long GnssTimestamp { get; set; }
     public byte FixType { get; set; }
     public string FixTypeString { get; set; } = string.Empty;
     public bool GnssFixOk { get; set; }
