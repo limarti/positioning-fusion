@@ -1,17 +1,3 @@
-<script setup>
-import GnssStatus from '@/components/gnss/GnssStatus.vue'
-import SatelliteHealthPanel from '@/components/gnss/SatelliteHealthPanel.vue'
-import RtkPanel from '@/components/gnss/RtkPanel.vue'
-import PositionScatterPlot from '@/components/gnss/PositionScatterPlot.vue'
-import MessageRatesPanel from '@/components/MessageRatesPanel.vue'
-import { useGnssData } from '@/composables/useGnssData'
-import { useSystemData } from '@/composables/useSystemData'
-
-// Get data from composables
-const { state: gnssState } = useGnssData()
-const { state: systemState } = useSystemData()
-</script>
-
 <template>
   <div class="main-container">
     <!-- GNSS Status Summary -->
@@ -41,3 +27,17 @@ const { state: systemState } = useSystemData()
     </div>
   </div>
 </template>
+
+<script setup>
+  import GnssStatus from '@/components/gnss/GnssStatus.vue';
+  import SatelliteHealthPanel from '@/components/gnss/SatelliteHealthPanel.vue';
+  import RtkPanel from '@/components/gnss/RtkPanel.vue';
+  import PositionScatterPlot from '@/components/gnss/PositionScatterPlot.vue';
+  import MessageRatesPanel from '@/components/MessageRatesPanel.vue';
+  import { useGnssData } from '@/composables/useGnssData';
+  import { useSystemData } from '@/composables/useSystemData';
+
+  // Get data from composables
+  const { state: gnssState } = useGnssData();
+  const { state: systemState } = useSystemData();
+</script>

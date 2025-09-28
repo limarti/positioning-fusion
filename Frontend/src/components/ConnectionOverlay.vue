@@ -6,8 +6,7 @@
         <div class="relative inline-flex items-center justify-center">
           <div class="w-16 h-16 rounded-full flex items-center justify-center bg-orange-100">
             <!-- Reconnecting Spinner -->
-            <div class="w-8 h-8 border-3 border-current border-t-transparent rounded-full animate-spin text-orange-600">
-            </div>
+            <div class="w-8 h-8 border-3 border-current border-t-transparent rounded-full animate-spin text-orange-600" />
           </div>
         </div>
       </div>
@@ -26,33 +25,36 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+  import { computed } from 'vue';
 
-const props = defineProps({
-  connectionStatus: {
-    type: String,
-    required: true,
-    validator: (value) => ['Connected', 'Reconnecting'].includes(value)
-  },
-  retryAttempt: {
-    type: Number,
-    default: 0
-  },
-  nextRetryIn: {
-    type: Number,
-    default: 0
-  }
-})
+  const props = defineProps({
+    connectionStatus: {
+      type: String,
+      required: true,
+      validator: (value) => ['Connected', 'Reconnecting'].includes(value)
+    },
+    retryAttempt: {
+      type: Number,
+      default: 0
+    },
+    nextRetryIn: {
+      type: Number,
+      default: 0
+    }
+  });
 
-const showOverlay = computed(() => {
-  return props.connectionStatus !== 'Connected'
-})
+  const showOverlay = computed(() => 
+  {
+    return props.connectionStatus !== 'Connected';
+  });
 
-const statusTitle = computed(() => {
-  return 'Reconnecting...'
-})
+  const statusTitle = computed(() => 
+  {
+    return 'Reconnecting...';
+  });
 
-const statusMessage = computed(() => {
-  return 'Attempting to connect to the data collection system.'
-})
+  const statusMessage = computed(() => 
+  {
+    return 'Attempting to connect to the data collection system.';
+  });
 </script>

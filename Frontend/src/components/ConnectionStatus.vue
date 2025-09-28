@@ -7,10 +7,10 @@
         connectionStatus === 'Connecting' ? 'bg-yellow-500 shadow-lg shadow-yellow-500/50' :
         connectionStatus === 'Reconnecting' ? 'bg-orange-500 shadow-lg shadow-orange-500/50' :
         'bg-red-500 shadow-lg shadow-red-500/50'
-      ]"></div>
+      ]" />
       <div v-if="connectionStatus === 'Connecting' || connectionStatus === 'Reconnecting'"
            class="absolute inset-0 w-3 h-3 rounded-full animate-ping"
-           :class="connectionStatus === 'Connecting' ? 'bg-yellow-500' : 'bg-orange-500'"></div>
+           :class="connectionStatus === 'Connecting' ? 'bg-yellow-500' : 'bg-orange-500'" />
     </div>
     <span :class="[
       'text-sm font-medium transition-colors duration-300',
@@ -29,34 +29,38 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+  import { computed } from 'vue';
 
-const props = defineProps({
-  connectionStatus: {
-    type: String,
-    required: true,
-    validator: (value) => ['Connected', 'Connecting', 'Reconnecting', 'Disconnected'].includes(value)
-  },
-  retryAttempt: {
-    type: Number,
-    default: 0
-  },
-  nextRetryIn: {
-    type: Number,
-    default: 0
-  },
-  showRetryInfo: {
-    type: Boolean,
-    default: true
-  }
-})
+  const props = defineProps({
+    connectionStatus: {
+      type: String,
+      required: true,
+      validator: (value) => ['Connected', 'Connecting', 'Reconnecting', 'Disconnected'].includes(value)
+    },
+    retryAttempt: {
+      type: Number,
+      default: 0
+    },
+    nextRetryIn: {
+      type: Number,
+      default: 0
+    },
+    showRetryInfo: {
+      type: Boolean,
+      default: true
+    }
+  });
 
-const retryText = computed(() => {
-  if (props.connectionStatus === 'Reconnecting') {
-    return `Attempt ${props.retryAttempt}`
-  } else if (props.connectionStatus === 'Disconnected' && props.nextRetryIn > 0) {
-    return `Retry in ${props.nextRetryIn}s`
-  }
-  return ''
-})
+  const retryText = computed(() => 
+  {
+    if (props.connectionStatus === 'Reconnecting') 
+    {
+      return `Attempt ${props.retryAttempt}`;
+    }
+    else if (props.connectionStatus === 'Disconnected' && props.nextRetryIn > 0) 
+    {
+      return `Retry in ${props.nextRetryIn}s`;
+    }
+    return '';
+  });
 </script>

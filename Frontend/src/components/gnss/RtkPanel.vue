@@ -1,51 +1,33 @@
-<script setup>
-import { computed, watch } from 'vue'
-import Card from '../common/Card.vue'
-import { useGnssData } from '@/composables/useGnssData'
-import { useSystemData } from '@/composables/useSystemData'
-import { useSignalR } from '@/composables/useSignalR'
-
-// Get data from composables
-const { state: gnssState, modeOptions, handleModeChange } = useGnssData()
-const { state: systemState } = useSystemData()
-const { signalrConnection } = useSignalR()
-
-// Handle mode change using the composable function
-const onModeChange = async (newMode) => {
-  await handleModeChange(signalrConnection.value, newMode)
-}
-</script>
-
 <template>
-  <Card
-    title="RTK"
-    icon-color="bg-gray-500"
-  >
+  <Card title="RTK"
+        iconColor="bg-gray-500">
 
     <!-- Mode Selection Section -->
     <div class="mb-6">
-      <div class="text-sm font-semibold text-gray-700 mb-3">Operating Mode</div>
+      <div class="text-sm font-semibold text-gray-700 mb-3">
+        Operating Mode
+      </div>
 
       <!-- Mode Selection Radio Buttons -->
       <div class="space-y-3">
         <div v-for="option in modeOptions" :key="option.value" class="flex items-center">
           <div class="flex items-center h-5">
-            <input
-              :id="option.value"
-              v-model="gnssState.selectedMode"
-              :value="option.value"
-              type="radio"
-              name="mode"
-              :disabled="gnssState.isChangingMode"
-              class="h-4 w-4 border-gray-300 focus:ring-2 text-gray-600 focus:ring-gray-500"
-              @change="onModeChange(option.value)"
-            />
+            <input :id="option.value"
+                   v-model="gnssState.selectedMode"
+                   :value="option.value"
+                   type="radio"
+                   name="mode"
+                   :disabled="gnssState.isChangingMode"
+                   class="h-4 w-4 border-gray-300 focus:ring-2 text-gray-600 focus:ring-gray-500"
+                   @change="onModeChange(option.value)">
           </div>
           <div class="ml-3 text-sm">
             <label :for="option.value" class="font-medium text-gray-700 cursor-pointer">
               {{ option.label }}
             </label>
-            <p class="text-sm text-gray-500">{{ option.description }}</p>
+            <p class="text-sm text-gray-500">
+              {{ option.description }}
+            </p>
           </div>
         </div>
       </div>
@@ -54,8 +36,8 @@ const onModeChange = async (newMode) => {
       <div v-if="gnssState.isChangingMode" class="mt-4 flex items-center justify-center">
         <div class="flex items-center space-x-2 text-gray-600">
           <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
           <span class="text-sm">Changing mode...</span>
         </div>
@@ -76,7 +58,9 @@ const onModeChange = async (newMode) => {
       <!-- Position Accuracy (Both Modes) -->
       <div class="border-t border-gray-200 pt-4">
         <div class="space-y-2">
-          <div class="text-sm text-gray-600 mb-3">Position Accuracy</div>
+          <div class="text-sm text-gray-600 mb-3">
+            Position Accuracy
+          </div>
           <div class="flex justify-between py-1">
             <span class="text-sm text-gray-600">North:</span>
             <span class="text-sm font-medium" :class="gnssState.gnssData.rtk.relativeAccuracy.north !== null ? 'text-gray-800' : 'text-slate-400'">{{ gnssState.gnssData.rtk.relativeAccuracy.north !== null ? gnssState.gnssData.rtk.relativeAccuracy.north.toFixed(3) + 'm' : '—' }}</span>
@@ -130,17 +114,19 @@ const onModeChange = async (newMode) => {
 
       <!-- Base Station Setup (Base Station Mode Only) -->
       <div v-if="gnssState.gnssData.corrections.mode === 'Send'" class="border-t border-gray-200 pt-4 space-y-4">
-        <div class="text-sm font-semibold text-gray-800">Base Station Setup</div>
+        <div class="text-sm font-semibold text-gray-800">
+          Base Station Setup
+        </div>
 
         <div class="space-y-3">
           <div class="flex justify-between">
             <span class="text-sm text-gray-600">Survey Status:</span>
             <span class="text-xs font-semibold px-2 py-1 rounded-lg"
                   :class="gnssState.gnssData.surveyIn.valid ? 'bg-green-100 text-green-800' :
-                         gnssState.gnssData.surveyIn.active ? 'bg-blue-100 text-blue-700' :
-                         'bg-red-100 text-red-700'">
+                    gnssState.gnssData.surveyIn.active ? 'bg-blue-100 text-blue-700' :
+                    'bg-red-100 text-red-700'">
               {{ gnssState.gnssData.surveyIn.valid ? 'COMPLETED' :
-                 gnssState.gnssData.surveyIn.active ? 'ACTIVE' : 'INACTIVE' }}
+                gnssState.gnssData.surveyIn.active ? 'ACTIVE' : 'INACTIVE' }}
             </span>
           </div>
           <div class="flex justify-between">
@@ -155,7 +141,9 @@ const onModeChange = async (newMode) => {
 
         <!-- Reference Station Position -->
         <div class="space-y-3">
-          <div class="text-sm font-semibold text-gray-800">Reference Position</div>
+          <div class="text-sm font-semibold text-gray-800">
+            Reference Position
+          </div>
           <div class="space-y-2">
             <div class="flex justify-between">
               <span class="text-sm text-gray-600">Latitude:</span>
@@ -182,8 +170,31 @@ const onModeChange = async (newMode) => {
 
     <!-- Disabled State Message -->
     <div v-else class="text-center py-6">
-      <div class="text-sm text-gray-600 mb-2">RTK Corrections Disabled</div>
-      <div class="text-sm text-gray-500">Select Base Station or Rover mode above to enable RTK corrections</div>
+      <div class="text-sm text-gray-600 mb-2">
+        RTK Corrections Disabled
+      </div>
+      <div class="text-sm text-gray-500">
+        Select Base Station or Rover mode above to enable RTK corrections
+      </div>
     </div>
   </Card>
 </template>
+
+<script setup>
+  import { computed, watch } from 'vue';
+  import Card from '../common/Card.vue';
+  import { useGnssData } from '@/composables/useGnssData';
+  import { useSystemData } from '@/composables/useSystemData';
+  import { useSignalR } from '@/composables/useSignalR';
+
+  // Get data from composables
+  const { state: gnssState, modeOptions, handleModeChange } = useGnssData();
+  const { state: systemState } = useSystemData();
+  const { signalrConnection } = useSignalR();
+
+  // Handle mode change using the composable function
+  const onModeChange = async (newMode) => 
+  {
+    await handleModeChange(signalrConnection.value, newMode);
+  };
+</script>

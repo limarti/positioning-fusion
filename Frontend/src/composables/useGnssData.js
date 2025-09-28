@@ -1,4 +1,4 @@
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed } from 'vue';
 
 // Global reactive state for GNSS data
 const gnssData = reactive({
@@ -69,16 +69,16 @@ const gnssData = reactive({
     longitude: null,
     altitude: null
   }
-})
+});
 
 const messageRates = reactive({
   messageRates: {},
   timestamp: null
-})
+});
 
 // RTK mode management
-const isChangingMode = ref(false)
-const selectedMode = ref('Disabled')
+const isChangingMode = ref(false);
+const selectedMode = ref('Disabled');
 
 const modeOptions = [
   {
@@ -99,13 +99,14 @@ const modeOptions = [
     description: 'Receive RTK corrections',
     color: 'purple'
   }
-]
+];
 
-const getModeConfig = (mode) => {
-  return modeOptions.find(option => option.value === mode) || modeOptions[0]
-}
+const getModeConfig = (mode) => 
+{
+  return modeOptions.find(option => option.value === mode) || modeOptions[0];
+};
 
-const currentModeConfig = computed(() => getModeConfig(gnssData.corrections.mode || 'Disabled'))
+const currentModeConfig = computed(() => getModeConfig(gnssData.corrections.mode || 'Disabled'));
 
 // Create a single reactive state object
 const state = reactive({
@@ -114,16 +115,18 @@ const state = reactive({
   isChangingMode,
   selectedMode,
   currentModeConfig
-})
+});
 
 // SignalR event handlers for GNSS data
-export function registerGnssEvents(connection) {
-  connection.on("SatelliteUpdate", (data) => {
+export function registerGnssEvents(connection) 
+{
+  connection.on("SatelliteUpdate", (data) => 
+  {
     // Update connection status
-    gnssData.connected = data.connected ?? false
+    gnssData.connected = data.connected ?? false;
 
     // Update satellite data from NAV-SAT messages
-    gnssData.satellitesTracked = data.numSatellites
+    gnssData.satellitesTracked = data.numSatellites;
     gnssData.satellites = data.satellites.map(sat => ({
       svid: sat.svId,
       constellation: sat.gnssName,
@@ -136,135 +139,161 @@ export function registerGnssEvents(connection) {
       pseudorangeResidual: sat.pseudorangeResidual,
       differentialCorrection: sat.differentialCorrection,
       smoothed: sat.smoothed
-    }))
+    }));
 
     // Update constellation breakdown
     const constellations = {
-      gps: {used: 0, tracked: 0},
-      glonass: {used: 0, tracked: 0},
-      galileo: {used: 0, tracked: 0},
-      beidou: {used: 0, tracked: 0}
-    }
+      gps: { used: 0, tracked: 0 },
+      glonass: { used: 0, tracked: 0 },
+      galileo: { used: 0, tracked: 0 },
+      beidou: { used: 0, tracked: 0 }
+    };
 
-    data.satellites.forEach(sat => {
-      switch(sat.gnssName.toLowerCase()) {
+    data.satellites.forEach(sat => 
+    {
+      switch (sat.gnssName.toLowerCase()) 
+      {
         case 'gps':
-          constellations.gps.tracked++
-          if (sat.svUsed) constellations.gps.used++
-          break
+          constellations.gps.tracked++;
+          if (sat.svUsed) constellations.gps.used++;
+          break;
         case 'glonass':
-          constellations.glonass.tracked++
-          if (sat.svUsed) constellations.glonass.used++
-          break
+          constellations.glonass.tracked++;
+          if (sat.svUsed) constellations.glonass.used++;
+          break;
         case 'galileo':
-          constellations.galileo.tracked++
-          if (sat.svUsed) constellations.galileo.used++
-          break
+          constellations.galileo.tracked++;
+          if (sat.svUsed) constellations.galileo.used++;
+          break;
         case 'beidou':
-          constellations.beidou.tracked++
-          if (sat.svUsed) constellations.beidou.used++
-          break
+          constellations.beidou.tracked++;
+          if (sat.svUsed) constellations.beidou.used++;
+          break;
       }
-    })
+    });
 
-    gnssData.constellations = constellations
-  })
+    gnssData.constellations = constellations;
+  });
 
-  connection.on("PvtUpdate", (data) => {
+  connection.on("PvtUpdate", (data) => 
+  {
     // Update position and navigation data from NAV-PVT messages
-    gnssData.latitude = data.latitude
-    gnssData.longitude = data.longitude
-    gnssData.altitude = data.heightMSL / 1000 // Convert mm to m
-    gnssData.hAcc = data.horizontalAccuracy / 1000 // Convert mm to m
-    gnssData.vAcc = data.verticalAccuracy / 1000 // Convert mm to m
+    gnssData.latitude = data.latitude;
+    gnssData.longitude = data.longitude;
+    gnssData.altitude = data.heightMSL / 1000; // Convert mm to m
+    gnssData.hAcc = data.horizontalAccuracy / 1000; // Convert mm to m
+    gnssData.vAcc = data.verticalAccuracy / 1000; // Convert mm to m
 
     // Use the enhanced fix type string from backend instead of hardcoded logic
-    gnssData.fixType = data.fixTypeString || 'No Fix'
+    gnssData.fixType = data.fixTypeString || 'No Fix';
 
     // Update RTK mode based on fix type string
-    if (data.fixTypeString && data.fixTypeString.includes('RTK')) {
-      gnssData.rtkMode = data.fixTypeString.includes('Fixed') ? 'Fixed' : 'Float'
-    } else {
-      gnssData.rtkMode = null
+    if (data.fixTypeString && data.fixTypeString.includes('RTK')) 
+    {
+      gnssData.rtkMode = data.fixTypeString.includes('Fixed') ? 'Fixed' : 'Float';
+    }
+    else 
+    {
+      gnssData.rtkMode = null;
     }
 
-    gnssData.satellitesUsed = data.numSatellites
-  })
+    gnssData.satellitesUsed = data.numSatellites;
+  });
 
-  connection.on("MessageRatesUpdate", (data) => {
-    messageRates.messageRates = data.messageRates
-    messageRates.timestamp = data.timestamp
-  })
+  connection.on("MessageRatesUpdate", (data) => 
+  {
+    messageRates.messageRates = data.messageRates;
+    messageRates.timestamp = data.timestamp;
+  });
 
-  connection.on("SurveyInStatus", (data) => {
-    gnssData.surveyIn.active = data.active
-    gnssData.surveyIn.valid = data.valid
-    gnssData.surveyIn.duration = data.duration
-    gnssData.surveyIn.observations = data.observations
-    gnssData.surveyIn.accuracyMm = data.accuracyMm
-    gnssData.surveyIn.position = data.position
-  })
+  connection.on("SurveyInStatus", (data) => 
+  {
+    gnssData.surveyIn.active = data.active;
+    gnssData.surveyIn.valid = data.valid;
+    gnssData.surveyIn.duration = data.duration;
+    gnssData.surveyIn.observations = data.observations;
+    gnssData.surveyIn.accuracyMm = data.accuracyMm;
+    gnssData.surveyIn.position = data.position;
+  });
 
-  connection.on("CorrectionsStatusUpdate", (data) => {
-    gnssData.corrections.mode = data.mode
-    selectedMode.value = data.mode
-  })
+  connection.on("CorrectionsStatusUpdate", (data) => 
+  {
+    gnssData.corrections.mode = data.mode;
+    selectedMode.value = data.mode;
+  });
 
-  connection.on("ReferenceStationPosition", (data) => {
-    gnssData.referenceStation.stationId = data.stationId
-    gnssData.referenceStation.latitude = data.latitude
-    gnssData.referenceStation.longitude = data.longitude
-    gnssData.referenceStation.altitude = data.altitude
-  })
+  connection.on("ReferenceStationPosition", (data) => 
+  {
+    gnssData.referenceStation.stationId = data.stationId;
+    gnssData.referenceStation.latitude = data.latitude;
+    gnssData.referenceStation.longitude = data.longitude;
+    gnssData.referenceStation.altitude = data.altitude;
+  });
 
-  connection.on("DopUpdate", (data) => {
-    gnssData.hdop = data.horizontalDop
-    gnssData.vdop = data.verticalDop
-    gnssData.pdop = data.positionDop
-    gnssData.tdop = data.timeDop
-  })
+  connection.on("DopUpdate", (data) => 
+  {
+    gnssData.hdop = data.horizontalDop;
+    gnssData.vdop = data.verticalDop;
+    gnssData.pdop = data.positionDop;
+    gnssData.tdop = data.timeDop;
+  });
 }
 
 // Mode change handler (moved from RtkPanel)
-export function handleModeChange(connection, newMode) {
-  return new Promise(async (resolve, reject) => {
-    if (newMode === gnssData.corrections.mode || isChangingMode.value) {
-      resolve(false)
-      return
+export function handleModeChange(connection, newMode) 
+{
+  return new Promise(async (resolve, reject) => 
+  {
+    if (newMode === gnssData.corrections.mode || isChangingMode.value) 
+    {
+      resolve(false);
+      return;
     }
 
-    isChangingMode.value = true
+    isChangingMode.value = true;
 
-    try {
-      if (connection && connection.state === 'Connected') {
-        const success = await connection.invoke('SetOperatingMode', newMode)
+    try 
+    {
+      if (connection && connection.state === 'Connected') 
+      {
+        const success = await connection.invoke('SetOperatingMode', newMode);
 
-        if (!success) {
-          console.error('Failed to change mode - server returned false')
+        if (!success) 
+        {
+          console.error('Failed to change mode - server returned false');
           // Reset selected mode on failure
-          selectedMode.value = gnssData.corrections.mode || 'Disabled'
-          resolve(false)
-        } else {
-          resolve(true)
+          selectedMode.value = gnssData.corrections.mode || 'Disabled';
+          resolve(false);
+        }
+        else 
+        {
+          resolve(true);
         }
         // On success, the mode will be updated via SignalR ModeChanged event
-      } else {
-        console.error('No SignalR connection available or connection not in Connected state')
-        selectedMode.value = gnssData.corrections.mode || 'Disabled'
-        resolve(false)
       }
-    } catch (error) {
-      console.error('Error changing mode:', error)
-      // Reset selected mode on error
-      selectedMode.value = gnssData.corrections.mode || 'Disabled'
-      reject(error)
-    } finally {
-      isChangingMode.value = false
+      else 
+      {
+        console.error('No SignalR connection available or connection not in Connected state');
+        selectedMode.value = gnssData.corrections.mode || 'Disabled';
+        resolve(false);
+      }
     }
-  })
+    catch (error) 
+    {
+      console.error('Error changing mode:', error);
+      // Reset selected mode on error
+      selectedMode.value = gnssData.corrections.mode || 'Disabled';
+      reject(error);
+    }
+    finally 
+    {
+      isChangingMode.value = false;
+    }
+  });
 }
 
-export function useGnssData() {
+export function useGnssData() 
+{
   return {
     // Single state object
     state,
@@ -273,5 +302,5 @@ export function useGnssData() {
     getModeConfig,
     handleModeChange,
     registerGnssEvents
-  }
+  };
 }

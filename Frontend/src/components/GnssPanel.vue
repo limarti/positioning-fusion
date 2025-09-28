@@ -1,17 +1,6 @@
-<script setup>
-import Card from './common/Card.vue'
-import GnssStatus from './gnss/GnssStatus.vue'
-import SatelliteHealthPanel from './gnss/SatelliteHealthPanel.vue'
-import RtkPanel from './gnss/RtkPanel.vue'
-import PositionScatterPlot from './gnss/PositionScatterPlot.vue'
-import MessageRatesPanel from './MessageRatesPanel.vue'
-</script>
-
 <template>
-  <Card
-    title="GNSS"
-    icon-color="bg-gray-500"
-  >
+  <Card title="GNSS"
+        iconColor="bg-gray-500">
     
     <!-- GNSS Status Summary -->
     <GnssStatus />
@@ -36,3 +25,12 @@ import MessageRatesPanel from './MessageRatesPanel.vue'
     </div>
   </Card>
 </template>
+
+<script setup>
+  import Card from './common/Card.vue';
+  import GnssStatus from './gnss/GnssStatus.vue';
+  import SatelliteHealthPanel from './gnss/SatelliteHealthPanel.vue';
+  import RtkPanel from './gnss/RtkPanel.vue';
+  import PositionScatterPlot from './gnss/PositionScatterPlot.vue';
+  import MessageRatesPanel from './MessageRatesPanel.vue';
+</script>

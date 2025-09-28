@@ -1,30 +1,9 @@
-<script setup>
-import { ref } from 'vue'
-import Sidebar from './Sidebar.vue'
-
-const props = defineProps({
-  activeSection: {
-    type: String,
-    required: true
-  }
-})
-
-const isMobileMenuOpen = ref(false)
-
-const toggleSidebar = () => {
-  // Toggle mobile menu visibility
-  isMobileMenuOpen.value = !isMobileMenuOpen.value
-}
-</script>
-
 <template>
   <div class="flex h-screen bg-gradient-to-br from-slate-100 to-slate-200">
     <!-- Sidebar -->
-    <Sidebar
-      :active-section="activeSection"
-      :is-mobile-open="isMobileMenuOpen"
-      @toggle-collapse="toggleSidebar"
-    />
+    <Sidebar :activeSection="activeSection"
+             :isMobileOpen="isMobileMenuOpen"
+             @toggleCollapse="toggleSidebar" />
 
     <!-- Main Content Area -->
     <main class="flex-1 flex flex-col overflow-hidden">
@@ -33,20 +12,20 @@ const toggleSidebar = () => {
         <div class="flex items-center justify-between">
           <div class="flex items-center space-x-4">
             <!-- Mobile Menu Button -->
-            <button
-              class="lg:hidden p-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-              @click="toggleSidebar"
-            >
+            <button class="lg:hidden p-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    @click="toggleSidebar">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <h1 class="text-2xl font-semibold text-slate-800 capitalize">{{ activeSection }}</h1>
+            <h1 class="text-2xl font-semibold text-slate-800 capitalize">
+              {{ activeSection }}
+            </h1>
           </div>
 
           <!-- Status indicators or other header content can go here -->
           <div class="flex items-center space-x-4">
-            <slot name="header-actions"></slot>
+            <slot name="header-actions" />
           </div>
         </div>
       </header>
@@ -54,19 +33,37 @@ const toggleSidebar = () => {
       <!-- Content Area -->
       <div class="flex-1 overflow-auto p-6">
         <div class="max-w-7xl mx-auto">
-          <slot></slot>
+          <slot />
         </div>
       </div>
     </main>
 
     <!-- Mobile Overlay -->
-    <div
-      v-if="isMobileMenuOpen"
-      class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
-      @click="toggleSidebar"
-    ></div>
+    <div v-if="isMobileMenuOpen"
+         class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+         @click="toggleSidebar" />
   </div>
 </template>
+
+<script setup>
+  import { ref } from 'vue';
+  import Sidebar from './Sidebar.vue';
+
+  const props = defineProps({
+    activeSection: {
+      type: String,
+      required: true
+    }
+  });
+
+  const isMobileMenuOpen = ref(false);
+
+  const toggleSidebar = () => 
+  {
+    // Toggle mobile menu visibility
+    isMobileMenuOpen.value = !isMobileMenuOpen.value;
+  };
+</script>
 
 <style>
 /* Mobile sidebar positioning */

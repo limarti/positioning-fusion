@@ -1,17 +1,7 @@
-<script setup>
-import Card from './common/Card.vue'
-import { useSystemData } from '@/composables/useSystemData'
-
-// Get data from composable
-const { state: systemState } = useSystemData()
-</script>
-
 <template>
-  <Card
-    title="Encoder"
-    subtitle="Active"
-    icon-color="bg-gray-500"
-  >
+  <Card title="Encoder"
+        subtitle="Active"
+        iconColor="bg-gray-500">
     <div class="space-y-2 text-sm">
       <div class="flex justify-between">
         <span class="text-slate-500">Count:</span>
@@ -28,3 +18,11 @@ const { state: systemState } = useSystemData()
     </div>
   </Card>
 </template>
+
+<script setup>
+  import Card from './common/Card.vue';
+  import { useSystemData } from '@/composables/useSystemData';
+
+  // Get data from composable
+  const { state: systemState } = useSystemData();
+</script>
