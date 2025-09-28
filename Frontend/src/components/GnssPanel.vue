@@ -5,21 +5,6 @@ import SatelliteHealthPanel from './gnss/SatelliteHealthPanel.vue'
 import RtkPanel from './gnss/RtkPanel.vue'
 import PositionScatterPlot from './gnss/PositionScatterPlot.vue'
 import MessageRatesPanel from './MessageRatesPanel.vue'
-
-const props = defineProps({
-  gnssData: {
-    type: Object,
-    required: true
-  },
-  dataRates: {
-    type: Object,
-    required: true
-  },
-  messageRates: {
-    type: Object,
-    required: true
-  }
-})
 </script>
 
 <template>
@@ -29,23 +14,23 @@ const props = defineProps({
   >
     
     <!-- GNSS Status Summary -->
-    <GnssStatus :gnssData="gnssData" />
+    <GnssStatus />
     
     <!-- GNSS Subsections -->
     <div class="space-y-4">
       <!-- Centered Masonry Layout for All GNSS Cards -->
       <div class="columns-1 lg:columns-2 gap-6 space-y-6 mx-auto">
         <!-- Satellite Health Subsection -->
-        <SatelliteHealthPanel :gnssData="gnssData" />
+        <SatelliteHealthPanel />
         
         <!-- Unified RTK Panel -->
-        <RtkPanel :gnssData="gnssData" />
+        <RtkPanel />
         
         <!-- Position Scatter Plot -->
-        <PositionScatterPlot :gnssData="gnssData" />
+        <PositionScatterPlot />
         
         <!-- UBX Message Rates Subsection -->
-        <MessageRatesPanel :messageRates="messageRates" />
+        <MessageRatesPanel />
 
       </div>
     </div>

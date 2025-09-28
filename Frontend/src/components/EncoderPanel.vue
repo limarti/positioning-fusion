@@ -1,12 +1,9 @@
 <script setup>
 import Card from './common/Card.vue'
+import { useSystemData } from '@/composables/useSystemData'
 
-const props = defineProps({
-  encoderData: {
-    type: Object,
-    required: true
-  }
-})
+// Get data from composable
+const { state: systemState } = useSystemData()
 </script>
 
 <template>
@@ -18,15 +15,15 @@ const props = defineProps({
     <div class="space-y-2 text-sm">
       <div class="flex justify-between">
         <span class="text-slate-500">Count:</span>
-        <span :class="encoderData.rawCount !== null ? 'font-mono' : 'text-slate-400'">{{ encoderData.rawCount !== null ? encoderData.rawCount : '—' }}</span>
+        <span :class="systemState.encoderData.rawCount !== null ? 'font-mono' : 'text-slate-400'">{{ systemState.encoderData.rawCount !== null ? systemState.encoderData.rawCount : '—' }}</span>
       </div>
       <div class="flex justify-between">
         <span class="text-slate-500">Direction:</span>
-        <span :class="encoderData.direction !== null ? '' : 'text-slate-400'">{{ encoderData.direction !== null ? encoderData.direction : '—' }}</span>
+        <span :class="systemState.encoderData.direction !== null ? '' : 'text-slate-400'">{{ systemState.encoderData.direction !== null ? systemState.encoderData.direction : '—' }}</span>
       </div>
       <div class="flex justify-between">
         <span class="text-slate-500">Rate:</span>
-        <span :class="encoderData.pulsesPerSecond !== null ? 'font-mono' : 'text-slate-400'">{{ encoderData.pulsesPerSecond !== null ? encoderData.pulsesPerSecond + '/s' : '—' }}</span>
+        <span :class="systemState.encoderData.pulsesPerSecond !== null ? 'font-mono' : 'text-slate-400'">{{ systemState.encoderData.pulsesPerSecond !== null ? systemState.encoderData.pulsesPerSecond + '/s' : '—' }}</span>
       </div>
     </div>
   </Card>

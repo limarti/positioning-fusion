@@ -1,19 +1,16 @@
 <script setup>
 import { computed } from 'vue'
 import Card from './common/Card.vue'
+import { useGnssData } from '@/composables/useGnssData'
 
-const props = defineProps({
-  messageRates: {
-    type: Object,
-    required: true
-  }
-})
+// Get data from composable
+const { state: gnssState } = useGnssData()
 
 // Sort message types for consistent display
 const sortedMessageTypes = computed(() => {
-  if (!props.messageRates.messageRates) return []
+  if (!gnssState.messageRates.messageRates) return []
   
-  return Object.entries(props.messageRates.messageRates)
+  return Object.entries(gnssState.messageRates.messageRates)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([type, rate]) => ({
       type,

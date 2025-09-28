@@ -1,186 +1,21 @@
 <script setup>
-import { ref, watch, inject } from 'vue'
 import Card from './common/Card.vue'
+import { useSystemData } from '@/composables/useSystemData'
+import { useSignalR } from '@/composables/useSignalR'
 
-const props = defineProps({
-  systemHealth: {
-    type: Object,
-    required: true
-  },
-  powerStatus: {
-    type: Object,
-    required: true
-  },
-  dataRates: {
-    type: Object,
-    required: true
-  }
-})
+// Get data from composables
+const {
+  state: systemState,
+  getBatteryColor,
+  getUsageColor,
+  saveHostname,
+  cancelHostnameEdit
+} = useSystemData()
+const { signalrConnection } = useSignalR()
 
-// Get SignalR connection from provider
-const connection = inject('signalrConnection')
-
-// Hostname management
-const editedHostname = ref('')
-const originalHostname = ref('')
-const isUpdatingHostname = ref(false)
-const hostnameError = ref('')
-const hostnameSuccess = ref('')
-const isHostnameModified = ref(false)
-const hostnameValidationError = ref('')
-const isHostnameValid = ref(true)
-
-// Watch for hostname changes from backend
-watch(() => props.systemHealth.hostname, (newHostname) => {
-  if (newHostname && !isHostnameModified.value) {
-    originalHostname.value = newHostname
-    editedHostname.value = newHostname
-  } else if (!newHostname && !editedHostname.value) {
-    // Initialize with empty string if no hostname available yet
-    originalHostname.value = ''
-    editedHostname.value = ''
-  }
-}, { immediate: true })
-
-// Watch for user edits to hostname input
-watch(editedHostname, (newValue) => {
-  isHostnameModified.value = newValue !== originalHostname.value && newValue !== null && newValue !== undefined
-
-  // Validate hostname in real-time
-  if (newValue) {
-    const validationError = validateHostname(newValue)
-    hostnameValidationError.value = validationError || ''
-    isHostnameValid.value = !validationError
-  } else {
-    hostnameValidationError.value = ''
-    isHostnameValid.value = true
-  }
-})
-
-// Simple discharge rate tracking
-const batteryHistory = ref([])
-const dischargeRate = ref(null)
-
-watch(() => props.powerStatus.batteryLevel, (newLevel) => {
-  if (newLevel !== null) {
-    const now = Date.now()
-    batteryHistory.value.push({ level: newLevel, timestamp: now })
-    
-    // Keep only last 2 minutes
-    const twoMinutesAgo = now - (1 * 60 * 1000)
-    batteryHistory.value = batteryHistory.value.filter(entry => entry.timestamp > twoMinutesAgo)
-    
-    // Calculate rate as soon as we have 2 data points
-    if (batteryHistory.value.length >= 2) {
-      const oldest = batteryHistory.value[0]
-      const newest = batteryHistory.value[batteryHistory.value.length - 1]
-      const levelDiff = oldest.level - newest.level
-      const timeDiff = (newest.timestamp - oldest.timestamp) / (60 * 1000) // minutes
-      
-      if (timeDiff > 0) {
-        dischargeRate.value = levelDiff / timeDiff // %/minute
-      }
-    }
-  }
-})
-
-const getBatteryColor = (level) => {
-  if (level > 60) return 'text-green-500'
-  if (level > 30) return 'text-yellow-500'
-  return 'text-red-500'
-}
-
-const getUsageColor = (usage) => {
-  if (usage < 50) return 'text-green-500'
-  if (usage < 80) return 'text-yellow-500'
-  return 'text-red-500'
-}
-
-// Hostname validation function
-const validateHostname = (hostname) => {
-  if (!hostname || typeof hostname !== 'string') {
-    return 'Hostname is required'
-  }
-
-  const trimmedHostname = hostname.trim()
-
-  // Check length (2-63 characters for practical use)
-  if (trimmedHostname.length === 0) {
-    return 'Hostname cannot be empty'
-  }
-  if (trimmedHostname.length === 1) {
-    return 'Hostname must be at least 2 characters long'
-  }
-  if (trimmedHostname.length > 63) {
-    return 'Hostname must be 63 characters or less'
-  }
-
-  // Check format: only letters, digits, and hyphens
-  const validCharsRegex = /^[a-zA-Z0-9-]+$/
-  if (!validCharsRegex.test(trimmedHostname)) {
-    return 'Hostname can only contain letters, digits, and hyphens'
-  }
-
-  // Check start and end: cannot start or end with hyphen
-  if (trimmedHostname.startsWith('-')) {
-    return 'Hostname cannot start with a hyphen'
-  }
-  if (trimmedHostname.endsWith('-')) {
-    return 'Hostname cannot end with a hyphen'
-  }
-
-  // Check for consecutive hyphens (optional - some systems allow this)
-  if (trimmedHostname.includes('--')) {
-    return 'Hostname cannot contain consecutive hyphens'
-  }
-
-  return null // Valid
-}
-
-// Hostname management functions
-const saveHostname = async () => {
-  if (!connection.value || !editedHostname.value || !editedHostname.value.trim()) return
-
-  // Check validation before saving
-  if (!isHostnameValid.value) {
-    hostnameError.value = hostnameValidationError.value || 'Invalid hostname format'
-    return
-  }
-
-  isUpdatingHostname.value = true
-  hostnameError.value = ''
-  hostnameSuccess.value = ''
-
-  try {
-    const result = await connection.value.invoke('UpdateHostname', editedHostname.value.trim())
-
-    if (result.success) {
-      hostnameSuccess.value = result.message
-      originalHostname.value = editedHostname.value
-      isHostnameModified.value = false
-    } else {
-      hostnameError.value = result.message
-    }
-  } catch (error) {
-    console.error('Failed to update hostname:', error)
-    hostnameError.value = 'Failed to update hostname: ' + error.message
-  } finally {
-    isUpdatingHostname.value = false
-
-    // Clear messages after 5 seconds
-    setTimeout(() => {
-      hostnameError.value = ''
-      hostnameSuccess.value = ''
-    }, 5000)
-  }
-}
-
-const cancelHostnameEdit = () => {
-  editedHostname.value = originalHostname.value
-  isHostnameModified.value = false
-  hostnameError.value = ''
-  hostnameValidationError.value = ''
-  isHostnameValid.value = true
+// Handle hostname save using the composable function
+const onSaveHostname = async () => {
+  await saveHostname(signalrConnection.value)
 }
 </script>
 
@@ -199,51 +34,51 @@ const cancelHostnameEdit = () => {
       <!-- System Health section -->
       <div class="flex justify-between">
         <span class="text-slate-500">CPU:</span>
-        <span :class="systemHealth.cpuUsage !== null ? getUsageColor(systemHealth.cpuUsage) : 'text-slate-400'">{{ systemHealth.cpuUsage !== null ? systemHealth.cpuUsage.toFixed(1) + '%' : '—' }}</span>
+        <span :class="systemState.systemHealth.cpuUsage !== null ? getUsageColor(systemState.systemHealth.cpuUsage) : 'text-slate-400'">{{ systemState.systemHealth.cpuUsage !== null ? systemState.systemHealth.cpuUsage.toFixed(1) + '%' : '—' }}</span>
       </div>
       <div class="flex justify-between">
         <span class="text-slate-500">RAM:</span>
-        <span :class="systemHealth.memoryUsage !== null ? getUsageColor(systemHealth.memoryUsage) : 'text-slate-400'">{{ systemHealth.memoryUsage !== null ? systemHealth.memoryUsage.toFixed(1) + '%' : '—' }}</span>
+        <span :class="systemState.systemHealth.memoryUsage !== null ? getUsageColor(systemState.systemHealth.memoryUsage) : 'text-slate-400'">{{ systemState.systemHealth.memoryUsage !== null ? systemState.systemHealth.memoryUsage.toFixed(1) + '%' : '—' }}</span>
       </div>
       <div class="flex justify-between">
         <span class="text-slate-500">Temperature:</span>
-        <span :class="systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemHealth.temperature !== null ? systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
+        <span :class="systemState.systemHealth.temperature !== null ? 'text-orange-600' : 'text-slate-400'">{{ systemState.systemHealth.temperature !== null ? systemState.systemHealth.temperature.toFixed(1) + '°C' : '—' }}</span>
       </div>
 
       <!-- Battery Information -->
 <!--      <div class="flex justify-between">-->
 <!--        <span class="text-slate-500">Battery:</span>-->
-<!--        <span :class="powerStatus.batteryLevel !== null ? getBatteryColor(powerStatus.batteryLevel) : 'text-slate-400'">-->
-<!--          {{ powerStatus.batteryLevel !== null ? powerStatus.batteryLevel.toFixed(1) + '%' : '—' }}-->
-<!--          <span v-if="powerStatus.isExternalPowerConnected" class="text-green-600 ml-1">⚡</span>-->
+<!--        <span :class="systemState.powerStatus.batteryLevel !== null ? getBatteryColor(systemState.powerStatus.batteryLevel) : 'text-slate-400'">-->
+<!--          {{ systemState.powerStatus.batteryLevel !== null ? systemState.powerStatus.batteryLevel.toFixed(1) + '%' : '—' }}-->
+<!--          <span v-if="systemState.powerStatus.isExternalPowerConnected" class="text-green-600 ml-1">⚡</span>-->
 <!--        </span>-->
 <!--      </div>-->
       <div class="flex justify-between">
         <span class="text-slate-500">Voltage:</span>
-        <span class="text-blue-600">{{ powerStatus.batteryVoltage !== null ? powerStatus.batteryVoltage.toFixed(2) + 'V' : '—' }}</span>
+        <span class="text-blue-600">{{ systemState.powerStatus.batteryVoltage !== null ? systemState.powerStatus.batteryVoltage.toFixed(2) + 'V' : '—' }}</span>
       </div>
-      <div v-if="dischargeRate !== null" class="flex justify-between">
-        <span class="text-slate-500">{{ powerStatus.isExternalPowerConnected ? 'Charging Rate:' : 'Discharge Rate:' }}</span>
-        <span :class="powerStatus.isExternalPowerConnected ? 'text-green-500' : 'text-red-500'">{{ Math.abs(dischargeRate).toFixed(2) }}%/min</span>
+      <div v-if="systemState.dischargeRate !== null" class="flex justify-between">
+        <span class="text-slate-500">{{ systemState.powerStatus.isExternalPowerConnected ? 'Charging Rate:' : 'Discharge Rate:' }}</span>
+        <span :class="systemState.powerStatus.isExternalPowerConnected ? 'text-green-500' : 'text-red-500'">{{ Math.abs(systemState.dischargeRate).toFixed(2) }}%/min</span>
       </div>
 
       <div class="flex justify-between">
         <span class="text-slate-500">GNSS Throughput:</span>
         <span class="text-blue-600 font-mono">
-          <span v-if="dataRates.kbpsGnssIn !== null && dataRates.kbpsGnssIn !== undefined">
+          <span v-if="systemState.dataRates.kbpsGnssIn !== null && systemState.dataRates.kbpsGnssIn !== undefined">
             <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
-            </svg>{{ dataRates.kbpsGnssIn.toFixed(1) }}
+            </svg>{{ systemState.dataRates.kbpsGnssIn.toFixed(1) }}
           </span>
           <span v-else>
             <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
             </svg>0.0
           </span>
-          <span v-if="dataRates.kbpsGnssOut !== null && dataRates.kbpsGnssOut !== undefined">
+          <span v-if="systemState.dataRates.kbpsGnssOut !== null && systemState.dataRates.kbpsGnssOut !== undefined">
             <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75 12 3m0 0 3.75 3.75M12 3v18" />
-            </svg>{{ dataRates.kbpsGnssOut.toFixed(1) }}
+            </svg>{{ systemState.dataRates.kbpsGnssOut.toFixed(1) }}
           </span>
           <span v-else>
             <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -254,18 +89,18 @@ const cancelHostnameEdit = () => {
         </span>
       </div>
 
-      <div v-if="(dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined && dataRates.kbpsLoRaIn > 0) || (dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined && dataRates.kbpsLoRaOut > 0)" class="flex justify-between">
+      <div v-if="(systemState.dataRates.kbpsLoRaIn !== null && systemState.dataRates.kbpsLoRaIn !== undefined && systemState.dataRates.kbpsLoRaIn > 0) || (systemState.dataRates.kbpsLoRaOut !== null && systemState.dataRates.kbpsLoRaOut !== undefined && systemState.dataRates.kbpsLoRaOut > 0)" class="flex justify-between">
         <span class="text-slate-500">LoRa Throughput:</span>
         <span class="text-amber-600 font-mono">
-          <span v-if="dataRates.kbpsLoRaIn !== null && dataRates.kbpsLoRaIn !== undefined && dataRates.kbpsLoRaIn > 0">
+          <span v-if="systemState.dataRates.kbpsLoRaIn !== null && systemState.dataRates.kbpsLoRaIn !== undefined && systemState.dataRates.kbpsLoRaIn > 0">
             <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
-            </svg>{{ dataRates.kbpsLoRaIn.toFixed(1) }}
+            </svg>{{ systemState.dataRates.kbpsLoRaIn.toFixed(1) }}
           </span>
-          <span v-if="dataRates.kbpsLoRaOut !== null && dataRates.kbpsLoRaOut !== undefined && dataRates.kbpsLoRaOut > 0">
+          <span v-if="systemState.dataRates.kbpsLoRaOut !== null && systemState.dataRates.kbpsLoRaOut !== undefined && systemState.dataRates.kbpsLoRaOut > 0">
             <svg class="w-4 h-4 inline ml-1.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75 12 3m0 0 3.75 3.75M12 3v18" />
-            </svg>{{ dataRates.kbpsLoRaOut.toFixed(1) }}
+            </svg>{{ systemState.dataRates.kbpsLoRaOut.toFixed(1) }}
           </span>
           kbps
         </span>
@@ -276,14 +111,14 @@ const cancelHostnameEdit = () => {
         <span class="text-purple-600 font-mono">
           <svg class="w-4 h-4 inline mr-0.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
-          </svg>{{ dataRates.kbpsImu !== null && dataRates.kbpsImu !== undefined ? dataRates.kbpsImu.toFixed(1) : '0.0' }} kbps
+          </svg>{{ systemState.dataRates.kbpsImu !== null && systemState.dataRates.kbpsImu !== undefined ? systemState.dataRates.kbpsImu.toFixed(1) : '0.0' }} kbps
         </span>
       </div>
 
       <!-- Hostname Display -->
       <div class="flex justify-between">
         <span class="text-slate-500">Hostname:</span>
-        <span class="text-blue-600 font-mono">{{ systemHealth.hostname || '—' }}</span>
+        <span class="text-blue-600 font-mono">{{ systemState.systemHealth.hostname || '—' }}</span>
       </div>
 
     </div>
@@ -307,30 +142,30 @@ const cancelHostnameEdit = () => {
       <div class="flex space-x-2">
         <div class="flex-1">
           <input
-            v-model="editedHostname"
+            v-model="systemState.editedHostname"
             type="text"
             placeholder="Device hostname"
             :class="[
               'form-input text-sm',
-              !isHostnameValid && hostnameValidationError
+              !systemState.isHostnameValid && systemState.hostnameValidationError
                 ? 'border-red-300 focus:ring-red-500 bg-red-50'
                 : ''
             ]"
-            :disabled="isUpdatingHostname"
-            @keyup.enter="saveHostname"
+            :disabled="systemState.isUpdatingHostname"
+            @keyup.enter="onSaveHostname"
             @keyup.escape="cancelHostnameEdit"
           />
         </div>
 
         <!-- Save/Cancel buttons - only show when modified -->
-        <div v-if="isHostnameModified" class="flex space-x-2">
+        <div v-if="systemState.isHostnameModified" class="flex space-x-2">
           <button
-            @click="saveHostname"
-            :disabled="isUpdatingHostname || !editedHostname || !editedHostname.trim() || !isHostnameValid"
+            @click="onSaveHostname"
+            :disabled="systemState.isUpdatingHostname || !systemState.editedHostname || !systemState.editedHostname.trim() || !systemState.isHostnameValid"
             class="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             title="Save changes"
           >
-            <span v-if="isUpdatingHostname">
+            <span v-if="systemState.isUpdatingHostname">
               <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -344,7 +179,7 @@ const cancelHostnameEdit = () => {
           </button>
           <button
             @click="cancelHostnameEdit"
-            :disabled="isUpdatingHostname"
+            :disabled="systemState.isUpdatingHostname"
             class="px-3 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             title="Cancel changes"
           >
@@ -356,19 +191,19 @@ const cancelHostnameEdit = () => {
       </div>
 
       <!-- Validation error message -->
-      <div v-if="hostnameValidationError && isHostnameModified" class="text-sm text-red-600 bg-red-50 p-2 rounded-md border border-red-200">
+      <div v-if="systemState.hostnameValidationError && systemState.isHostnameModified" class="text-sm text-red-600 bg-red-50 p-2 rounded-md border border-red-200">
         <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
         </svg>
-        {{ hostnameValidationError }}
+        {{ systemState.hostnameValidationError }}
       </div>
 
       <!-- Success/Error messages -->
-      <div v-if="hostnameSuccess" class="text-sm text-green-600 bg-green-50 p-3 rounded-md">
-        {{ hostnameSuccess }}
+      <div v-if="systemState.hostnameSuccess" class="text-sm text-green-600 bg-green-50 p-3 rounded-md">
+        {{ systemState.hostnameSuccess }}
       </div>
-      <div v-if="hostnameError" class="text-sm text-red-600 bg-red-50 p-3 rounded-md">
-        {{ hostnameError }}
+      <div v-if="systemState.hostnameError" class="text-sm text-red-600 bg-red-50 p-3 rounded-md">
+        {{ systemState.hostnameError }}
       </div>
 
     </div>

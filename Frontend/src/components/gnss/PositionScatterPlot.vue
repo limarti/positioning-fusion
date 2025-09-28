@@ -3,13 +3,10 @@ import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import * as Plot from '@observablehq/plot'
 import * as d3 from 'd3'
 import Card from '../common/Card.vue'
+import { useGnssData } from '@/composables/useGnssData'
 
-const props = defineProps({
-  gnssData: {
-    type: Object,
-    required: true
-  }
-})
+// Get data from composable
+const { state: gnssState } = useGnssData()
 
 // Component state
 const plotContainer = ref(null)
@@ -152,7 +149,7 @@ const updatePlot = () => {
 }
 
 // Watch for new GNSS position data
-watch(() => [props.gnssData.latitude, props.gnssData.longitude, props.gnssData.fixType],
+watch(() => [gnssState.gnssData.latitude, gnssState.gnssData.longitude, gnssState.gnssData.fixType],
   ([lat, lng, fixType]) => {
     if (lat !== null && lng !== null) {
       if (!referencePoint.value) {
