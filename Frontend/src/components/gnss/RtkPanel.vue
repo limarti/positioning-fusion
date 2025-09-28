@@ -89,7 +89,30 @@
           </div>
           <div class="flex justify-between py-1">
             <span class="text-sm text-gray-600">Correction Age:</span>
-            <span class="text-sm font-medium" :class="gnssState.gnssData.rtk.correctionAge !== null ? 'text-gray-800' : 'text-slate-400'">{{ gnssState.gnssData.rtk.correctionAge !== null ? gnssState.gnssData.rtk.correctionAge.toFixed(1) + 's' : '—' }}</span>
+            <span class="text-sm font-medium" :class="getCorrectionAgeClass()">{{ formatCorrectionAge() }}</span>
+          </div>
+        </div>
+
+        <!-- Enhanced Correction Status -->
+        <div class="space-y-2">
+          <div class="flex justify-between py-1">
+            <span class="text-sm text-gray-600">Correction Source:</span>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs font-semibold px-2 py-1 rounded-lg" :class="getCorrectionSourceClass()">
+                {{ gnssState.gnssData.corrections.status.source }}
+              </span>
+              <div class="flex space-x-1">
+                <span v-if="gnssState.gnssData.corrections.status.sbas" class="text-xs bg-green-100 text-green-700 px-1 py-0.5 rounded">SBAS</span>
+                <span v-if="gnssState.gnssData.corrections.status.rtcm" class="text-xs bg-blue-100 text-blue-700 px-1 py-0.5 rounded">RTCM</span>
+                <span v-if="gnssState.gnssData.corrections.status.spartn" class="text-xs bg-purple-100 text-purple-700 px-1 py-0.5 rounded">SPARTN</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-between py-1">
+            <span class="text-sm text-gray-600">Correction Status:</span>
+            <span class="text-xs font-semibold px-2 py-1 rounded-lg" :class="getCorrectionStatusClass()">
+              {{ gnssState.gnssData.corrections.status.status }}
+            </span>
           </div>
         </div>
       </div>
@@ -193,8 +216,72 @@
   const { signalrConnection } = useSignalR();
 
   // Handle mode change using the composable function
-  const onModeChange = async (newMode) => 
+  const onModeChange = async (newMode) =>
   {
     await handleModeChange(signalrConnection.value, newMode);
+  };
+
+  // Correction status formatting and styling
+  const formatCorrectionAge = () =>
+  {
+    const ageMs = gnssState.gnssData.corrections.status.age;
+    if (ageMs === null || ageMs === undefined) return '—';
+
+    // Convert milliseconds to seconds
+    const ageSeconds = ageMs / 1000;
+
+    if (ageSeconds < 60) 
+    {
+      return ageSeconds.toFixed(1) + 's';
+    }
+    else 
+    {
+      return (ageSeconds / 60).toFixed(1) + 'm';
+    }
+  };
+
+  const getCorrectionAgeClass = () =>
+  {
+    const ageMs = gnssState.gnssData.corrections.status.age;
+    if (ageMs === null || ageMs === undefined) return 'text-slate-400';
+
+    const ageSeconds = ageMs / 1000;
+
+    // Color code based on correction age
+    if (ageSeconds <= 5) return 'text-green-600 font-medium'; // Fresh
+    else if (ageSeconds <= 30) return 'text-yellow-600 font-medium'; // Aging
+    else return 'text-red-600 font-medium'; // Stale
+  };
+
+  const getCorrectionSourceClass = () =>
+  {
+    const source = gnssState.gnssData.corrections.status.source;
+    const valid = gnssState.gnssData.corrections.status.valid;
+
+    if (!valid || source === 'None') 
+    {
+      return 'bg-gray-100 text-gray-600';
+    }
+
+    switch (source) 
+    {
+    case 'RTCM': return 'bg-blue-100 text-blue-800';
+    case 'SPARTN': return 'bg-purple-100 text-purple-800';
+    case 'SBAS': return 'bg-green-100 text-green-800';
+    default: return 'bg-gray-100 text-gray-600';
+    }
+  };
+
+  const getCorrectionStatusClass = () =>
+  {
+    const status = gnssState.gnssData.corrections.status.status;
+
+    switch (status) 
+    {
+    case 'Valid': return 'bg-green-100 text-green-800';
+    case 'Stale': return 'bg-yellow-100 text-yellow-700';
+    case 'Invalid': return 'bg-red-100 text-red-700';
+    default: return 'bg-gray-100 text-gray-600';
+    }
   };
 </script>

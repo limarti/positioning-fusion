@@ -63,7 +63,18 @@ const gnssData = reactive({
 
   // Corrections mode and status
   corrections: {
-    mode: 'Disabled' // 'Disabled', 'Receive', 'Send'
+    mode: 'Disabled', // 'Disabled', 'Receive', 'Send'
+    status: {
+      source: 'None',
+      status: 'Unknown',
+      age: null,
+      valid: false,
+      stale: false,
+      sbas: false,
+      rtcm: false,
+      spartn: false,
+      numMessages: 0
+    }
   },
 
   // Reference station position (for base station mode)
@@ -238,12 +249,25 @@ export function registerGnssEvents(connection)
     gnssData.referenceStation.altitude = data.altitude;
   });
 
-  connection.on("DopUpdate", (data) => 
+  connection.on("DopUpdate", (data) =>
   {
     gnssData.hdop = data.horizontalDop;
     gnssData.vdop = data.verticalDop;
     gnssData.pdop = data.positionDop;
     gnssData.tdop = data.timeDop;
+  });
+
+  connection.on("CorrectionStatusUpdate", (data) =>
+  {
+    gnssData.corrections.status.source = data.correctionSource;
+    gnssData.corrections.status.status = data.correctionStatus;
+    gnssData.corrections.status.age = data.correctionAge;
+    gnssData.corrections.status.valid = data.correctionValid;
+    gnssData.corrections.status.stale = data.correctionStale;
+    gnssData.corrections.status.sbas = data.sbasCorrections;
+    gnssData.corrections.status.rtcm = data.rtcmCorrections;
+    gnssData.corrections.status.spartn = data.spartnCorrections;
+    gnssData.corrections.status.numMessages = data.numMessages;
   });
 }
 

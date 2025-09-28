@@ -455,6 +455,10 @@ public class GnssService : BackgroundService
             {
                 // RXM-RAWX: Raw measurement data - received but not parsed
             }
+            else if (messageClass == UbxConstants.CLASS_RXM && messageId == UbxConstants.RXM_COR)
+            {
+                await CorrectionStatusParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
+            }
             else if (messageClass == UbxConstants.CLASS_ACK)
             {
                 if (messageId == UbxConstants.ACK_ACK)
