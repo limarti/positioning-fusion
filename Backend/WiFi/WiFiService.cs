@@ -24,6 +24,7 @@ public class WiFiService : BackgroundService
     private const int CONNECTION_TIMEOUT_SECONDS = 120; // 2 minutes
     private const int STATUS_CHECK_INTERVAL_SECONDS = 30; // 30 seconds
     private const int FALLBACK_CHECK_INTERVAL_SECONDS = 10; // 10 seconds when trying to connect
+    private const int CLIENT_RETRY_INTERVAL_SECONDS = 120; // 2 minutes - retry client connection from AP mode
 
     public WiFiService(IHubContext<DataHub> hubContext, GeoConfigurationManager configManager, ILogger<WiFiService> logger)
     {
@@ -97,15 +98,22 @@ public class WiFiService : BackgroundService
     private async Task CheckAndUpdateWiFiStatus()
     {
         await UpdateWiFiStatus();
-        
+
         // Check if we should attempt to connect to known networks
         if (ShouldAttemptClientConnection())
         {
             await AttemptKnownNetworkConnection();
         }
-        
+
+        // Check if we should retry client connection from AP mode with no clients
+        if (await ShouldRetryClientFromAP())
+        {
+            _logger.LogInformation("AP mode active with no connected clients, attempting to reconnect as client");
+            await AttemptKnownNetworkConnection();
+        }
+
         // Check for connection timeout
-        if (_isAttemptingConnection && 
+        if (_isAttemptingConnection &&
             (DateTime.Now - _lastConnectionAttempt).TotalSeconds > CONNECTION_TIMEOUT_SECONDS)
         {
             _logger.LogWarning("Connection attempt timed out after {Timeout} seconds, falling back to AP mode", CONNECTION_TIMEOUT_SECONDS);
@@ -131,6 +139,118 @@ public class WiFiService : BackgroundService
         }
 
         return shouldAttempt;
+    }
+
+    private async Task<bool> ShouldRetryClientFromAP()
+    {
+        var wifiConfig = _configManager.WiFiConfiguration;
+
+        // Only retry if:
+        // 1. Preferred mode is Client
+        // 2. Currently in AP mode and connected
+        // 3. No clients connected to AP
+        // 4. Not currently attempting a connection
+        // 5. Enough time has passed since last retry
+        // 6. Have known networks to try
+        var shouldRetry = wifiConfig.PreferredMode == WiFiMode.Client &&
+                         _currentStatus.CurrentMode == WiFiMode.AP &&
+                         _currentStatus.IsConnected &&
+                         !await HasConnectedAPClients() &&
+                         !_isAttemptingConnection &&
+                         (DateTime.Now - _lastConnectionAttempt).TotalSeconds >= CLIENT_RETRY_INTERVAL_SECONDS &&
+                         wifiConfig.KnownNetworks.Any();
+
+        if (shouldRetry)
+        {
+            _logger.LogDebug("Should retry client from AP - PreferredMode: {PreferredMode}, CurrentMode: {CurrentMode}, IsConnected: {IsConnected}, HasAPClients: {HasAPClients}, IsAttempting: {IsAttempting}, TimeSinceLastRetry: {TimeSinceLastRetry}s, HasKnownNetworks: {HasKnownNetworks}",
+                wifiConfig.PreferredMode, _currentStatus.CurrentMode, _currentStatus.IsConnected,
+                await HasConnectedAPClients(), _isAttemptingConnection,
+                (DateTime.Now - _lastConnectionAttempt).TotalSeconds, wifiConfig.KnownNetworks.Any());
+        }
+
+        return shouldRetry;
+    }
+
+    private async Task<bool> HasConnectedAPClients()
+    {
+        try
+        {
+            // Use iw to check connected stations to our AP interface
+            var wifiInterface = await GetWiFiInterfaceName();
+            if (string.IsNullOrEmpty(wifiInterface))
+            {
+                _logger.LogDebug("No WiFi interface found for AP client check");
+                return false;
+            }
+
+            var result = await ExecuteIwCommand($"dev {wifiInterface} station dump");
+
+            if (result.Success)
+            {
+                // If station dump has any output, we have connected clients
+                var hasClients = !string.IsNullOrWhiteSpace(result.Output);
+                _logger.LogDebug("AP client check - Interface: {Interface}, HasClients: {HasClients}", wifiInterface, hasClients);
+                return hasClients;
+            }
+            else
+            {
+                _logger.LogDebug("Failed to check AP clients: {Error}", result.Error);
+                return false; // Assume no clients if we can't check
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception checking AP clients");
+            return false; // Assume no clients if error occurs
+        }
+    }
+
+    private async Task<(bool Success, string Output, string Error)> ExecuteIwCommand(string arguments)
+    {
+        try
+        {
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = "iw",
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            _logger.LogDebug("Executing: iw {Arguments}", arguments);
+
+            process.Start();
+
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            var errorTask = process.StandardError.ReadToEndAsync();
+
+            await process.WaitForExitAsync();
+
+            var output = await outputTask;
+            var error = await errorTask;
+
+            var success = process.ExitCode == 0;
+
+            if (!success)
+            {
+                _logger.LogDebug("iw command failed: {Arguments}, Exit Code: {ExitCode}, Error: {Error}",
+                    arguments, process.ExitCode, error);
+            }
+            else
+            {
+                _logger.LogDebug("iw command succeeded: {Arguments}", arguments);
+            }
+
+            return (success, output, error);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Exception executing iw command: {Arguments}", arguments);
+            return (false, string.Empty, ex.Message);
+        }
     }
 
     private async Task AttemptKnownNetworkConnection()
