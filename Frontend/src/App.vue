@@ -1,19 +1,9 @@
 <script setup>
-import { ref, onMounted, onUnmounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr'
+import { useRouter } from 'vue-router'
 import Layout from './components/layout/Layout.vue'
-import GnssStatus from './components/gnss/GnssStatus.vue'
-import SatelliteHealthPanel from './components/gnss/SatelliteHealthPanel.vue'
-import RtkPanel from './components/gnss/RtkPanel.vue'
-import PositionScatterPlot from './components/gnss/PositionScatterPlot.vue'
-import MessageRatesPanel from './components/MessageRatesPanel.vue'
-import ImuPanel from './components/ImuPanel.vue'
-import CameraPanel from './components/CameraPanel.vue'
-import EncoderPanel from './components/EncoderPanel.vue'
-import SystemPanel from './components/SystemPanel.vue'
-import FileLoggingPanel from './components/FileLoggingPanel.vue'
 import ConnectionOverlay from './components/ConnectionOverlay.vue'
-import WiFiPanel from './components/WiFiPanel.vue'
 
 // SignalR connection
 let connection = null
@@ -176,11 +166,11 @@ const cameraData = ref({
 
 const currentMode = ref('Disabled')
 
-// Navigation state
-const activeSection = ref('gnss')
+// Router setup
+const router = useRouter()
+const activeSection = ref(router.currentRoute.value.name || 'gnss')
 
-// Component refs
-const cameraPanelRef = ref(null)
+// Component refs (camera ref moved to CameraView)
 
 // Mode change handler
 const handleModeChanged = (newMode) => {
@@ -189,13 +179,27 @@ const handleModeChanged = (newMode) => {
   currentMode.value = newMode
 }
 
-// Section navigation handler
-const handleSectionChanged = (sectionId) => {
-  activeSection.value = sectionId
-}
+// Section navigation now handled by router-link in Sidebar
 
-// Provide SignalR connection to child components
+// Watch route changes to keep activeSection in sync
+watch(() => router.currentRoute.value, (newRoute) => {
+  if (newRoute.name) {
+    activeSection.value = newRoute.name
+  }
+})
+
+// Provide data to child components
 provide('signalrConnection', signalrConnection)
+provide('gnssData', gnssData)
+provide('dataRates', dataRates)
+provide('messageRates', messageRates)
+provide('imuData', imuData)
+provide('systemHealth', systemHealth)
+provide('powerStatus', powerStatus)
+provide('encoderData', encoderData)
+provide('fileLoggingStatus', fileLoggingStatus)
+provide('cameraData', cameraData)
+provide('currentMode', currentMode)
 
 // Helper functions (moved to components where needed)
 const getSignalColor = (strength) => {
@@ -276,7 +280,7 @@ const scheduleRetry = () => {
 onMounted(async () => {
   // Dynamic URL resolution based on environment
   const hubUrl = import.meta.env.DEV
-    ? "http://base.local/datahub"  // Development mode: use hardcoded localhost
+    ? "http://rover.local/datahub"  // Development mode: use hardcoded localhost
     : `${window.location.protocol}//${window.location.hostname}/datahub`  // Production: use same host as frontend
 
   console.log(`Environment: ${import.meta.env.DEV ? 'Development' : 'Production'}`)
@@ -464,10 +468,7 @@ onMounted(async () => {
       console.log('Camera disconnected')
     }
 
-    // Call the CameraPanel's handler method
-    if (cameraPanelRef.value && cameraPanelRef.value.handleCameraUpdate) {
-      cameraPanelRef.value.handleCameraUpdate(data)
-    }
+    // Camera update handling is now in CameraView component
   })
 
   connection.on("ModeChanged", (data) => {
@@ -523,7 +524,6 @@ onUnmounted(async () => {
   <div class="h-screen">
     <Layout
       :active-section="activeSection"
-      @section-changed="handleSectionChanged"
     >
       <template #header-actions>
         <!-- Battery Indicator -->
@@ -570,68 +570,9 @@ onUnmounted(async () => {
         </div>
       </template>
 
-      <!-- Dynamic Content Based on Active Section -->
+      <!-- Router View for Dynamic Content -->
       <div class="main-centered">
-        <div class="main-container">
-          <!-- GNSS Section -->
-          <div v-if="activeSection === 'gnss'" class="main-container">
-          <!-- GNSS Status Summary -->
-          <GnssStatus :gnssData="gnssData" />
-
-          <!-- GNSS Subpanels -->
-          <div class="columns-1 lg:columns-2 gap-6 space-y-6">
-            <!-- Satellite Health Subsection -->
-            <div class="break-inside-avoid mb-6">
-              <SatelliteHealthPanel :gnssData="gnssData" />
-            </div>
-
-            <!-- Unified RTK Panel with Mode Selection -->
-            <div class="break-inside-avoid mb-6">
-              <RtkPanel :gnssData="gnssData" :dataRates="dataRates" />
-            </div>
-
-            <!-- Position Scatter Plot -->
-            <div class="break-inside-avoid mb-6">
-              <PositionScatterPlot :gnssData="gnssData" />
-            </div>
-
-            <!-- UBX Message Rates Subsection -->
-            <div class="break-inside-avoid mb-6">
-              <MessageRatesPanel :messageRates="messageRates" />
-            </div>
-          </div>
-        </div>
-        </div>
-
-        <!-- Camera Section -->
-        <div v-if="activeSection === 'camera'">
-          <CameraPanel ref="cameraPanelRef" />
-        </div>
-
-        <!-- IMU Section -->
-        <div v-if="activeSection === 'imu'">
-          <ImuPanel :imuData="imuData" :dataRates="dataRates" />
-        </div>
-
-        <!-- Encoder Section -->
-        <div v-if="activeSection === 'encoder'">
-          <EncoderPanel :encoderData="encoderData" />
-        </div>
-
-        <!-- WiFi Section -->
-        <div v-if="activeSection === 'wifi'">
-          <WiFiPanel />
-        </div>
-
-        <!-- Logging Section -->
-        <div v-if="activeSection === 'logging'">
-          <FileLoggingPanel :fileLoggingStatus="fileLoggingStatus" />
-        </div>
-
-        <!-- System Section -->
-        <div v-if="activeSection === 'system'">
-          <SystemPanel :systemHealth="systemHealth" :powerStatus="powerStatus" :dataRates="dataRates" />
-        </div>
+        <router-view />
       </div>
     </Layout>
 

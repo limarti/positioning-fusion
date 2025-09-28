@@ -9,17 +9,11 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['sectionChanged'])
-
 const isMobileMenuOpen = ref(false)
 
 const toggleSidebar = () => {
   // Toggle mobile menu visibility
   isMobileMenuOpen.value = !isMobileMenuOpen.value
-}
-
-const handleSectionChanged = (sectionId) => {
-  emit('sectionChanged', sectionId)
 }
 </script>
 
@@ -29,7 +23,6 @@ const handleSectionChanged = (sectionId) => {
     <Sidebar
       :active-section="activeSection"
       :is-mobile-open="isMobileMenuOpen"
-      @section-changed="handleSectionChanged"
       @toggle-collapse="toggleSidebar"
     />
 

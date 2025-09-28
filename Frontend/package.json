@@ -16,7 +16,8 @@
     "@microsoft/signalr": "^9.0.6",
     "@observablehq/plot": "^0.6.17",
     "d3": "^7.9.0",
-    "vue": "^3.5.18"
+    "vue": "^3.5.18",
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.31.0",
