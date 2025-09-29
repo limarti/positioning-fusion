@@ -263,7 +263,7 @@
     plotContainer.value.appendChild(currentPlot);
   };
 
-  // Watch for new GNSS position data
+  // Watch for new GNSS position data (now includes high-precision when available)
   watch(() => [gnssState.gnssData.latitude, gnssState.gnssData.longitude, gnssState.gnssData.fixType],
         ([lat, lng, fixType]) => 
         {

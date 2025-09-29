@@ -34,6 +34,15 @@ public static class PositionVelocityTimeParser
         var numSV = data[23];
         var lon = BitConverter.ToInt32(data, 24) * 1e-7;
         var lat = BitConverter.ToInt32(data, 28) * 1e-7;
+        
+        // Check for higher precision data from NAV-HPPOSLLH (within last 200ms)
+        var (hpLat, hpLon, hpHeight) = GnssService.GetHighPrecisionPosition(TimeSpan.FromMilliseconds(200));
+        if (hpLat.HasValue && hpLon.HasValue)
+        {
+            lat = hpLat.Value;
+            lon = hpLon.Value;
+            logger.LogDebug("🎯 Using high precision coordinates: Lat = {Lat:F9}°, Lon = {Lon:F9}°", lat, lon);
+        }
         var height = BitConverter.ToInt32(data, 32);
         var hMSL = BitConverter.ToInt32(data, 36);
         var hAcc = BitConverter.ToUInt32(data, 40);
@@ -101,7 +110,7 @@ public static class PositionVelocityTimeParser
             Longitude = lon,
             Latitude = lat,
             HeightEllipsoid = height,
-            HeightMSL = hMSL,
+            HeightMSL = hpHeight.HasValue ? (int)(hpHeight.Value * 1000) : hMSL, // Use HP height if available
             HorizontalAccuracy = hAcc / 1000.0, // Convert mm to meters
             VerticalAccuracy = vAcc / 1000.0, // Convert mm to meters
             CarrierSolution = carrSoln

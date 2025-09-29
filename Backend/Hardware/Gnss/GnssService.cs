@@ -18,6 +18,38 @@ public class GnssService : BackgroundService
     private readonly GnssInitializer _gnssInitializer;
     private readonly DataFileWriter _dataFileWriter;
     private readonly BluetoothStreamingService _bluetoothService;
+    
+    // Unified high-precision position tracking
+    private static double? _lastHighPrecisionLatitude = null;
+    private static double? _lastHighPrecisionLongitude = null;
+    private static double? _lastHighPrecisionHeight = null;
+    private static DateTime _highPrecisionTimestamp = DateTime.MinValue;
+    private static readonly object _positionLock = new object();
+    
+    // Methods to manage high-precision position data
+    public static void UpdateHighPrecisionPosition(double latitude, double longitude, double height)
+    {
+        lock (_positionLock)
+        {
+            _lastHighPrecisionLatitude = latitude;
+            _lastHighPrecisionLongitude = longitude;
+            _lastHighPrecisionHeight = height;
+            _highPrecisionTimestamp = DateTime.UtcNow;
+        }
+    }
+    
+    public static (double? lat, double? lng, double? height) GetHighPrecisionPosition(TimeSpan maxAge)
+    {
+        lock (_positionLock)
+        {
+            if (DateTime.UtcNow - _highPrecisionTimestamp <= maxAge)
+            {
+                return (_lastHighPrecisionLatitude, _lastHighPrecisionLongitude, _lastHighPrecisionHeight);
+            }
+            return (null, null, null);
+        }
+    }
+    
     private LoRaService? _loraService;
     private readonly GeoConfigurationManager _configurationManager;
     private readonly GnssFrameParser _frameParser;
@@ -432,6 +464,10 @@ public class GnssService : BackgroundService
             else if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_RELPOSNED)
             {
                 await RelativePositionParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
+            }
+            else if (messageClass == UbxConstants.CLASS_NAV && messageId == UbxConstants.NAV_HPPOSLLH)
+            {
+                await HighPrecisionPositionParser.ProcessAsync(data, _hubContext, _logger, stoppingToken);
             }
             else if (messageClass == UbxConstants.CLASS_CFG)
             {

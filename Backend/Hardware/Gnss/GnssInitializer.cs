@@ -345,6 +345,7 @@ public class GnssInitializer
 
             // Enable messages at full rate (10Hz) - every navigation solution
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_HPPOSLLH_UART1, 5);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, 5);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SIG_UART1, 5);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, 5);
@@ -354,6 +355,7 @@ public class GnssInitializer
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, 5);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, 5);
             await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_DOP_UART1, 5);
+            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_RELPOSNED_UART1, 5);
 
             if (_configurationManager.OperatingMode == OperatingMode.Send)
             {

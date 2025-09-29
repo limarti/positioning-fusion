@@ -10,7 +10,7 @@
             </div>
             <div class="text-base font-mono text-gray-800">
               {{ gnssState.gnssData.latitude !== null && gnssState.gnssData.longitude !== null
-                ? `${gnssState.gnssData.latitude.toFixed(7)}°, ${gnssState.gnssData.longitude.toFixed(7)}°`
+                ? `${gnssState.gnssData.latitude.toFixed(9)}°, ${gnssState.gnssData.longitude.toFixed(9)}°`
                 : 'Waiting for GNSS fix...' }}
             </div>
             <div v-if="gnssState.gnssData.altitude !== null" class="text-sm text-gray-600 font-mono mt-1">
