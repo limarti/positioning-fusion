@@ -1,4 +1,5 @@
 using System.IO.Ports;
+using System.Threading.Channels;
 
 namespace Backend.Hardware.Common;
 
@@ -29,6 +30,12 @@ public class SerialPortManager : IDisposable
     private CancellationTokenSource? _cancellationTokenSource;
     private bool _disposed = false;
     private bool _isPollingEnabled = true;
+
+    // Producer-Consumer infrastructure
+    private readonly Channel<byte[]> _dataChannel;
+    private readonly ChannelWriter<byte[]> _dataWriter;
+    private readonly ChannelReader<byte[]> _dataReader;
+    private Task? _processingTask;
 
     // Rate tracking
     private long _bytesReceived = 0;
@@ -75,6 +82,11 @@ public class SerialPortManager : IDisposable
         _maxBufferSize = maxBufferSize;
         _rateUpdateIntervalMs = rateUpdateIntervalMs;
         _logger = logger;
+
+        // Initialize producer-consumer channel
+        _dataChannel = Channel.CreateUnbounded<byte[]>();
+        _dataWriter = _dataChannel.Writer;
+        _dataReader = _dataChannel.Reader;
     }
 
     /// <summary>
@@ -131,11 +143,12 @@ public class SerialPortManager : IDisposable
         // Subscribe to DataReceived event
         _serialPort.DataReceived += OnDataReceived;
 
-        // Start rate monitoring and event watchdog
+        // Start processing loop, rate monitoring and event watchdog
+        _processingTask = Task.Run(() => ProcessingLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
         _ = Task.Run(() => RateUpdateLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
         ResetEventWatchdog();
 
-        _logger.LogInformation("Event-driven watchdog setup completed for {DeviceName}", _deviceName);
+        _logger.LogInformation("Producer-Consumer pattern and event-driven watchdog setup completed for {DeviceName}", _deviceName);
     }
 
     /// <summary>
@@ -155,14 +168,35 @@ public class SerialPortManager : IDisposable
         }
     }
 
-    private async void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
+    private void OnDataReceived(object sender, SerialDataReceivedEventArgs e)
     {
         try
         {
-            await ReadAndProcessDataAsync(fromPolling: false);
+            // Lightweight producer - just read and queue data
+            if (_serialPort?.IsOpen == true && _serialPort.BytesToRead > 0)
+            {
+                var bytesToRead = Math.Min(_serialPort.BytesToRead, _readBufferSize);
+                var buffer = new byte[bytesToRead];
+                var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
 
-            // Reset the watchdog - events are working
-            ResetEventWatchdog();
+                if (bytesRead > 0)
+                {
+                    // Non-blocking queue to processing thread
+                    var data = bytesRead == buffer.Length ? buffer : buffer[..bytesRead];
+                    if (_dataWriter.TryWrite(data))
+                    {
+                        _bytesReceived += bytesRead;
+
+                        // Reset the watchdog - events are working
+                        ResetEventWatchdog();
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Failed to queue {BytesRead} bytes - channel may be closed for {DeviceName}",
+                            bytesRead, _deviceName);
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -219,6 +253,8 @@ public class SerialPortManager : IDisposable
     private async Task AggressivePollingLoop(CancellationToken stoppingToken)
     {
         _logger.LogInformation("🔄 Starting aggressive polling for {DeviceName}", _deviceName);
+        int consecutiveEmptyReads = 0;
+        const int emptyReadsBeforeEventTest = 3; // Test events after 3 empty cycles
 
         while (!_eventsAreHealthy && _serialPort?.IsOpen == true && !stoppingToken.IsCancellationRequested)
         {
@@ -226,21 +262,60 @@ public class SerialPortManager : IDisposable
             {
                 if (_serialPort.BytesToRead > 0)
                 {
-                    await ReadAndProcessDataAsync(fromPolling: true);
+                    // Data available - read and queue using producer pattern
+                    var bytesToRead = Math.Min(_serialPort.BytesToRead, _readBufferSize);
+                    var buffer = new byte[bytesToRead];
+                    var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
 
-                    // Check if events have resumed by setting a watchdog
-                    ResetEventWatchdog();
-                    await Task.Delay(_pollingIntervalMs, stoppingToken); // Give events a chance to resume
+                    if (bytesRead > 0)
+                    {
+                        var data = bytesRead == buffer.Length ? buffer : buffer[..bytesRead];
+                        if (_dataWriter.TryWrite(data))
+                        {
+                            _bytesReceived += bytesRead;
+                            consecutiveEmptyReads = 0; // Reset counter since we found data
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Failed to queue {BytesRead} bytes during aggressive polling - channel may be closed for {DeviceName}",
+                                bytesRead, _deviceName);
+                        }
+                    }
+
+                    // Continue polling immediately to catch any new data
+                    continue;
                 }
                 else
                 {
-                    await Task.Delay(_pollingIntervalMs, stoppingToken);
+                    consecutiveEmptyReads++;
+
+                    if (consecutiveEmptyReads >= emptyReadsBeforeEventTest)
+                    {
+                        // No data for several cycles - test if events have resumed
+                        _logger.LogDebug("🔄 Testing event recovery for {DeviceName} after {EmptyReads} empty cycles",
+                            _deviceName, consecutiveEmptyReads);
+
+                        ResetEventWatchdog(); // This sets _eventsAreHealthy = true and starts watchdog
+
+                        // Give events a chance to prove they're working
+                        await Task.Delay(_pollingIntervalMs, stoppingToken);
+
+                        // If watchdog timer expires again, _eventsAreHealthy will be set to false
+                        // and we'll continue this loop. If events work, this loop will exit.
+                        consecutiveEmptyReads = 0;
+                    }
+                    else
+                    {
+                        // Continue aggressive polling - don't wait full interval for first few empty reads
+                        await Task.Delay(_pollingIntervalMs / 2, stoppingToken);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in aggressive polling loop for {DeviceName}", _deviceName);
                 await Task.Delay(_pollingIntervalMs, stoppingToken);
+                consecutiveEmptyReads = 0; // Reset on error
             }
         }
 
@@ -250,58 +325,6 @@ public class SerialPortManager : IDisposable
         }
     }
 
-    private async Task ReadAndProcessDataAsync(bool fromPolling = false)
-    {
-        if (_serialPort == null || !_serialPort.IsOpen)
-            return;
-
-        try
-        {
-            // Smart burst reading - keep reading while data is available
-            bool dataRead = false;
-            int totalBytesRead = 0;
-
-            while (_serialPort.BytesToRead > 0)
-            {
-                var bytesToRead = Math.Min(_serialPort.BytesToRead, _readBufferSize);
-                var buffer = new byte[bytesToRead];
-                var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
-
-                if (bytesRead == 0)
-                    break;
-
-                dataRead = true;
-                totalBytesRead += bytesRead;
-                _bytesReceived += bytesRead;
-
-                lock (_dataBufferLock)
-                {
-                    for (int i = 0; i < bytesRead; i++)
-                    {
-                        _dataBuffer.Add(buffer[i]);
-                    }
-                }
-
-                if (bytesRead < bytesToRead)
-                    break;
-            }
-
-            if (dataRead)
-            {
-                if (fromPolling)
-                {
-                    _logger.LogInformation("📥 BACKUP POLL ({DeviceName}): Read {BytesRead} bytes in burst mode",
-                        _deviceName, totalBytesRead);
-                }
-
-                await ProcessBufferedDataAsync();
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error reading data for {DeviceName}", _deviceName);
-        }
-    }
 
     private async Task ProcessBufferedDataAsync()
     {
@@ -349,6 +372,45 @@ public class SerialPortManager : IDisposable
 
             processed++;
         }
+    }
+
+    private async Task ProcessingLoop(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("🔄 Producer-Consumer processing loop started for {DeviceName}", _deviceName);
+
+        try
+        {
+            await foreach (var data in _dataReader.ReadAllAsync(stoppingToken))
+            {
+                try
+                {
+
+                    // Add data to the existing buffer system for frame parsing
+                    lock (_dataBufferLock)
+                    {
+                        _dataBuffer.AddRange(data);
+                    }
+
+                    // Process the buffered data using existing logic
+                    await ProcessBufferedDataAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing data batch in consumer for {DeviceName}", _deviceName);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown
+            _logger.LogInformation("Processing loop cancelled for {DeviceName}", _deviceName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fatal error in processing loop for {DeviceName}", _deviceName);
+        }
+
+        _logger.LogInformation("🔄 Producer-Consumer processing loop stopped for {DeviceName}", _deviceName);
     }
 
     private async Task RateUpdateLoop(CancellationToken stoppingToken)
@@ -406,9 +468,31 @@ public class SerialPortManager : IDisposable
         _eventWatchdogTimer = null;
         _eventsAreHealthy = false;
 
+        // Close the channel to signal processing loop to stop
+        _dataWriter.Complete();
+
         _cancellationTokenSource?.Cancel();
 
-        // Give background tasks time to complete
+        // Wait for processing task to complete
+        if (_processingTask != null)
+        {
+            try
+            {
+                await _processingTask.WaitAsync(TimeSpan.FromSeconds(5));
+                _logger.LogInformation("Processing task completed for {DeviceName}", _deviceName);
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("Processing task did not complete within timeout for {DeviceName}", _deviceName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error waiting for processing task to complete for {DeviceName}", _deviceName);
+            }
+            _processingTask = null;
+        }
+
+        // Give remaining background tasks time to complete
         await Task.Delay(200);
 
         _cancellationTokenSource?.Dispose();
@@ -501,6 +585,9 @@ public class SerialPortManager : IDisposable
         // Dispose the event watchdog timer
         _eventWatchdogTimer?.Dispose();
         _eventWatchdogTimer = null;
+
+        // Close the channel
+        _dataWriter.Complete();
 
         _cancellationTokenSource?.Cancel();
         _cancellationTokenSource?.Dispose();
