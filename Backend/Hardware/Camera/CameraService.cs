@@ -49,6 +49,9 @@ public class CameraService : BackgroundService, IDisposable
     private DateTime _lastConnectionAttempt = DateTime.MinValue;
     private bool _frameHeaderWritten = false;
 
+    public bool IsAvailable => _connectionState == CameraConnectionState.Connected ||
+                               _connectionState == CameraConnectionState.Recording;
+
     public CameraService(
         IHubContext<DataHub> hubContext,
         ILogger<CameraService> logger,

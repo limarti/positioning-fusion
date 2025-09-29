@@ -8,10 +8,12 @@ public class ImuInitializer
     private readonly ILogger<ImuInitializer> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private SerialPortManager? _serialPortManager;
-    
+
     private const string DefaultPortName = "/dev/ttyAMA2";
     private const int DefaultBaudRate = 115200;
     private const int InitializationTimeoutMs = 3000;  // 3-second check for IMU data
+
+    public bool IsInitialized { get; private set; } = false;
 
     public ImuInitializer(ILogger<ImuInitializer> logger, ILoggerFactory loggerFactory)
     {
@@ -49,6 +51,7 @@ public class ImuInitializer
             if (await VerifyImuCommunicationAsync())
             {
                 _logger.LogInformation("IM19 IMU initialized successfully - data received within 3 seconds, keeping SerialPortManager ready");
+                IsInitialized = true;
                 return true;
             }
             else
@@ -56,6 +59,7 @@ public class ImuInitializer
                 _logger.LogWarning("IM19 IMU not detected - no data received within 3 seconds, disposing resources");
                 _serialPortManager?.Dispose();
                 _serialPortManager = null;
+                IsInitialized = false;
                 return false;
             }
         }
@@ -64,6 +68,7 @@ public class ImuInitializer
             _logger.LogError(ex, "Failed to initialize IM19 IMU on port {PortName}", portName);
             _serialPortManager?.Dispose();
             _serialPortManager = null;
+            IsInitialized = false;
             return false;
         }
     }

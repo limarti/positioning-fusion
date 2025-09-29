@@ -15,13 +15,26 @@ public class DataHub : Hub
     private readonly ModeManagementService _modeManagementService;
     private readonly WiFiService _wifiService;
     private readonly SystemMonitoringService _systemMonitoringService;
+    private readonly ImuInitializer _imuInitializer;
+    private readonly GnssInitializer _gnssInitializer;
+    private readonly CameraService _cameraService;
     private readonly ILogger<DataHub> _logger;
 
-    public DataHub(ModeManagementService modeManagementService, WiFiService wifiService, SystemMonitoringService systemMonitoringService, ILogger<DataHub> logger)
+    public DataHub(
+        ModeManagementService modeManagementService,
+        WiFiService wifiService,
+        SystemMonitoringService systemMonitoringService,
+        ImuInitializer imuInitializer,
+        GnssInitializer gnssInitializer,
+        CameraService cameraService,
+        ILogger<DataHub> logger)
     {
         _modeManagementService = modeManagementService;
         _wifiService = wifiService;
         _systemMonitoringService = systemMonitoringService;
+        _imuInitializer = imuInitializer;
+        _gnssInitializer = gnssInitializer;
+        _cameraService = cameraService;
         _logger = logger;
     }
     public async Task SendImuUpdate(ImuData imuData)
@@ -307,6 +320,43 @@ public class DataHub : Hub
                 Success = false,
                 Message = $"An error occurred while updating hostname: {ex.Message}",
                 CurrentHostname = await _systemMonitoringService.GetCurrentHostnameAsync()
+            };
+        }
+    }
+
+    public async Task<HardwareStatusUpdate> GetHardwareStatus()
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogDebug("GetHardwareStatus called by client: {ConnectionId}", connectionId);
+
+        try
+        {
+            var gnssStatus = _gnssInitializer.IsInitialized;
+            var imuStatus = _imuInitializer.IsInitialized;
+            var cameraStatus = _cameraService.IsAvailable;
+
+            _logger.LogInformation("Hardware status check - GNSS: {Gnss}, IMU: {Imu}, Camera: {Camera}",
+                gnssStatus, imuStatus, cameraStatus);
+
+            var status = new HardwareStatusUpdate
+            {
+                GnssAvailable = gnssStatus,
+                ImuAvailable = imuStatus,
+                CameraAvailable = cameraStatus,
+                EncoderAvailable = false // Always disabled for now
+            };
+
+            return status;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception getting hardware status for client: {ConnectionId}", connectionId);
+            return new HardwareStatusUpdate
+            {
+                GnssAvailable = false,
+                ImuAvailable = false,
+                CameraAvailable = false,
+                EncoderAvailable = false
             };
         }
     }

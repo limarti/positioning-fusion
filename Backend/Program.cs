@@ -75,7 +75,8 @@ builder.Services.AddSingleton<GnssInitializer>();
 builder.Services.AddHostedService<GnssService>();
 
 // Add Camera services
-builder.Services.AddHostedService<CameraService>();
+builder.Services.AddSingleton<CameraService>();
+builder.Services.AddHostedService<CameraService>(provider => provider.GetRequiredService<CameraService>());
 
 // Add Bluetooth services
 builder.Services.AddHostedService<BluetoothStreamingService>();

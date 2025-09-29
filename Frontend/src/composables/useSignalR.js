@@ -3,6 +3,7 @@ import { HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
 import { registerGnssEvents } from './useGnssData';
 import { registerSystemEvents } from './useSystemData';
 import { registerConnectionEvents } from './useConnectionData';
+import { useHardwareStatus } from './useHardwareStatus';
 
 // SignalR connection state
 let connection = null;
@@ -156,7 +157,7 @@ const initializeConnection = async () =>
     console.log("SignalR Connected successfully!");
 
     // Get initial mode
-    try 
+    try
     {
       console.log('Requesting initial mode from server...');
       const initialMode = await connection.invoke('GetCurrentMode');
@@ -164,10 +165,14 @@ const initializeConnection = async () =>
       currentMode.value = initialMode;
       console.log(`Current mode state updated to: ${currentMode.value}`);
     }
-    catch (error) 
+    catch (error)
     {
       console.error('Failed to get initial mode:', error);
     }
+
+    // Get hardware status
+    const { fetchHardwareStatus } = useHardwareStatus();
+    await fetchHardwareStatus(connection);
 
     updateConnectionStatus();
   }

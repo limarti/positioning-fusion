@@ -27,3 +27,11 @@ public class HostnameUpdateResponse
     public string Message { get; set; } = string.Empty;
     public string CurrentHostname { get; set; } = string.Empty;
 }
+
+public class HardwareStatusUpdate
+{
+    public bool GnssAvailable { get; set; }
+    public bool ImuAvailable { get; set; }
+    public bool CameraAvailable { get; set; }
+    public bool EncoderAvailable { get; set; }
+}

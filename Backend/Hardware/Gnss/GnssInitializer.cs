@@ -22,6 +22,8 @@ public class GnssInitializer
     // Shared lock for coordinating serial port access between GnssService and GnssInitializer
     private static readonly SemaphoreSlim _serialPortLock = new SemaphoreSlim(1, 1);
 
+    public bool IsInitialized { get; private set; } = false;
+
     private const string DefaultPortName = "/dev/ttyAMA0";
     private const Parity DefaultParity = Parity.None;
     private const int DefaultDataBits = 8;
@@ -76,6 +78,7 @@ public class GnssInitializer
                     // Configure GNSS for satellite data output
                     await ConfigureForSatelliteDataAsync();
 
+                    IsInitialized = true;
                     return true;
                 }
 
@@ -97,6 +100,7 @@ public class GnssInitializer
 
         _logger.LogError("Failed to initialize GNSS on port {PortName} after {MaxRetries} attempts - no valid baud rate found",
             portName, maxRetries);
+        IsInitialized = false;
         return false;
     }
 

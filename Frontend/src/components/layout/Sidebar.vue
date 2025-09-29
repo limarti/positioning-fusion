@@ -38,12 +38,14 @@
       <!-- Camera -->
       <router-link to="/camera"
                    :class="[
-                     'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
+                     'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+                     !hardwareStatus.cameraAvailable ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer',
                      route.name === 'camera'
                        ? 'bg-blue-600 text-white shadow-lg'
                        : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                    ]"
-                   @click="closeMobileMenu">
+                   @click="closeMobileMenu"
+                   :style="{ pointerEvents: hardwareStatus.cameraAvailable ? 'auto' : 'none' }">
         <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
         </svg>
@@ -53,12 +55,14 @@
       <!-- IMU -->
       <router-link to="/imu"
                    :class="[
-                     'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
+                     'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+                     !hardwareStatus.imuAvailable ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer',
                      route.name === 'imu'
                        ? 'bg-blue-600 text-white shadow-lg'
                        : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                    ]"
-                   @click="closeMobileMenu">
+                   @click="closeMobileMenu"
+                   :style="{ pointerEvents: hardwareStatus.imuAvailable ? 'auto' : 'none' }">
         <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
         </svg>
@@ -68,12 +72,14 @@
       <!-- Encoder -->
       <router-link to="/encoder"
                    :class="[
-                     'w-full flex items-center p-3 rounded-lg transition-all duration-200 cursor-pointer',
+                     'w-full flex items-center p-3 rounded-lg transition-all duration-200',
+                     !hardwareStatus.encoderAvailable ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'cursor-pointer',
                      route.name === 'encoder'
                        ? 'bg-blue-600 text-white shadow-lg'
                        : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                    ]"
-                   @click="closeMobileMenu">
+                   @click="closeMobileMenu"
+                   :style="{ pointerEvents: hardwareStatus.encoderAvailable ? 'auto' : 'none' }">
         <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="transform: rotate(30deg)">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5.636 5.636a9 9 0 1 0 12.728 0M12 3v9" />
         </svg>
@@ -131,6 +137,7 @@
 <script setup>
   import { defineProps, defineEmits } from 'vue';
   import { useRoute } from 'vue-router';
+  import { useHardwareStatus } from '../../composables/useHardwareStatus';
 
   const props = defineProps({
     activeSection: {
@@ -145,11 +152,12 @@
 
   const emit = defineEmits(['toggleCollapse']);
   const route = useRoute();
+  const { hardwareStatus } = useHardwareStatus();
 
-  const closeMobileMenu = () => 
+  const closeMobileMenu = () =>
   {
     // Close mobile menu when section is selected
-    if (props.isMobileOpen) 
+    if (props.isMobileOpen)
     {
       emit('toggleCollapse');
     }
