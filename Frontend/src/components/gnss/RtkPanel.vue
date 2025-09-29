@@ -76,25 +76,13 @@
         </div>
       </div>
 
-      <!-- Rover-Specific Data -->
-      <div v-if="gnssState.gnssData.corrections.mode === 'Receive'" class="border-t border-gray-200 pt-4 space-y-4">
-        <div class="flex justify-between py-1">
-          <span class="text-sm text-gray-600">Baseline Distance:</span>
-          <span class="text-sm font-medium" :class="gnssState.gnssData.rtk.baselineLength !== null ? 'text-gray-800' : 'text-slate-400'">{{ gnssState.gnssData.rtk.baselineLength !== null ? gnssState.gnssData.rtk.baselineLength.toFixed(0) + 'm' : '—' }}</span>
-        </div>
+      <!-- Correction Information (Both Modes) -->
+      <div class="border-t border-gray-200 pt-4 space-y-4">
         <div class="space-y-2">
-          <div class="flex justify-between py-1">
-            <span class="text-sm text-gray-600">Solution Confidence:</span>
-            <span class="text-sm font-medium" :class="gnssState.gnssData.rtk.arRatio !== null ? 'text-gray-800' : 'text-slate-400'">{{ gnssState.gnssData.rtk.arRatio !== null ? gnssState.gnssData.rtk.arRatio.toFixed(1) : '—' }}</span>
-          </div>
           <div class="flex justify-between py-1">
             <span class="text-sm text-gray-600">Correction Age:</span>
             <span class="text-sm font-medium" :class="getCorrectionAgeClass()">{{ formatCorrectionAge() }}</span>
           </div>
-        </div>
-
-        <!-- Enhanced Correction Status -->
-        <div class="space-y-2">
           <div class="flex justify-between py-1">
             <span class="text-sm text-gray-600">Correction Source:</span>
             <div class="flex items-center space-x-2">
@@ -114,6 +102,18 @@
               {{ gnssState.gnssData.corrections.status.status }}
             </span>
           </div>
+        </div>
+      </div>
+
+      <!-- RTK-Specific Data (Rover Mode Only) -->
+      <div v-if="gnssState.gnssData.corrections.mode === 'Receive'" class="border-t border-gray-200 pt-4 space-y-4">
+        <div class="flex justify-between py-1">
+          <span class="text-sm text-gray-600">Baseline Distance:</span>
+          <span class="text-sm font-medium" :class="gnssState.gnssData.rtk.baselineLength !== null ? 'text-gray-800' : 'text-slate-400'">{{ gnssState.gnssData.rtk.baselineLength !== null ? gnssState.gnssData.rtk.baselineLength.toFixed(0) + 'm' : '—' }}</span>
+        </div>
+        <div class="flex justify-between py-1">
+          <span class="text-sm text-gray-600">Solution Confidence:</span>
+          <span class="text-sm font-medium" :class="gnssState.gnssData.rtk.arRatio !== null ? 'text-gray-800' : 'text-slate-400'">{{ gnssState.gnssData.rtk.arRatio !== null ? gnssState.gnssData.rtk.arRatio.toFixed(1) : '—' }}</span>
         </div>
       </div>
 
