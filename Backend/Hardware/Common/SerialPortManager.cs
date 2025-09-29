@@ -3,8 +3,9 @@ using System.IO.Ports;
 namespace Backend.Hardware.Common;
 
 /// <summary>
-/// Manages serial port communication with event-driven approach and backup polling fallback.
+/// Manages serial port communication with event-driven approach and watchdog-triggered polling fallback.
 /// Provides reliable data collection with configurable buffer management and rate tracking.
+/// Uses zero-CPU polling when events work, switches to aggressive polling when events fail.
 /// </summary>
 public class SerialPortManager : IDisposable
 {
@@ -22,9 +23,9 @@ public class SerialPortManager : IDisposable
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
-    private readonly object _timeLock = new();
     private readonly object _pollingLock = new();
-    private DateTime _lastEventTime = DateTime.UtcNow;
+    private Timer? _eventWatchdogTimer;
+    private volatile bool _eventsAreHealthy = true;
     private CancellationTokenSource? _cancellationTokenSource;
     private bool _disposed = false;
     private bool _isPollingEnabled = true;
@@ -130,15 +131,16 @@ public class SerialPortManager : IDisposable
         // Subscribe to DataReceived event
         _serialPort.DataReceived += OnDataReceived;
 
-        // Start backup polling and rate monitoring
-        _ = Task.Run(() => BackupPollingLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+        // Start rate monitoring and event watchdog
         _ = Task.Run(() => RateUpdateLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+        ResetEventWatchdog();
 
-        _logger.LogInformation("Event + backup polling setup completed for {DeviceName}", _deviceName);
+        _logger.LogInformation("Event-driven watchdog setup completed for {DeviceName}", _deviceName);
     }
 
     /// <summary>
-    /// Enables or disables backup polling. Events will still work when polling is disabled.
+    /// Enables or disables watchdog-triggered polling. Events will still work when polling is disabled.
+    /// When disabled, the watchdog timer still runs but won't trigger aggressive polling on timeout.
     /// </summary>
     public void SetPollingEnabled(bool enabled)
     {
@@ -157,12 +159,10 @@ public class SerialPortManager : IDisposable
     {
         try
         {
-            lock (_timeLock)
-            {
-                _lastEventTime = DateTime.UtcNow;
-            }
-
             await ReadAndProcessDataAsync(fromPolling: false);
+
+            // Reset the watchdog - events are working
+            ResetEventWatchdog();
         }
         catch (Exception ex)
         {
@@ -170,54 +170,83 @@ public class SerialPortManager : IDisposable
         }
     }
 
-    private async Task BackupPollingLoop(CancellationToken stoppingToken)
+    private void ResetEventWatchdog()
     {
-        _logger.LogInformation("Backup polling started for {DeviceName} (triggers if events fail)", _deviceName);
+        if (_disposed) return;
 
-        while (!stoppingToken.IsCancellationRequested)
+        _eventsAreHealthy = true;
+
+        // Cancel any existing timer and start a new one
+        _eventWatchdogTimer?.Dispose();
+        _eventWatchdogTimer = new Timer(OnEventWatchdogTimeout, null, _pollingIntervalMs, Timeout.Infinite);
+    }
+
+    private async void OnEventWatchdogTimeout(object? state)
+    {
+        try
+        {
+            // Timer expired - events might have failed
+            if (_serialPort?.IsOpen == true && _serialPort.BytesToRead > 0)
+            {
+                bool pollingEnabled;
+                lock (_pollingLock)
+                {
+                    pollingEnabled = _isPollingEnabled;
+                }
+
+                if (pollingEnabled)
+                {
+                    _logger.LogInformation("🔍 EVENT WATCHDOG ({DeviceName}): Events failed, switching to polling mode. Found {BytesToRead} bytes",
+                        _deviceName, _serialPort.BytesToRead);
+                    _eventsAreHealthy = false;
+
+                    // Start aggressive polling until events resume
+                    _ = Task.Run(() => AggressivePollingLoop(_cancellationTokenSource?.Token ?? CancellationToken.None));
+                }
+            }
+            else if (_serialPort?.IsOpen == true)
+            {
+                // No data available, just reset watchdog for next check
+                ResetEventWatchdog();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in event watchdog timeout for {DeviceName}", _deviceName);
+        }
+    }
+
+    private async Task AggressivePollingLoop(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("🔄 Starting aggressive polling for {DeviceName}", _deviceName);
+
+        while (!_eventsAreHealthy && _serialPort?.IsOpen == true && !stoppingToken.IsCancellationRequested)
         {
             try
             {
-                if (_serialPort != null && _serialPort.IsOpen)
+                if (_serialPort.BytesToRead > 0)
                 {
-                    // Check if polling is enabled
-                    bool pollingEnabled;
-                    lock (_pollingLock)
-                    {
-                        pollingEnabled = _isPollingEnabled;
-                    }
+                    await ReadAndProcessDataAsync(fromPolling: true);
 
-                    if (pollingEnabled)
-                    {
-                        var now = DateTime.UtcNow;
-                        DateTime lastEvent;
-
-                        lock (_timeLock)
-                        {
-                            lastEvent = _lastEventTime;
-                        }
-
-                        var timeSinceLastEvent = now - lastEvent;
-
-                        // Simple logic: if data available and no event within configured interval, poll immediately
-                        var bytesToRead = _serialPort.BytesToRead;
-                        if (bytesToRead > 0 && timeSinceLastEvent.TotalMilliseconds >= _pollingIntervalMs)
-                        {
-                            _logger.LogInformation("🔍 BACKUP POLL ({DeviceName}): Events stopped working! Found {BytesToRead} bytes after {TimeSinceEvent:F1}ms without events",
-                                _deviceName, bytesToRead, timeSinceLastEvent.TotalMilliseconds);
-
-                            await ReadAndProcessDataAsync(fromPolling: true);
-                        }
-                    }
+                    // Check if events have resumed by setting a watchdog
+                    ResetEventWatchdog();
+                    await Task.Delay(_pollingIntervalMs, stoppingToken); // Give events a chance to resume
                 }
-
-                await Task.Delay(_pollingIntervalMs, stoppingToken);
+                else
+                {
+                    await Task.Delay(_pollingIntervalMs, stoppingToken);
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in backup polling loop for {DeviceName}", _deviceName);
+                _logger.LogError(ex, "Error in aggressive polling loop for {DeviceName}", _deviceName);
                 await Task.Delay(_pollingIntervalMs, stoppingToken);
             }
+        }
+
+        if (_eventsAreHealthy)
+        {
+            _logger.LogInformation("✅ Events resumed for {DeviceName}, stopping aggressive polling", _deviceName);
         }
     }
 
@@ -372,6 +401,11 @@ public class SerialPortManager : IDisposable
             _serialPort.DataReceived -= OnDataReceived;
         }
 
+        // Stop the event watchdog timer
+        _eventWatchdogTimer?.Dispose();
+        _eventWatchdogTimer = null;
+        _eventsAreHealthy = false;
+
         _cancellationTokenSource?.Cancel();
 
         // Give background tasks time to complete
@@ -463,6 +497,10 @@ public class SerialPortManager : IDisposable
         {
             _serialPort.DataReceived -= OnDataReceived;
         }
+
+        // Dispose the event watchdog timer
+        _eventWatchdogTimer?.Dispose();
+        _eventWatchdogTimer = null;
 
         _cancellationTokenSource?.Cancel();
         _cancellationTokenSource?.Dispose();

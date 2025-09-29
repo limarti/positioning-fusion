@@ -89,7 +89,7 @@ public class GnssService : BackgroundService
             "", // portName will be set later by initializer
             0, // baudRate will be set later by initializer
             loggerFactory.CreateLogger<SerialPortManager>(),
-            100, // pollingIntervalMs
+            40, // pollingIntervalMs
             4096, // readBufferSize
             1048576 // maxBufferSize (1MB)
             // Using defaults for rateUpdateIntervalMs (1000), parity (None), dataBits (8), stopBits (One)
