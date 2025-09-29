@@ -430,9 +430,26 @@ public class GnssService : BackgroundService
     {
         try
         {
+            // Validate minimum message length
+            if (completeMessage.Length < 8) // minimum: sync(2) + class(1) + id(1) + length(2) + checksum(2)
+            {
+                _logger.LogWarning("⚠️ UBX message too short: {Length} bytes", completeMessage.Length);
+                return;
+            }
+
             var messageClass = completeMessage[2];
             var messageId = completeMessage[3];
             var length = (ushort)(completeMessage[4] | (completeMessage[5] << 8));
+            
+            // Validate message has enough bytes for header + payload + checksum
+            var expectedTotalLength = 6 + length + 2; // header(6) + payload(length) + checksum(2)
+            if (completeMessage.Length < expectedTotalLength)
+            {
+                _logger.LogError("⚠️ UBX message length mismatch: Class=0x{Class:X2}, ID=0x{Id:X2}, Expected={Expected}, Actual={Actual}", 
+                    messageClass, messageId, expectedTotalLength, completeMessage.Length);
+                return;
+            }
+
             var data = completeMessage.AsSpan(6, length).ToArray();
 
             _logger.LogDebug("Processing UBX message: Class=0x{Class:X2}, ID=0x{Id:X2}, Length={Length}",
