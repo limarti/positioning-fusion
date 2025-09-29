@@ -25,8 +25,10 @@ public class SerialPortManager : IDisposable
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
     private readonly object _pollingLock = new();
+    private readonly object _watchdogLock = new();
     private Timer? _eventWatchdogTimer;
-    private volatile bool _eventsAreHealthy = true;
+    private bool _eventsAreHealthy = true;
+    private bool _aggressivePollingRunning = false;
     private CancellationTokenSource? _cancellationTokenSource;
     private bool _disposed = false;
     private bool _isPollingEnabled = true;
@@ -208,11 +210,14 @@ public class SerialPortManager : IDisposable
     {
         if (_disposed) return;
 
-        _eventsAreHealthy = true;
+        lock (_watchdogLock)
+        {
+            _eventsAreHealthy = true;
 
-        // Cancel any existing timer and start a new one
-        _eventWatchdogTimer?.Dispose();
-        _eventWatchdogTimer = new Timer(OnEventWatchdogTimeout, null, _pollingIntervalMs, Timeout.Infinite);
+            // Cancel any existing timer and start a new one
+            _eventWatchdogTimer?.Dispose();
+            _eventWatchdogTimer = new Timer(OnEventWatchdogTimeout, null, _pollingIntervalMs, Timeout.Infinite);
+        }
     }
 
     private async void OnEventWatchdogTimeout(object? state)
@@ -223,6 +228,8 @@ public class SerialPortManager : IDisposable
             if (_serialPort?.IsOpen == true && _serialPort.BytesToRead > 0)
             {
                 bool pollingEnabled;
+                bool shouldStartPolling = false;
+
                 lock (_pollingLock)
                 {
                     pollingEnabled = _isPollingEnabled;
@@ -230,17 +237,29 @@ public class SerialPortManager : IDisposable
 
                 if (pollingEnabled)
                 {
-                    _logger.LogInformation("🔍 EVENT WATCHDOG ({DeviceName}): Events failed, switching to polling mode. Found {BytesToRead} bytes",
-                        _deviceName, _serialPort.BytesToRead);
-                    _eventsAreHealthy = false;
+                    lock (_watchdogLock)
+                    {
+                        if (!_aggressivePollingRunning)
+                        {
+                            _logger.LogInformation("🔍 EVENT WATCHDOG ({DeviceName}): Events failed, switching to polling mode. Found {BytesToRead} bytes",
+                                _deviceName, _serialPort.BytesToRead);
+                            _eventsAreHealthy = false;
+                            _aggressivePollingRunning = true;
+                            shouldStartPolling = true;
+                        }
+                    }
 
-                    // Start aggressive polling until events resume
-                    _ = Task.Run(() => AggressivePollingLoop(_cancellationTokenSource?.Token ?? CancellationToken.None));
+                    if (shouldStartPolling)
+                    {
+                        // Start aggressive polling until events resume
+                        _ = Task.Run(() => AggressivePollingLoop(_cancellationTokenSource?.Token ?? CancellationToken.None));
+                    }
                 }
             }
-            else if (_serialPort?.IsOpen == true)
+
+            // Always restart watchdog for next check if port is still open
+            if (_serialPort?.IsOpen == true)
             {
-                // No data available, just reset watchdog for next check
                 ResetEventWatchdog();
             }
         }
@@ -256,72 +275,94 @@ public class SerialPortManager : IDisposable
         int consecutiveEmptyReads = 0;
         const int emptyReadsBeforeEventTest = 3; // Test events after 3 empty cycles
 
-        while (!_eventsAreHealthy && _serialPort?.IsOpen == true && !stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            bool shouldContinue = true;
+            lock (_watchdogLock)
             {
-                if (_serialPort.BytesToRead > 0)
+                shouldContinue = !_eventsAreHealthy;
+            }
+
+            while (shouldContinue && _serialPort?.IsOpen == true && !stoppingToken.IsCancellationRequested)
+            {
+                try
                 {
-                    // Data available - read and queue using producer pattern
-                    var bytesToRead = Math.Min(_serialPort.BytesToRead, _readBufferSize);
-                    var buffer = new byte[bytesToRead];
-                    var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
-
-                    if (bytesRead > 0)
+                    if (_serialPort.BytesToRead > 0)
                     {
-                        var data = bytesRead == buffer.Length ? buffer : buffer[..bytesRead];
-                        if (_dataWriter.TryWrite(data))
+                        // Data available - read and queue using producer pattern
+                        var bytesToRead = Math.Min(_serialPort.BytesToRead, _readBufferSize);
+                        var buffer = new byte[bytesToRead];
+                        var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
+
+                        if (bytesRead > 0)
                         {
-                            _bytesReceived += bytesRead;
-                            consecutiveEmptyReads = 0; // Reset counter since we found data
+                            var data = bytesRead == buffer.Length ? buffer : buffer[..bytesRead];
+                            if (_dataWriter.TryWrite(data))
+                            {
+                                _bytesReceived += bytesRead;
+                                consecutiveEmptyReads = 0; // Reset counter since we found data
+                            }
+                            else
+                            {
+                                _logger.LogWarning("Failed to queue {BytesRead} bytes during aggressive polling - channel may be closed for {DeviceName}",
+                                    bytesRead, _deviceName);
+                            }
                         }
-                        else
-                        {
-                            _logger.LogWarning("Failed to queue {BytesRead} bytes during aggressive polling - channel may be closed for {DeviceName}",
-                                bytesRead, _deviceName);
-                        }
-                    }
 
-                    // Continue polling immediately to catch any new data
-                    continue;
-                }
-                else
-                {
-                    consecutiveEmptyReads++;
-
-                    if (consecutiveEmptyReads >= emptyReadsBeforeEventTest)
-                    {
-                        // No data for several cycles - test if events have resumed
-                        _logger.LogDebug("🔄 Testing event recovery for {DeviceName} after {EmptyReads} empty cycles",
-                            _deviceName, consecutiveEmptyReads);
-
-                        ResetEventWatchdog(); // This sets _eventsAreHealthy = true and starts watchdog
-
-                        // Give events a chance to prove they're working
-                        await Task.Delay(_pollingIntervalMs, stoppingToken);
-
-                        // If watchdog timer expires again, _eventsAreHealthy will be set to false
-                        // and we'll continue this loop. If events work, this loop will exit.
-                        consecutiveEmptyReads = 0;
+                        // Continue polling immediately to catch any new data
+                        continue;
                     }
                     else
                     {
-                        // Continue aggressive polling - don't wait full interval for first few empty reads
-                        await Task.Delay(_pollingIntervalMs / 2, stoppingToken);
+                        consecutiveEmptyReads++;
+
+                        if (consecutiveEmptyReads >= emptyReadsBeforeEventTest)
+                        {
+                            // No data for several cycles - test if events have resumed
+                            _logger.LogDebug("🔄 Testing event recovery for {DeviceName} after {EmptyReads} empty cycles",
+                                _deviceName, consecutiveEmptyReads);
+
+                            ResetEventWatchdog(); // This sets _eventsAreHealthy = true and starts watchdog
+
+                            // Give events a chance to prove they're working
+                            await Task.Delay(_pollingIntervalMs, stoppingToken);
+
+                            // If watchdog timer expires again, _eventsAreHealthy will be set to false
+                            // and we'll continue this loop. If events work, this loop will exit.
+                            consecutiveEmptyReads = 0;
+                        }
+                        else
+                        {
+                            // Continue aggressive polling - don't wait full interval for first few empty reads
+                            await Task.Delay(_pollingIntervalMs / 2, stoppingToken);
+                        }
+                    }
+
+                    // Check if we should continue (thread-safe)
+                    lock (_watchdogLock)
+                    {
+                        shouldContinue = !_eventsAreHealthy;
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in aggressive polling loop for {DeviceName}", _deviceName);
-                await Task.Delay(_pollingIntervalMs, stoppingToken);
-                consecutiveEmptyReads = 0; // Reset on error
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error in aggressive polling loop for {DeviceName}", _deviceName);
+                    await Task.Delay(_pollingIntervalMs, stoppingToken);
+                    consecutiveEmptyReads = 0; // Reset on error
+                }
             }
         }
-
-        if (_eventsAreHealthy)
+        finally
         {
-            _logger.LogInformation("✅ Events resumed for {DeviceName}, stopping aggressive polling", _deviceName);
+            lock (_watchdogLock)
+            {
+                _aggressivePollingRunning = false;
+
+                if (_eventsAreHealthy)
+                {
+                    _logger.LogInformation("✅ Events resumed for {DeviceName}, stopping aggressive polling", _deviceName);
+                }
+            }
         }
     }
 
@@ -458,15 +499,19 @@ public class SerialPortManager : IDisposable
 
         _logger.LogInformation("Stopping SerialPortManager for {DeviceName}", _deviceName);
 
+        // Unsubscribe from events first to prevent new data from arriving
         if (_serialPort != null)
         {
             _serialPort.DataReceived -= OnDataReceived;
         }
 
         // Stop the event watchdog timer
-        _eventWatchdogTimer?.Dispose();
-        _eventWatchdogTimer = null;
-        _eventsAreHealthy = false;
+        lock (_watchdogLock)
+        {
+            _eventWatchdogTimer?.Dispose();
+            _eventWatchdogTimer = null;
+            _eventsAreHealthy = false;
+        }
 
         // Close the channel to signal processing loop to stop
         _dataWriter.Complete();
@@ -577,14 +622,19 @@ public class SerialPortManager : IDisposable
 
         _disposed = true;
 
+        // Unsubscribe from events first to prevent new data from arriving
         if (_serialPort != null)
         {
             _serialPort.DataReceived -= OnDataReceived;
         }
 
         // Dispose the event watchdog timer
-        _eventWatchdogTimer?.Dispose();
-        _eventWatchdogTimer = null;
+        lock (_watchdogLock)
+        {
+            _eventWatchdogTimer?.Dispose();
+            _eventWatchdogTimer = null;
+            _eventsAreHealthy = false;
+        }
 
         // Close the channel
         _dataWriter.Complete();
