@@ -89,6 +89,19 @@
     }
   });
 
+  // Watch hostname changes to update document title
+  watch(() => systemState.systemHealth.hostname, (newHostname) => 
+  {
+    if (newHostname) 
+    {
+      document.title = `Subterra | ${newHostname}`;
+    }
+    else 
+    {
+      document.title = 'Subterra';
+    }
+  }, { immediate: true });
+
   // Initialize SignalR connection
   initializeConnection();
 
