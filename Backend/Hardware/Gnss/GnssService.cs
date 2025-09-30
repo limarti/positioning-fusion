@@ -619,7 +619,12 @@ public class GnssService : BackgroundService
 
                 // Calculate rate: messages in last 5 seconds / 5 seconds
                 var rate = timestamps.Count / (double)RollingWindowSeconds;
-                messageRates[messageType] = rate;
+
+                // Only include messages with rate > 0 Hz
+                if (rate > 0)
+                {
+                    messageRates[messageType] = rate;
+                }
             }
         }
 
