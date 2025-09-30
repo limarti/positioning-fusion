@@ -15,13 +15,19 @@ public class ImuService : BackgroundService
     private readonly DataFileWriter _dataFileWriter;
     private SerialPortManager? _serialPortManager;
     private readonly byte[] _buffer = new byte[1024];
-    private readonly List<byte> _dataBuffer = new();
+    private byte[] _dataBuffer = new byte[8192]; // Fixed-size buffer with offset tracking
+    private int _bufferOffset = 0; // Read position in buffer
+    private int _bufferLength = 0; // Amount of valid data in buffer
     private readonly object _dataBufferLock = new();
     private DateTime _lastSignalRSent = DateTime.MinValue;
     private readonly TimeSpan _signalRThrottleInterval = TimeSpan.FromMilliseconds(1000); // 1Hz = 1000ms interval
     private readonly object _throttleLock = new object();
     private bool _headerWritten = false;
-    
+
+    // Reusable buffers to reduce allocations
+    private readonly byte[] _packetBuffer = new byte[52];
+    private readonly System.Text.StringBuilder _csvBuilder = new System.Text.StringBuilder(200);
+
     // Kbps tracking
     private long _totalBytesReceived = 0;
     private DateTime _kbpsStartTime = DateTime.UtcNow;
@@ -97,48 +103,114 @@ public class ImuService : BackgroundService
         {
             _totalBytesReceived += length;
         }
-        
-        // Add new data to buffer
+
+        // Add new data to buffer using efficient Array.Copy
         lock (_dataBufferLock)
         {
-            for (int i = 0; i < length; i++)
+            // Compact buffer if offset is too large (> 50% of buffer) OR if we need space
+            int availableSpace = _dataBuffer.Length - (_bufferOffset + _bufferLength);
+            if (availableSpace < length && _bufferOffset > 0)
             {
-                _dataBuffer.Add(newData[i]);
+                // Try compacting first before resizing
+                if (_bufferLength > 0)
+                {
+                    Array.Copy(_dataBuffer, _bufferOffset, _dataBuffer, 0, _bufferLength);
+                }
+                _bufferOffset = 0;
+                availableSpace = _dataBuffer.Length - _bufferLength;
             }
+
+            // Resize buffer if still not enough space after compaction
+            if (availableSpace < length)
+            {
+                int newSize = Math.Max(_dataBuffer.Length * 2, _bufferLength + length);
+                var newBuffer = new byte[newSize];
+                if (_bufferLength > 0)
+                {
+                    Array.Copy(_dataBuffer, _bufferOffset, newBuffer, 0, _bufferLength);
+                }
+                _dataBuffer = newBuffer;
+                _bufferOffset = 0;
+            }
+
+            // Copy new data to buffer (fast!)
+            Array.Copy(newData, 0, _dataBuffer, _bufferOffset + _bufferLength, length);
+            _bufferLength += length;
         }
 
-        // Look for complete packets
-        while (true)
+        // Look for complete packets (limit iterations to prevent CPU spinning)
+        const int maxIterations = 10;
+        int iterations = 0;
+
+        while (iterations < maxIterations)
         {
+            iterations++;
+
             byte[]? packetData = null;
-            
+
             lock (_dataBufferLock)
             {
-                if (_dataBuffer.Count < 52) // MEMS packet size
+                if (_bufferLength < 52) // MEMS packet size
                 {
                     break;
                 }
+
                 int packetStart = FindPacketStart();
-                
+
                 if (packetStart == -1)
                 {
-                    // No packet header found, remove first byte and continue
-                    _dataBuffer.RemoveAt(0);
-                    continue;
-                }
-                
+                    // No valid packet header found
+                    // Only scan first 100 bytes for 'f' to avoid CPU hogging
+                    int searchLimit = Math.Min(_bufferLength, 100);
+                    int nextF = -1;
+                    for (int i = 1; i < searchLimit; i++)
+                    {
+                        if (_dataBuffer[_bufferOffset + i] == (byte)'f')
+                        {
+                            nextF = i;
+                            break;
+                        }
+                    }
 
-                // Remove bytes before packet start
+                    if (nextF > 0)
+                    {
+                        // Found 'f' somewhere ahead in first 100 bytes - jump to it
+                        _bufferOffset += nextF;
+                        _bufferLength -= nextF;
+                        continue; // Try parsing from this position
+                    }
+                    else if (nextF == -1 && searchLimit >= 100)
+                    {
+                        // No 'f' found in first 100 bytes - discard 90 bytes and keep searching
+                        int discardBytes = 90;
+                        _bufferOffset += discardBytes;
+                        _bufferLength -= discardBytes;
+                        continue;
+                    }
+                    else
+                    {
+                        // Buffer too small or 'f' at start but invalid header - skip 1 byte and exit
+                        _bufferOffset++;
+                        _bufferLength--;
+                        break; // Exit loop, wait for more data
+                    }
+                }
+
+                // Skip bytes before packet start
                 if (packetStart > 0)
                 {
-                    _dataBuffer.RemoveRange(0, packetStart);
+                    _bufferOffset += packetStart;
+                    _bufferLength -= packetStart;
                 }
 
                 // Check if we have a complete packet
-                if (_dataBuffer.Count >= 52)
+                if (_bufferLength >= 52)
                 {
-                    packetData = _dataBuffer.Take(52).ToArray();
-                    _dataBuffer.RemoveRange(0, 52);
+                    // Extract packet using reusable buffer to avoid allocation
+                    Array.Copy(_dataBuffer, _bufferOffset, _packetBuffer, 0, 52);
+                    packetData = _packetBuffer;
+                    _bufferOffset += 52;
+                    _bufferLength -= 52;
                 }
                 else
                 {
@@ -146,16 +218,16 @@ public class ImuService : BackgroundService
                     break;
                 }
             }
-            
+
             if (packetData != null)
             {
-
                 // Try to parse the packet
                 var imuData = _imuParser.ParseMemsPacket(packetData);
                 if (imuData != null)
                 {
                     // Set system uptime timestamp
                     imuData.SystemUptimeMs = Environment.TickCount64;
+
                     // Write CSV header if this is the first data
                     if (!_headerWritten)
                     {
@@ -164,9 +236,31 @@ public class ImuService : BackgroundService
                         _headerWritten = true;
                     }
 
-                    // Log data to file
-                    var csvLine = $"{imuData.SystemUptimeMs},{imuData.Timestamp:F2},{imuData.Acceleration.X:F4},{imuData.Acceleration.Y:F4},{imuData.Acceleration.Z:F4},{imuData.Gyroscope.X:F4},{imuData.Gyroscope.Y:F4},{imuData.Gyroscope.Z:F4},{imuData.Magnetometer.X:F2},{imuData.Magnetometer.Y:F2},{imuData.Magnetometer.Z:F2}";
-                    _dataFileWriter.WriteData(csvLine);
+                    // Log data to file using StringBuilder to avoid allocations
+                    _csvBuilder.Clear();
+                    _csvBuilder.Append(imuData.SystemUptimeMs);
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Timestamp.ToString("F2"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Acceleration.X.ToString("F4"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Acceleration.Y.ToString("F4"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Acceleration.Z.ToString("F4"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Gyroscope.X.ToString("F4"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Gyroscope.Y.ToString("F4"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Gyroscope.Z.ToString("F4"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Magnetometer.X.ToString("F2"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Magnetometer.Y.ToString("F2"));
+                    _csvBuilder.Append(',');
+                    _csvBuilder.Append(imuData.Magnetometer.Z.ToString("F2"));
+
+                    _dataFileWriter.WriteData(_csvBuilder.ToString());
 
                     // Send data via SignalR with throttling to 1Hz
                     bool shouldSend = false;
@@ -203,42 +297,48 @@ public class ImuService : BackgroundService
                         });
                     }
                 }
-                else
-                {
-                }
             }
         }
 
         // Prevent buffer from growing too large
         lock (_dataBufferLock)
         {
-            if (_dataBuffer.Count > 1024)
+            if (_bufferLength > 8192)
             {
-                _logger.LogWarning("IMU data buffer too large, clearing buffer");
-                _dataBuffer.Clear();
+                _logger.LogWarning("IMU data buffer too large ({Length} bytes), discarding oldest data", _bufferLength);
+                // Keep only recent data
+                int keepLength = Math.Min(_bufferLength, 2048);
+                Array.Copy(_dataBuffer, _bufferOffset + (_bufferLength - keepLength), _dataBuffer, 0, keepLength);
+                _bufferOffset = 0;
+                _bufferLength = keepLength;
             }
         }
     }
 
     private int FindPacketStart()
     {
-        // Look for "fmi" header
-        for (int i = 0; i <= _dataBuffer.Count - 4; i++)
+        // Look for "fmim" header (fmi + MEMS type 'm')
+        // Must be called within _dataBufferLock
+        if (_bufferLength < 4) return -1; // Need at least 4 bytes for header
+
+        // Only search first 100 bytes to avoid CPU hogging with garbage data
+        int searchLimit = Math.Min(_bufferLength - 4, 100);
+
+        for (int i = 0; i <= searchLimit; i++)
         {
-            if (_dataBuffer[i] == (byte)'f' && 
-                _dataBuffer[i + 1] == (byte)'m' && 
-                _dataBuffer[i + 2] == (byte)'i' &&
-                _dataBuffer[i + 3] == (byte)'m') // MEMS type
+            int pos = _bufferOffset + i;
+
+            // Bounds check for safety
+            if (pos + 3 >= _dataBuffer.Length)
+                break; // Can't read 4 bytes from this position
+
+            if (_dataBuffer[pos] == (byte)'f' &&
+                _dataBuffer[pos + 1] == (byte)'m' &&
+                _dataBuffer[pos + 2] == (byte)'i' &&
+                _dataBuffer[pos + 3] == (byte)'m') // MEMS type
             {
                 return i;
             }
-        }
-        
-        // Log what we actually found at the start of buffer for debugging
-        if (_dataBuffer.Count >= 4)
-        {
-            var firstFour = string.Join("", _dataBuffer.Take(4).Select(b => (char)b));
-            var firstFourHex = string.Join(" ", _dataBuffer.Take(4).Select(b => $"{b:X2}"));
         }
         return -1;
     }

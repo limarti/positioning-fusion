@@ -37,6 +37,17 @@ public class DataHub : Hub
         _cameraService = cameraService;
         _logger = logger;
     }
+
+    public override async Task OnConnectedAsync()
+    {
+        _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
+
+        // Immediately send hardware status to the newly connected client
+        var hardwareStatus = await GetHardwareStatus();
+        await Clients.Caller.SendAsync("HardwareStatusUpdate", hardwareStatus);
+
+        await base.OnConnectedAsync();
+    }
     public async Task SendImuUpdate(ImuData imuData)
     {
         await Clients.All.SendAsync("ImuUpdate", new ImuUpdate

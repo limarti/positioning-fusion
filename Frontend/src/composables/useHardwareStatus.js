@@ -14,13 +14,25 @@ export function useHardwareStatus() {
     try {
       const status = await connection.invoke('GetHardwareStatus');
       hardwareStatus.value = status;
+      console.log('Hardware status fetched:', status);
     } catch (error) {
       console.error('Failed to get hardware status:', error);
     }
   };
 
+  const setupHardwareStatusListener = (connection) => {
+    if (!connection) return;
+
+    // Listen for hardware status updates from the server
+    connection.on('HardwareStatusUpdate', (status) => {
+      console.log('Received HardwareStatusUpdate:', status);
+      hardwareStatus.value = status;
+    });
+  };
+
   return {
     hardwareStatus,
-    fetchHardwareStatus
+    fetchHardwareStatus,
+    setupHardwareStatusListener
   };
 }

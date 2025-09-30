@@ -117,7 +117,6 @@ startupLogger.LogInformation("Mode can be changed via the web interface at runti
 startupLogger.LogInformation("Web interface will be available at: http://0.0.0.0:5312");
 
 Console.WriteLine($"Starting with operating mode: {operatingMode}");
-Console.WriteLine("Mode can now be changed via the web interface.");
 Console.WriteLine();
 
 // Start WiFi service manually to begin connecting immediately

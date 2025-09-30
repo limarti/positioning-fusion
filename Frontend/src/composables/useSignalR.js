@@ -138,8 +138,12 @@ const initializeConnection = async () =>
   registerSystemEvents(connection);
   registerConnectionEvents(connection);
 
+  // Setup hardware status listener
+  const { setupHardwareStatusListener } = useHardwareStatus();
+  setupHardwareStatusListener(connection);
+
   // Mode change event handler
-  connection.on("ModeChanged", (data) => 
+  connection.on("ModeChanged", (data) =>
   {
     console.log(`SignalR ModeChanged event received:`, data);
     console.log(`Setting current mode from ${currentMode.value} to: ${data.Mode}`);

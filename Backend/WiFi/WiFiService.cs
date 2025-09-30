@@ -18,6 +18,7 @@ public class WiFiService : BackgroundService
     
     private WiFiStatusUpdate _currentStatus;
     private DateTime _lastConnectionAttempt = DateTime.MinValue;
+    private DateTime _lastSuccessfulConnection = DateTime.MinValue;
     private bool _isAttemptingConnection = false;
     private int _currentKnownNetworkIndex = 0;
 
@@ -25,6 +26,7 @@ public class WiFiService : BackgroundService
     private const int STATUS_CHECK_INTERVAL_SECONDS = 30; // 30 seconds
     private const int FALLBACK_CHECK_INTERVAL_SECONDS = 10; // 10 seconds when trying to connect
     private const int CLIENT_RETRY_INTERVAL_SECONDS = 120; // 2 minutes - retry client connection from AP mode
+    private const int CONNECTION_COOLDOWN_SECONDS = 60; // 1 minute cooldown after successful connection
 
     public WiFiService(IHubContext<DataHub> hubContext, GeoConfigurationManager configManager, ILogger<WiFiService> logger)
     {
@@ -126,16 +128,29 @@ public class WiFiService : BackgroundService
         var wifiConfig = _configManager.WiFiConfiguration;
         var knownNetworks = wifiConfig.KnownNetworks;
 
+        // Check if we're in cooldown period after successful connection
+        var timeSinceLastSuccess = (DateTime.Now - _lastSuccessfulConnection).TotalSeconds;
+        var inCooldown = timeSinceLastSuccess < CONNECTION_COOLDOWN_SECONDS;
+
         var shouldAttempt = wifiConfig.PreferredMode == WiFiMode.Client &&
                            knownNetworks.Any() &&
                            !_isAttemptingConnection &&
-                           !(_currentStatus.CurrentMode == WiFiMode.Client && _currentStatus.IsConnected);
+                           !(_currentStatus.CurrentMode == WiFiMode.Client && _currentStatus.IsConnected) &&
+                           !inCooldown;
 
         // Debug logging to understand why connections are being attempted
-        if (!shouldAttempt && wifiConfig.PreferredMode == WiFiMode.Client)
+        if (wifiConfig.PreferredMode == WiFiMode.Client)
         {
-            _logger.LogDebug("Not attempting client connection - PreferredMode: {PreferredMode}, HasKnownNetworks: {HasKnownNetworks}, IsAttempting: {IsAttempting}, CurrentMode: {CurrentMode}, IsConnected: {IsConnected}",
-                wifiConfig.PreferredMode, knownNetworks.Any(), _isAttemptingConnection, _currentStatus.CurrentMode, _currentStatus.IsConnected);
+            if (!shouldAttempt)
+            {
+                _logger.LogDebug("Not attempting client connection - PreferredMode: {PreferredMode}, HasKnownNetworks: {HasKnownNetworks}, IsAttempting: {IsAttempting}, CurrentMode: {CurrentMode}, IsConnected: {IsConnected}, InCooldown: {InCooldown} (TimeSinceLastSuccess: {TimeSinceLastSuccess}s)",
+                    wifiConfig.PreferredMode, knownNetworks.Any(), _isAttemptingConnection, _currentStatus.CurrentMode, _currentStatus.IsConnected, inCooldown, timeSinceLastSuccess);
+            }
+            else
+            {
+                _logger.LogInformation("Attempting client connection - CurrentMode: {CurrentMode}, IsConnected: {IsConnected}, TimeSinceLastSuccess: {TimeSinceLastSuccess}s",
+                    _currentStatus.CurrentMode, _currentStatus.IsConnected, timeSinceLastSuccess);
+            }
         }
 
         return shouldAttempt;
@@ -255,12 +270,35 @@ public class WiFiService : BackgroundService
 
     private async Task AttemptKnownNetworkConnection()
     {
+        // Double-check we're not already connected before attempting
+        var currentStatus = await GetCurrentWiFiStatus();
+        if (currentStatus.CurrentMode == WiFiMode.Client && currentStatus.IsConnected)
+        {
+            _logger.LogDebug("Skipping known network connection attempt - already connected as client to {SSID}", currentStatus.ConnectedNetworkSSID);
+            _isAttemptingConnection = false;
+            _lastSuccessfulConnection = DateTime.Now; // Update cooldown
+            return;
+        }
+
         var knownNetworks = _configManager.WiFiConfiguration.KnownNetworks
             .OrderByDescending(n => n.LastConnected)
             .ToList();
 
         if (!knownNetworks.Any())
             return;
+
+        // Check if we're already connected to one of the known networks
+        if (!string.IsNullOrEmpty(currentStatus.ConnectedNetworkSSID))
+        {
+            var alreadyConnectedToKnown = knownNetworks.Any(n => n.SSID == currentStatus.ConnectedNetworkSSID);
+            if (alreadyConnectedToKnown)
+            {
+                _logger.LogDebug("Already connected to known network {SSID}, skipping connection attempt", currentStatus.ConnectedNetworkSSID);
+                _isAttemptingConnection = false;
+                _lastSuccessfulConnection = DateTime.Now; // Update cooldown
+                return;
+            }
+        }
 
         // Start the 2-minute retry period if not already attempting
         if (!_isAttemptingConnection)
@@ -281,6 +319,7 @@ public class WiFiService : BackgroundService
         {
             _logger.LogInformation("Successfully connected to {SSID} during retry period", network.SSID);
             _isAttemptingConnection = false;
+            _lastSuccessfulConnection = DateTime.Now;
         }
     }
 
@@ -293,6 +332,7 @@ public class WiFiService : BackgroundService
             if (result.Success)
             {
                 _logger.LogInformation("Successfully connected to {SSID} during retry period", ssid);
+                _lastSuccessfulConnection = DateTime.Now;
 
                 // Update preferred mode to Client
                 if (_configManager.WiFiConfiguration.PreferredMode != WiFiMode.Client)
@@ -341,6 +381,7 @@ public class WiFiService : BackgroundService
             if (result.Success)
             {
                 _logger.LogInformation("Successfully connected to {SSID}", ssid);
+                _lastSuccessfulConnection = DateTime.Now;
 
                 // Update preferred mode to Client since user manually connected to a network
                 if (_configManager.WiFiConfiguration.PreferredMode != WiFiMode.Client)

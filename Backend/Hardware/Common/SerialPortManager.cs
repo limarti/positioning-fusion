@@ -21,6 +21,9 @@ public class SerialPortManager : IDisposable
     private readonly int _readBufferSize;
     private readonly int _maxBufferSize;
     private readonly int _rateUpdateIntervalMs;
+    private readonly int _minBatchSize;
+    private readonly int _batchTimeoutMs;
+    private readonly bool _forcePollingMode;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
@@ -43,6 +46,14 @@ public class SerialPortManager : IDisposable
     private long _bytesReceived = 0;
     private DateTime _lastRateUpdate = DateTime.UtcNow;
     private double _currentReceiveRate = 0.0;
+
+    // DIAGNOSTIC TRACKING (disabled for performance)
+
+    // Source-level batching (in OnDataReceived before channel write) - using byte array for performance
+    private byte[] _sourceBuffer = new byte[4096];
+    private int _sourceBufferLength = 0;
+    private readonly object _sourceBufferLock = new();
+    private DateTime _lastSourceBatchTime = DateTime.UtcNow;
 
     public event EventHandler<byte[]>? DataReceived;
     public event EventHandler<double>? RateUpdated;
@@ -71,7 +82,10 @@ public class SerialPortManager : IDisposable
         int rateUpdateIntervalMs = 1000,
         Parity parity = Parity.None,
         int dataBits = 8,
-        StopBits stopBits = StopBits.One)
+        StopBits stopBits = StopBits.One,
+        int minBatchSize = 1,
+        int batchTimeoutMs = 20,
+        bool forcePollingMode = false)
     {
         _deviceName = deviceName;
         _portName = portName;
@@ -83,6 +97,9 @@ public class SerialPortManager : IDisposable
         _readBufferSize = readBufferSize;
         _maxBufferSize = maxBufferSize;
         _rateUpdateIntervalMs = rateUpdateIntervalMs;
+        _minBatchSize = minBatchSize;
+        _batchTimeoutMs = batchTimeoutMs;
+        _forcePollingMode = forcePollingMode;
         _logger = logger;
 
         // Initialize producer-consumer channel
@@ -142,15 +159,26 @@ public class SerialPortManager : IDisposable
         _logger.LogInformation("SerialPortManager started for {DeviceName} on {PortName} at {BaudRate} baud",
             _deviceName, _serialPort.PortName, _serialPort.BaudRate);
 
-        // Subscribe to DataReceived event
-        _serialPort.DataReceived += OnDataReceived;
+        if (_forcePollingMode)
+        {
+            // Polling-only mode - don't subscribe to events, just start aggressive polling
+            _logger.LogInformation("Force polling mode enabled for {DeviceName} - using polling at {IntervalMs}ms intervals instead of events",
+                _deviceName, _pollingIntervalMs);
 
-        // Start processing loop, rate monitoring and event watchdog
-        _processingTask = Task.Run(() => ProcessingLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
-        _ = Task.Run(() => RateUpdateLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
-        ResetEventWatchdog();
-
-        _logger.LogInformation("Producer-Consumer pattern and event-driven watchdog setup completed for {DeviceName}", _deviceName);
+            _eventsAreHealthy = false; // Disable event watchdog
+            _processingTask = Task.Run(() => ProcessingLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+            _ = Task.Run(() => RateUpdateLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+            _ = Task.Run(() => AggressivePollingLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+        }
+        else
+        {
+            // Event-driven mode with fallback to polling
+            _serialPort.DataReceived += OnDataReceived;
+            _processingTask = Task.Run(() => ProcessingLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+            _ = Task.Run(() => RateUpdateLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+            ResetEventWatchdog();
+            _logger.LogInformation("Producer-Consumer pattern and event-driven watchdog setup completed for {DeviceName}", _deviceName);
+        }
     }
 
     /// <summary>
@@ -174,7 +202,7 @@ public class SerialPortManager : IDisposable
     {
         try
         {
-            // Lightweight producer - just read and queue data
+            // Lightweight producer - read data and batch before queuing
             if (_serialPort?.IsOpen == true && _serialPort.BytesToRead > 0)
             {
                 var bytesToRead = Math.Min(_serialPort.BytesToRead, _readBufferSize);
@@ -183,19 +211,52 @@ public class SerialPortManager : IDisposable
 
                 if (bytesRead > 0)
                 {
-                    // Non-blocking queue to processing thread
-                    var data = bytesRead == buffer.Length ? buffer : buffer[..bytesRead];
-                    if (_dataWriter.TryWrite(data))
-                    {
-                        _bytesReceived += bytesRead;
+                    _bytesReceived += bytesRead;
 
-                        // Reset the watchdog - events are working
-                        ResetEventWatchdog();
-                    }
-                    else
+                    // Add to source buffer for batching (using byte array for performance)
+                    bool shouldFlush = false;
+                    byte[]? dataToWrite = null;
+
+                    lock (_sourceBufferLock)
                     {
-                        _logger.LogWarning("Failed to queue {BytesRead} bytes - channel may be closed for {DeviceName}",
-                            bytesRead, _deviceName);
+                        // Ensure buffer has space
+                        if (_sourceBufferLength + bytesRead > _sourceBuffer.Length)
+                        {
+                            // Resize if needed
+                            var newBuffer = new byte[Math.Max(_sourceBuffer.Length * 2, _sourceBufferLength + bytesRead)];
+                            Array.Copy(_sourceBuffer, 0, newBuffer, 0, _sourceBufferLength);
+                            _sourceBuffer = newBuffer;
+                        }
+
+                        // Copy new data to buffer
+                        Array.Copy(buffer, 0, _sourceBuffer, _sourceBufferLength, bytesRead);
+                        _sourceBufferLength += bytesRead;
+
+                        // Check if we should flush
+                        var timeSinceLastBatch = (DateTime.UtcNow - _lastSourceBatchTime).TotalMilliseconds;
+                        if (_sourceBufferLength >= _minBatchSize || timeSinceLastBatch >= _batchTimeoutMs)
+                        {
+                            shouldFlush = true;
+                            dataToWrite = new byte[_sourceBufferLength];
+                            Array.Copy(_sourceBuffer, 0, dataToWrite, 0, _sourceBufferLength);
+                            _sourceBufferLength = 0;
+                            _lastSourceBatchTime = DateTime.UtcNow;
+                        }
+                    }
+
+                    // Write to channel if we have a batch ready
+                    if (shouldFlush && dataToWrite != null)
+                    {
+                        if (_dataWriter.TryWrite(dataToWrite))
+                        {
+                            // Reset the watchdog - events are working
+                            ResetEventWatchdog();
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Failed to queue {BytesRead} bytes - channel may be closed for {DeviceName}",
+                                dataToWrite.Length, _deviceName);
+                        }
                     }
                 }
             }
@@ -289,28 +350,28 @@ public class SerialPortManager : IDisposable
                 {
                     if (_serialPort.BytesToRead > 0)
                     {
-                        // Data available - read and queue using producer pattern
+                        // Data available - read and add to batch buffer (same logic as OnDataReceived)
                         var bytesToRead = Math.Min(_serialPort.BytesToRead, _readBufferSize);
                         var buffer = new byte[bytesToRead];
                         var bytesRead = _serialPort.Read(buffer, 0, bytesToRead);
 
                         if (bytesRead > 0)
                         {
+                            _bytesReceived += bytesRead;
+                            consecutiveEmptyReads = 0; // Reset counter since we found data
+
+                            // Simplified: just write directly to channel since we're polling at controlled intervals
+                            // No need for complex batching logic - the polling interval controls the batch rate
                             var data = bytesRead == buffer.Length ? buffer : buffer[..bytesRead];
-                            if (_dataWriter.TryWrite(data))
+                            if (!_dataWriter.TryWrite(data))
                             {
-                                _bytesReceived += bytesRead;
-                                consecutiveEmptyReads = 0; // Reset counter since we found data
-                            }
-                            else
-                            {
-                                _logger.LogWarning("Failed to queue {BytesRead} bytes during aggressive polling - channel may be closed for {DeviceName}",
+                                _logger.LogWarning("Failed to queue {BytesRead} bytes during polling - channel may be closed for {DeviceName}",
                                     bytesRead, _deviceName);
                             }
                         }
 
-                        // Continue polling immediately to catch any new data
-                        continue;
+                        // Wait polling interval before next read
+                        await Task.Delay(_pollingIntervalMs, stoppingToken);
                     }
                     else
                     {
@@ -425,14 +486,13 @@ public class SerialPortManager : IDisposable
             {
                 try
                 {
-
-                    // Add data to the existing buffer system for frame parsing
+                    // Add data to buffer and process immediately
+                    // Batching is now controlled at source level (OnDataReceived or polling interval)
                     lock (_dataBufferLock)
                     {
                         _dataBuffer.AddRange(data);
                     }
 
-                    // Process the buffered data using existing logic
                     await ProcessBufferedDataAsync();
                 }
                 catch (Exception ex)
