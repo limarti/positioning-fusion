@@ -7,6 +7,7 @@ namespace Backend.Hardware.Common;
 /// Manages serial port communication with event-driven approach and watchdog-triggered polling fallback.
 /// Provides reliable data collection with configurable buffer management and rate tracking.
 /// Uses zero-CPU polling when events work, switches to aggressive polling when events fail.
+/// Includes automatic reconnection with exponential backoff on connection loss.
 /// </summary>
 public class SerialPortManager : IDisposable
 {
@@ -24,17 +25,23 @@ public class SerialPortManager : IDisposable
     private readonly int _minBatchSize;
     private readonly int _batchTimeoutMs;
     private readonly bool _forcePollingMode;
+    private readonly bool _enableAutoReconnect;
+    private readonly int _reconnectMaxRetries;
+    private readonly int _reconnectInitialDelayMs;
     private SerialPort? _serialPort;
     private readonly List<byte> _dataBuffer = new();
     private readonly object _dataBufferLock = new();
     private readonly object _pollingLock = new();
     private readonly object _watchdogLock = new();
+    private readonly object _reconnectionLock = new();
     private Timer? _eventWatchdogTimer;
     private bool _eventsAreHealthy = true;
     private bool _aggressivePollingRunning = false;
     private CancellationTokenSource? _cancellationTokenSource;
     private bool _disposed = false;
     private bool _isPollingEnabled = true;
+    private bool _isReconnecting = false;
+    private Task? _reconnectionTask;
 
     // Producer-Consumer infrastructure
     private readonly Channel<byte[]> _dataChannel;
@@ -57,9 +64,20 @@ public class SerialPortManager : IDisposable
 
     public event EventHandler<byte[]>? DataReceived;
     public event EventHandler<double>? RateUpdated;
+    public event EventHandler<bool>? ConnectionStateChanged;
 
     public bool IsConnected => _serialPort?.IsOpen == true;
     public double CurrentReceiveRate => _currentReceiveRate;
+    public bool IsReconnecting
+    {
+        get
+        {
+            lock (_reconnectionLock)
+            {
+                return _isReconnecting;
+            }
+        }
+    }
     public bool IsPollingEnabled
     {
         get
@@ -85,7 +103,10 @@ public class SerialPortManager : IDisposable
         StopBits stopBits = StopBits.One,
         int minBatchSize = 1,
         int batchTimeoutMs = 20,
-        bool forcePollingMode = false)
+        bool forcePollingMode = false,
+        bool enableAutoReconnect = true,
+        int reconnectMaxRetries = -1,
+        int reconnectInitialDelayMs = 1000)
     {
         _deviceName = deviceName;
         _portName = portName;
@@ -100,6 +121,9 @@ public class SerialPortManager : IDisposable
         _minBatchSize = minBatchSize;
         _batchTimeoutMs = batchTimeoutMs;
         _forcePollingMode = forcePollingMode;
+        _enableAutoReconnect = enableAutoReconnect;
+        _reconnectMaxRetries = reconnectMaxRetries;
+        _reconnectInitialDelayMs = reconnectInitialDelayMs;
         _logger = logger;
 
         // Initialize producer-consumer channel
@@ -261,6 +285,16 @@ public class SerialPortManager : IDisposable
                 }
             }
         }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("port") || ex.Message.Contains("Port"))
+        {
+            _logger.LogWarning(ex, "Serial port disconnected in DataReceived for {DeviceName}", _deviceName);
+            TriggerReconnection();
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "I/O error in DataReceived for {DeviceName}", _deviceName);
+            TriggerReconnection();
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in DataReceived event handler for {DeviceName}", _deviceName);
@@ -300,6 +334,7 @@ public class SerialPortManager : IDisposable
                 {
                     lock (_watchdogLock)
                     {
+                        // Atomically check and set to prevent race condition
                         if (!_aggressivePollingRunning)
                         {
                             _logger.LogInformation("🔍 EVENT WATCHDOG ({DeviceName}): Events failed, switching to polling mode. Found {BytesToRead} bytes",
@@ -309,17 +344,18 @@ public class SerialPortManager : IDisposable
                             shouldStartPolling = true;
                         }
                     }
+                }
 
-                    if (shouldStartPolling)
-                    {
-                        // Start aggressive polling until events resume
-                        _ = Task.Run(() => AggressivePollingLoop(_cancellationTokenSource?.Token ?? CancellationToken.None));
-                    }
+                // Start polling outside the lock to prevent holding it during task startup
+                if (shouldStartPolling)
+                {
+                    // Start aggressive polling until events resume
+                    _ = Task.Run(() => AggressivePollingLoop(_cancellationTokenSource?.Token ?? CancellationToken.None));
                 }
             }
 
             // Always restart watchdog for next check if port is still open
-            if (_serialPort?.IsOpen == true)
+            if (!_disposed && _serialPort?.IsOpen == true)
             {
                 ResetEventWatchdog();
             }
@@ -404,6 +440,18 @@ public class SerialPortManager : IDisposable
                     {
                         shouldContinue = !_eventsAreHealthy;
                     }
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("port") || ex.Message.Contains("Port"))
+                {
+                    _logger.LogWarning(ex, "Serial port disconnected in polling loop for {DeviceName}", _deviceName);
+                    TriggerReconnection();
+                    break;
+                }
+                catch (IOException ex)
+                {
+                    _logger.LogWarning(ex, "I/O error in polling loop for {DeviceName}", _deviceName);
+                    TriggerReconnection();
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -604,18 +652,198 @@ public class SerialPortManager : IDisposable
         _cancellationTokenSource = null;
     }
 
+    private void NotifyConnectionStateChanged(bool isConnected)
+    {
+        try
+        {
+            ConnectionStateChanged?.Invoke(this, isConnected);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error notifying connection state change for {DeviceName}", _deviceName);
+        }
+    }
+
+    private void TriggerReconnection()
+    {
+        if (!_enableAutoReconnect || _disposed)
+            return;
+
+        lock (_reconnectionLock)
+        {
+            if (_isReconnecting)
+            {
+                _logger.LogDebug("Reconnection already in progress for {DeviceName}", _deviceName);
+                return;
+            }
+
+            _isReconnecting = true;
+            _reconnectionTask = Task.Run(() => ReconnectionLoop(_cancellationTokenSource?.Token ?? CancellationToken.None));
+        }
+    }
+
+    private async Task ReconnectionLoop(CancellationToken cancellationToken)
+    {
+        int attemptNumber = 0;
+        int delayMs = _reconnectInitialDelayMs;
+        const int maxDelayMs = 60000; // Max 60 seconds between attempts
+
+        _logger.LogWarning("🔌 Connection lost for {DeviceName}, starting reconnection attempts", _deviceName);
+        NotifyConnectionStateChanged(false);
+
+        while (!_disposed && !cancellationToken.IsCancellationRequested)
+        {
+            // Check if we've exceeded max retries
+            if (_reconnectMaxRetries > 0 && attemptNumber >= _reconnectMaxRetries)
+            {
+                _logger.LogError("Failed to reconnect to {DeviceName} after {Attempts} attempts. Giving up.",
+                    _deviceName, attemptNumber);
+
+                lock (_reconnectionLock)
+                {
+                    _isReconnecting = false;
+                }
+                return;
+            }
+
+            attemptNumber++;
+            _logger.LogInformation("🔌 Reconnection attempt {Attempt} for {DeviceName} (waiting {DelayMs}ms)...",
+                attemptNumber, _deviceName, delayMs);
+
+            try
+            {
+                await Task.Delay(delayMs, cancellationToken);
+
+                // Try to reconnect
+                await AttemptReconnectAsync(cancellationToken);
+
+                // Success!
+                _logger.LogInformation("✅ Successfully reconnected to {DeviceName} after {Attempts} attempts",
+                    _deviceName, attemptNumber);
+
+                NotifyConnectionStateChanged(true);
+
+                lock (_reconnectionLock)
+                {
+                    _isReconnecting = false;
+                }
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Reconnection cancelled for {DeviceName}", _deviceName);
+                lock (_reconnectionLock)
+                {
+                    _isReconnecting = false;
+                }
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reconnection attempt {Attempt} failed for {DeviceName}",
+                    attemptNumber, _deviceName);
+
+                // Exponential backoff with jitter
+                delayMs = Math.Min(delayMs * 2, maxDelayMs);
+                delayMs += Random.Shared.Next(0, 1000); // Add jitter
+            }
+        }
+
+        lock (_reconnectionLock)
+        {
+            _isReconnecting = false;
+        }
+    }
+
+    private async Task AttemptReconnectAsync(CancellationToken cancellationToken)
+    {
+        // Clean up old port
+        if (_serialPort != null)
+        {
+            try
+            {
+                _serialPort.DataReceived -= OnDataReceived;
+                if (_serialPort.IsOpen)
+                    _serialPort.Close();
+                _serialPort.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error cleaning up old serial port for {DeviceName}", _deviceName);
+            }
+            _serialPort = null;
+        }
+
+        // Stop watchdog and polling
+        lock (_watchdogLock)
+        {
+            _eventWatchdogTimer?.Dispose();
+            _eventWatchdogTimer = null;
+            _eventsAreHealthy = false;
+            _aggressivePollingRunning = false;
+        }
+
+        // Create and open new port
+        var newPort = new SerialPort(_portName, _baudRate, _parity, _dataBits, _stopBits)
+        {
+            ReadTimeout = 1000,
+            WriteTimeout = 1000,
+            RtsEnable = true,
+            DtrEnable = true
+        };
+
+        newPort.Open();
+        _serialPort = newPort;
+
+        _logger.LogInformation("Serial port reopened for {DeviceName} on {PortName}", _deviceName, _portName);
+
+        // Re-setup event handling or polling
+        if (_forcePollingMode)
+        {
+            // Restart aggressive polling
+            lock (_watchdogLock)
+            {
+                _eventsAreHealthy = false;
+                _aggressivePollingRunning = true;
+            }
+            _ = Task.Run(() => AggressivePollingLoop(_cancellationTokenSource?.Token ?? CancellationToken.None),
+                cancellationToken);
+        }
+        else
+        {
+            // Re-subscribe to events and restart watchdog
+            _serialPort.DataReceived += OnDataReceived;
+            ResetEventWatchdog();
+        }
+    }
+
     /// <summary>
     /// Writes data to the serial port
     /// </summary>
     public void Write(string data)
     {
-        if (_serialPort?.IsOpen == true)
+        try
         {
-            _serialPort.Write(data);
+            if (_serialPort?.IsOpen == true)
+            {
+                _serialPort.Write(data);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+            }
         }
-        else
+        catch (InvalidOperationException ex) when (ex.Message.Contains("port") || ex.Message.Contains("Port"))
         {
-            throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+            _logger.LogWarning(ex, "Serial port disconnected during Write for {DeviceName}", _deviceName);
+            TriggerReconnection();
+            throw;
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "I/O error during Write for {DeviceName}", _deviceName);
+            TriggerReconnection();
+            throw;
         }
     }
 
@@ -624,13 +852,28 @@ public class SerialPortManager : IDisposable
     /// </summary>
     public void Write(byte[] data, int offset, int count)
     {
-        if (_serialPort?.IsOpen == true)
+        try
         {
-            _serialPort.Write(data, offset, count);
+            if (_serialPort?.IsOpen == true)
+            {
+                _serialPort.Write(data, offset, count);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+            }
         }
-        else
+        catch (InvalidOperationException ex) when (ex.Message.Contains("port") || ex.Message.Contains("Port"))
         {
-            throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+            _logger.LogWarning(ex, "Serial port disconnected during Write for {DeviceName}", _deviceName);
+            TriggerReconnection();
+            throw;
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "I/O error during Write for {DeviceName}", _deviceName);
+            TriggerReconnection();
+            throw;
         }
     }
 
@@ -639,13 +882,28 @@ public class SerialPortManager : IDisposable
     /// </summary>
     public void WriteLine(string data)
     {
-        if (_serialPort?.IsOpen == true)
+        try
         {
-            _serialPort.WriteLine(data);
+            if (_serialPort?.IsOpen == true)
+            {
+                _serialPort.WriteLine(data);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+            }
         }
-        else
+        catch (InvalidOperationException ex) when (ex.Message.Contains("port") || ex.Message.Contains("Port"))
         {
-            throw new InvalidOperationException($"Serial port not open for {_deviceName}");
+            _logger.LogWarning(ex, "Serial port disconnected during WriteLine for {DeviceName}", _deviceName);
+            TriggerReconnection();
+            throw;
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "I/O error during WriteLine for {DeviceName}", _deviceName);
+            TriggerReconnection();
+            throw;
         }
     }
 
@@ -700,6 +958,20 @@ public class SerialPortManager : IDisposable
         _dataWriter.Complete();
 
         _cancellationTokenSource?.Cancel();
+
+        // Wait for reconnection task to complete if running
+        if (_reconnectionTask != null)
+        {
+            try
+            {
+                _reconnectionTask.Wait(TimeSpan.FromSeconds(5));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error waiting for reconnection task to complete for {DeviceName}", _deviceName);
+            }
+        }
+
         _cancellationTokenSource?.Dispose();
     }
 }
