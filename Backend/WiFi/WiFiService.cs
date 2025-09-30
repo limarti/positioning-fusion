@@ -136,6 +136,7 @@ public class WiFiService : BackgroundService
                            knownNetworks.Any() &&
                            !_isAttemptingConnection &&
                            !(_currentStatus.CurrentMode == WiFiMode.Client && _currentStatus.IsConnected) &&
+                           _currentStatus.CurrentMode != WiFiMode.AP && // Don't attempt if in AP mode - let ShouldRetryClientFromAP handle that
                            !inCooldown;
 
         // Debug logging to understand why connections are being attempted
