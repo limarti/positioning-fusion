@@ -33,20 +33,8 @@ public class GnssInitializer
     private const int CommandDelayMs = 200;
     private const int BaudRateDelayMs = 3000;
 
-    // ZED-X20P specific baud rates - default is 38400
-    private readonly int[] _baudRatesToScan = new int[]
-    {
-        //the only ones we are using. default, and ours
-        460800,
-        38400,
-
-        //4800,   // Older devices
-        //9600,   // Most common default
-        //19200,  // Higher speed
-        //57600,  // Very high speed
-        //115200, // Maximum common speed
-        //230400,
-    };
+    // ZED-X20P specific baud rates - try our target first, then default
+    private readonly int[] _baudRatesToScan = new int[] { 460800, 38400 };
 
     public GnssInitializer(ILogger<GnssInitializer> logger, GeoConfigurationManager configurationManager, ILoggerFactory loggerFactory)
     {
@@ -82,11 +70,10 @@ public class GnssInitializer
                     return true;
                 }
 
-                // Wait between baud rate attempts (except after the last one)
+                // Small delay between baud rate attempts
                 if (i < _baudRatesToScan.Length - 1)
                 {
-                    _logger.LogDebug("Waiting 3 seconds before trying next baud rate...");
-                    await Task.Delay(3000);
+                    await Task.Delay(1000);
                 }
             }
 
@@ -131,103 +118,110 @@ public class GnssInitializer
 
     private async Task<bool> TryBaudRateAsync(string portName, int baudRate)
     {
-        SerialPortManager? testManager = null;
-
         try
         {
-            testManager = new SerialPortManager(
-                "GNSS-Test",
+            // Dispose any existing connection
+            _serialPortManager?.Dispose();
+            _serialPortManager = null;
+
+            // Create new connection at specified baud rate
+            _serialPortManager = new SerialPortManager(
+                "GNSS",
                 portName,
                 baudRate,
                 _loggerFactory.CreateLogger<SerialPortManager>()
             );
 
-            await testManager.StartAsync();
-            _logger.LogDebug("SerialPortManager {PortName} started at {BaudRate} baud", portName, baudRate);
+            await _serialPortManager.StartAsync();
+            _logger.LogDebug("Testing GNSS at {BaudRate} baud", baudRate);
 
-            // Test GNSS communication
-            var response = await TestGnssCommunicationAsync(testManager);
+            // Test communication
+            var response = await TestGnssCommunicationAsync(_serialPortManager);
 
             if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
             {
-                _logger.LogDebug("GNSS response received at {BaudRate} baud: {Response}",
-                    baudRate, response.Trim());
-
-                // Try to switch to optimal speed (460800) if not already there
-                if (baudRate != 460800 && await TrySwitchToOptimalBaudRate(testManager, baudRate, portName))
+                _logger.LogInformation("GNSS communication established at {BaudRate} baud", baudRate);
+                
+                // If we're not at optimal speed, try to switch
+                if (baudRate != 460800)
                 {
-                    // Successfully switched - _serialPortManager is now set to 460800
-                    testManager = null; // Prevent disposal
-                    return true;
+                    _logger.LogInformation("Attempting to switch to 460800 baud for optimal performance");
+                    await SwitchTo460800BaudAsync(baudRate, portName);
+                    // Note: SwitchTo460800BaudAsync will update _serialPortManager if successful
                 }
-
-                // Use current baud rate (either 460800 already, or switch failed)
-                _serialPortManager = testManager;
-                testManager = null; // Prevent disposal
+                
                 return true;
             }
-            else
-            {
-                _logger.LogDebug("No valid response received at {BaudRate} baud", baudRate);
-            }
+
+            _logger.LogDebug("No valid response at {BaudRate} baud", baudRate);
+            
+            // Clean up failed connection
+            _serialPortManager?.Dispose();
+            _serialPortManager = null;
+            return false;
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to test GNSS at {BaudRate} baud", baudRate);
+            _serialPortManager?.Dispose();
+            _serialPortManager = null;
+            return false;
         }
-        finally
-        {
-            try
-            {
-                testManager?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Error disposing test manager at {BaudRate} baud", baudRate);
-            }
-        }
-
-        return false;
     }
 
-    private async Task<bool> TrySwitchToOptimalBaudRate(SerialPortManager currentManager, int currentBaudRate, string portName)
-    {
-        _logger.LogInformation("Switching GNSS from {CurrentBaud} to 460800 baud", currentBaudRate);
 
-        if (await SwitchTo460800BaudAsync(currentManager, (uint)currentBaudRate, portName))
-        {
-            return true;
-        }
-
-        _logger.LogWarning("Baud rate switch to 460800 failed, keeping {BaudRate} baud", currentBaudRate);
-        return false;
-    }
-
-    private async Task<bool> SwitchTo460800BaudAsync(SerialPortManager currentManager, uint currentBaudRate, string portName)
+    private async Task<bool> SwitchTo460800BaudAsync(int currentBaudRate, string portName)
     {
         try
         {
-            _logger.LogDebug("Switching GNSS from {CurrentBaud} to 460800 baud using NMEA PUBX command", currentBaudRate);
+            if (_serialPortManager == null) return false;
 
-            // Use NMEA PUBX,41 command to change baud rate (reliable for u-blox modules)
+            // Send baud rate change command
             var pubxBaudCommand = "$PUBX,41,1,0003,0003,460800,0";
             var checksum = CalculateNmeaChecksum(pubxBaudCommand.Substring(1));
             pubxBaudCommand += $"*{checksum:X2}\r\n";
 
             _logger.LogDebug("Sending PUBX baud command: {Command}", pubxBaudCommand.Trim());
-            currentManager.Write(pubxBaudCommand);
+            _serialPortManager.Write(pubxBaudCommand);
 
             // Wait for command to be processed
             await Task.Delay(BaudRateDelayMs);
 
             // Close current connection
-            currentManager.Dispose();
+            _serialPortManager.Dispose();
+            _serialPortManager = null;
 
             // Wait for device to reconfigure
             await Task.Delay(BaudRateDelayMs);
 
-            // Test reconnection at 460800 baud
-            return await TestAndSetConnection(portName, 460800);
+            // Try connection at new baud rate
+            _serialPortManager = new SerialPortManager(
+                "GNSS",
+                portName,
+                460800,
+                _loggerFactory.CreateLogger<SerialPortManager>()
+            );
+
+            await _serialPortManager.StartAsync();
+            var response = await TestGnssCommunicationAsync(_serialPortManager);
+
+            if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
+            {
+                _logger.LogInformation("Successfully switched to 460800 baud");
+                return true;
+            }
+
+            // Failed - try to restore original baud rate
+            _logger.LogWarning("Failed to switch to 460800, restoring {OriginalBaud} baud", currentBaudRate);
+            _serialPortManager?.Dispose();
+            _serialPortManager = new SerialPortManager(
+                "GNSS",
+                portName,
+                currentBaudRate,
+                _loggerFactory.CreateLogger<SerialPortManager>()
+            );
+            await _serialPortManager.StartAsync();
+            return false;
         }
         catch (Exception ex)
         {
@@ -236,47 +230,6 @@ public class GnssInitializer
         }
     }
 
-    private async Task<bool> TestAndSetConnection(string portName, int baudRate)
-    {
-        SerialPortManager? testManager = null;
-
-        try
-        {
-            testManager = new SerialPortManager(
-                "GNSS-Test",
-                portName,
-                baudRate,
-                _loggerFactory.CreateLogger<SerialPortManager>()
-            );
-
-            await testManager.StartAsync();
-
-            var response = await TestGnssCommunicationAsync(testManager);
-
-            if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
-            {
-                _logger.LogDebug("Communication confirmed at {BaudRate} baud", baudRate);
-                _serialPortManager = testManager;
-                testManager = null; // Prevent disposal
-                return true;
-            }
-
-            return false;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Error testing {BaudRate} baud", baudRate);
-            return false;
-        }
-        finally
-        {
-            try
-            {
-                testManager?.Dispose();
-            }
-            catch { }
-        }
-    }
 
 
     private static bool IsValidNmeaResponse(string response)
@@ -338,95 +291,118 @@ public class GnssInitializer
             return;
         }
 
-        _logger.LogInformation("Configuring GNSS for satellite data output (runtime only)");
+        _logger.LogInformation("Configuring GNSS for satellite data output");
+        _logger.LogInformation("Mode: {Mode}, GNSS Rate: {Rate}Hz", _configurationManager.OperatingMode, UBX_MESSAGES_RATE_HZ);
 
         try
         {
-            _logger.LogInformation("ZED-X20P: Using CFG-VALSET for modern UBX configuration");
-            _logger.LogInformation("Corrections Mode: {Mode}, GNSS Rate: {Rate}Hz", _configurationManager.OperatingMode, UBX_MESSAGES_RATE_HZ);
-
             await SetNavigationRate(UBX_MESSAGES_RATE_HZ);
-
-            // Enable messages at full rate (10Hz) - every navigation solution
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_HPPOSLLH_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SIG_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_SFRBX_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_RXM_COR_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TM2_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_TIM_TP_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_DOP_UART1, 5);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_RELPOSNED_UART1, 5);
-
-            if (_configurationManager.OperatingMode == OperatingMode.Send)
-            {
-                _logger.LogInformation("Configuring Base Station mode - Survey-In with RTCM3 output");
-
-                //await EnableMessageWithValset(UbxConstants.UART1_PROTOCOL_UBX, 1);
-                //await EnableMessageWithValset(UbxConstants.UART1_PROTOCOL_NMEA, 1);
-                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3, true);
-
-                // Configure RTCM3 message rates
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 1);  // 1Hz for reference station position
-
-                //Corrections
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 5);
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 5);
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 5);
-
-                // unsupported as output:
-                // await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GLONASS_MSM7_UART1, 10);
-                // await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GLONASS_CODE_PHASE_BIASES_UART1, 1);
-
-                // Enable Survey-In status monitoring
-                await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SVIN_UART1, 1);
-
-                // Start Survey-In mode after RTCM3 configuration
-                await SetSurveyInMode(UbxConstants.SURVEY_IN_DURATION_SECONDS, UbxConstants.SURVEY_IN_ACCURACY_LIMIT_0P1MM);
-
-                _logger.LogInformation("Base Station mode configuration completed");
-            }
-            else if (_configurationManager.OperatingMode == OperatingMode.Receive)
-            {
-                _logger.LogInformation("Configuring Rover mode - TMODE3 disabled, RTCM3 reception on UART1");
-
-                // Ensure TMODE3 = Disabled (rover must not be in survey-in/fixed mode)
-                await SetTmodeDisabled();
-
-                // Disable generating RTCM3 messages (rover shouldn't generate them)
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 0);
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 0);
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 0);
-                await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 0);
-
-                // Ensure UBX input/output enabled on UART1 (so we can still send VALSET commands)
-                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_UBX_IN, true);
-                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_UBX, true);
-                
-                // Enable RTCM3 input on UART1 for corrections reception, disable on UART2
-                await SetBoolWithValset(UbxConstants.UART2_PROTOCOL_RTCM3, false);
-                await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3_IN, true);
-
-                _logger.LogInformation("Rover mode configuration completed - TMODE3 disabled, ready for corrections");
-            }
-
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GGA_UART1, 1);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_RMC_UART1, 1);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GSV_UART1, 1);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GSA_UART1, 1);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_VTG_UART1, 1);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_GLL_UART1, 1);
-            await EnableMessageWithValset(UbxConstants.MSGOUT_NMEA_ZDA_UART1, 1);
+            await ConfigureUbxMessages();
+            await ConfigureOperatingMode();
+            await ConfigureNmeaMessages();
             
-            _logger.LogInformation("NMEA sentence configuration completed using CFG-VALSET");
-            _logger.LogInformation("ZED-X20P UBX configuration completed");
+            _logger.LogInformation("GNSS configuration completed");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to configure GNSS for satellite data");
+            _logger.LogError(ex, "Failed to configure GNSS");
+        }
+    }
+
+    private async Task ConfigureUbxMessages()
+    {
+        // Configure UBX messages at 5Hz
+        var ubxMessages = new[]
+        {
+            (UbxConstants.MSGOUT_UBX_NAV_PVT_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_NAV_HPPOSLLH_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_NAV_SAT_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_NAV_SIG_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_RXM_RAWX_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_RXM_SFRBX_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_RXM_COR_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_TIM_TM2_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_TIM_TP_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_MON_COMMS_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_NAV_DOP_UART1, 5),
+            (UbxConstants.MSGOUT_UBX_NAV_RELPOSNED_UART1, 5)
+        };
+
+        foreach (var (keyId, rate) in ubxMessages)
+        {
+            await EnableMessageWithValset(keyId, rate);
+        }
+    }
+
+    private async Task ConfigureOperatingMode()
+    {
+        if (_configurationManager.OperatingMode == OperatingMode.Send)
+        {
+            await ConfigureBaseStation();
+        }
+        else if (_configurationManager.OperatingMode == OperatingMode.Receive)
+        {
+            await ConfigureRover();
+        }
+    }
+
+    private async Task ConfigureBaseStation()
+    {
+        _logger.LogInformation("Configuring Base Station mode");
+        
+        // Enable RTCM3 output
+        await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3, true);
+        
+        // Configure RTCM3 corrections
+        await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 1);
+        await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 5);
+        await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 5);
+        await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 5);
+        
+        // Enable Survey-In status
+        await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SVIN_UART1, 1);
+        
+        // Start Survey-In
+        await SetSurveyInMode(UbxConstants.SURVEY_IN_DURATION_SECONDS, UbxConstants.SURVEY_IN_ACCURACY_LIMIT_0P1MM);
+    }
+
+    private async Task ConfigureRover()
+    {
+        _logger.LogInformation("Configuring Rover mode");
+        
+        // Disable TMODE3
+        await SetTmodeDisabled();
+        
+        // Disable RTCM3 output
+        await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 0);
+        await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 0);
+        await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 0);
+        await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 0);
+        
+        // Enable protocols for command and correction input
+        await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_UBX_IN, true);
+        await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_UBX, true);
+        await SetBoolWithValset(UbxConstants.UART2_PROTOCOL_RTCM3, false);
+        await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3_IN, true);
+    }
+
+    private async Task ConfigureNmeaMessages()
+    {
+        // Configure NMEA messages at 1Hz
+        var nmeaMessages = new[]
+        {
+            UbxConstants.MSGOUT_NMEA_GGA_UART1,
+            UbxConstants.MSGOUT_NMEA_RMC_UART1,
+            UbxConstants.MSGOUT_NMEA_GSV_UART1,
+            UbxConstants.MSGOUT_NMEA_GSA_UART1,
+            UbxConstants.MSGOUT_NMEA_VTG_UART1,
+            UbxConstants.MSGOUT_NMEA_GLL_UART1,
+            UbxConstants.MSGOUT_NMEA_ZDA_UART1
+        };
+
+        foreach (var keyId in nmeaMessages)
+        {
+            await EnableMessageWithValset(keyId, 1);
         }
     }
 
