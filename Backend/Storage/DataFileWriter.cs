@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using System.Text;
 using Backend.Configuration;
+using Backend.Hardware.Gnss;
 
 namespace Backend.Storage;
 
@@ -20,7 +21,6 @@ public class DataFileWriter : BackgroundService
     private string? _currentFilePath;
     private bool _driveAvailable = false;
     private string? _currentDrivePath;
-    private readonly DateTime _sessionStartTime = DateTime.Now;
 
     // Public properties to expose drive information
     public string? CurrentDrivePath => _currentDrivePath;
@@ -32,6 +32,12 @@ public class DataFileWriter : BackgroundService
     public static string? SharedDrivePath { get; private set; }
     public static string? SharedSessionPath { get; private set; }
     public static bool SharedDriveAvailable { get; private set; }
+
+    // Session counter and rename tracking
+    private static int _sessionCounter = -1;
+    private static bool _sessionRenamed = false;
+    private static readonly object _renameLock = new object();
+    private const string SessionCounterFileName = ".session_counter";
 
     public DataFileWriter(string fileName, ILogger<DataFileWriter> logger)
     {
@@ -75,7 +81,9 @@ public class DataFileWriter : BackgroundService
         EnsureSessionPathExists();
 
         var lastFlushTime = DateTime.UtcNow;
+        var lastGnssTimeCheck = DateTime.UtcNow;
         const int flushIntervalMs = 1000; // 1 second
+        const int gnssTimeCheckIntervalSeconds = 15; // Check GNSS time every 15 seconds
 
         try
         {
@@ -86,13 +94,29 @@ public class DataFileWriter : BackgroundService
                     // Calculate timeout for next flush
                     var timeSinceLastFlush = DateTime.UtcNow - lastFlushTime;
                     var timeUntilNextFlush = TimeSpan.FromMilliseconds(flushIntervalMs) - timeSinceLastFlush;
-                    
+
                     if (timeUntilNextFlush <= TimeSpan.Zero)
                     {
                         // Time to flush, check conditions
                         await CheckAndFlushIfNeeded();
                         lastFlushTime = DateTime.UtcNow;
                         timeUntilNextFlush = TimeSpan.FromMilliseconds(flushIntervalMs);
+                    }
+
+                    // Check for GNSS time and attempt rename every 15 seconds
+                    var timeSinceLastGnssCheck = DateTime.UtcNow - lastGnssTimeCheck;
+                    if (timeSinceLastGnssCheck.TotalSeconds >= gnssTimeCheckIntervalSeconds && !_sessionRenamed)
+                    {
+                        var gnssTime = GnssService.GetLastValidGnssTime();
+                        if (gnssTime.HasValue)
+                        {
+                            _logger.LogInformation("Valid GNSS time detected: {GnssTime}, attempting to rename session folder", gnssTime.Value);
+                            if (TryRenameSessionWithGnssTime(gnssTime.Value, _logger))
+                            {
+                                _logger.LogInformation("Session folder successfully renamed with GNSS time");
+                            }
+                        }
+                        lastGnssTimeCheck = DateTime.UtcNow;
                     }
 
                     // Wait for data or timeout
@@ -285,11 +309,18 @@ public class DataFileWriter : BackgroundService
                 _currentDrivePath = driveRoot;
                 _logger.LogInformation("USB drive detected: {DrivePath}", driveRoot);
             }
-            
+
             var loggingDir = Path.Combine(_currentDrivePath, LoggingDirectoryName);
 
-            // Create session directory if needed (use app start time for session name)
-            var sessionFolder = _sessionStartTime.ToString("yyyy-MM-dd-HH-mm");
+            // Initialize session counter on first run
+            if (_sessionCounter == -1)
+            {
+                _sessionCounter = ReadOrCreateSessionCounter(loggingDir);
+                WriteSessionCounter(loggingDir, _sessionCounter);
+            }
+
+            // Create session directory with counter-based naming
+            var sessionFolder = $"session_{_sessionCounter:D5}";
             var sessionPath = Path.Combine(loggingDir, sessionFolder);
 
             if (_currentSessionPath != sessionPath)
@@ -451,6 +482,111 @@ public class DataFileWriter : BackgroundService
         {
             _logger.LogDebug("Path {Path} is not a valid USB mount: {Error}", path, ex.Message);
             return false;
+        }
+    }
+
+    private int ReadOrCreateSessionCounter(string loggingDir)
+    {
+        var counterFilePath = Path.Combine(loggingDir, SessionCounterFileName);
+
+        try
+        {
+            if (File.Exists(counterFilePath))
+            {
+                var content = File.ReadAllText(counterFilePath).Trim();
+                if (int.TryParse(content, out int counter))
+                {
+                    _logger.LogInformation("Read session counter: {Counter} from {FilePath}", counter, counterFilePath);
+                    return counter + 1; // Increment for new session
+                }
+                else
+                {
+                    _logger.LogWarning("Invalid session counter file content, starting from 1");
+                    return 1;
+                }
+            }
+            else
+            {
+                _logger.LogInformation("No session counter file found, starting from 1");
+                return 1;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reading session counter file, starting from 1");
+            return 1;
+        }
+    }
+
+    private void WriteSessionCounter(string loggingDir, int counter)
+    {
+        var counterFilePath = Path.Combine(loggingDir, SessionCounterFileName);
+
+        try
+        {
+            File.WriteAllText(counterFilePath, counter.ToString());
+            _logger.LogInformation("Wrote session counter: {Counter} to {FilePath}", counter, counterFilePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error writing session counter file");
+        }
+    }
+
+    public static bool TryRenameSessionWithGnssTime(DateTime gnssDateTime, ILogger logger)
+    {
+        lock (_renameLock)
+        {
+            // Check if already renamed
+            if (_sessionRenamed)
+            {
+                return false;
+            }
+
+            // Check if we have a session path to rename
+            if (string.IsNullOrEmpty(SharedSessionPath) || !Directory.Exists(SharedSessionPath))
+            {
+                logger.LogWarning("Cannot rename session - no valid session path exists");
+                return false;
+            }
+
+            try
+            {
+                // Create new folder name with GNSS timestamp
+                var parentDir = Path.GetDirectoryName(SharedSessionPath);
+                if (string.IsNullOrEmpty(parentDir))
+                {
+                    logger.LogError("Cannot determine parent directory of session path");
+                    return false;
+                }
+
+                var newFolderName = gnssDateTime.ToString("yyyy-MM-dd-HH-mm");
+                var newSessionPath = Path.Combine(parentDir, newFolderName);
+
+                // Check if target already exists
+                if (Directory.Exists(newSessionPath))
+                {
+                    logger.LogWarning("Target session folder already exists: {NewPath}", newSessionPath);
+                    return false;
+                }
+
+                // Perform the rename
+                Directory.Move(SharedSessionPath, newSessionPath);
+
+                logger.LogInformation("Successfully renamed session folder: {OldPath} → {NewPath}",
+                    SharedSessionPath, newSessionPath);
+
+                // Update shared path
+                SharedSessionPath = newSessionPath;
+                _sessionRenamed = true;
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error renaming session folder with GNSS time");
+                return false;
+            }
         }
     }
 

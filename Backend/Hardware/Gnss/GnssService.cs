@@ -25,7 +25,11 @@ public class GnssService : BackgroundService
     private static double? _lastHighPrecisionHeight = null;
     private static DateTime _highPrecisionTimestamp = DateTime.MinValue;
     private static readonly object _positionLock = new object();
-    
+
+    // GNSS time tracking
+    private static DateTime? _lastValidGnssTime = null;
+    private static readonly object _gnssTimeLock = new object();
+
     // Methods to manage high-precision position data
     public static void UpdateHighPrecisionPosition(double latitude, double longitude, double height)
     {
@@ -37,7 +41,7 @@ public class GnssService : BackgroundService
             _highPrecisionTimestamp = DateTime.UtcNow;
         }
     }
-    
+
     public static (double? lat, double? lng, double? height) GetHighPrecisionPosition(TimeSpan maxAge)
     {
         lock (_positionLock)
@@ -47,6 +51,23 @@ public class GnssService : BackgroundService
                 return (_lastHighPrecisionLatitude, _lastHighPrecisionLongitude, _lastHighPrecisionHeight);
             }
             return (null, null, null);
+        }
+    }
+
+    // Methods to manage GNSS time
+    public static void UpdateGnssTime(DateTime gnssTime)
+    {
+        lock (_gnssTimeLock)
+        {
+            _lastValidGnssTime = gnssTime;
+        }
+    }
+
+    public static DateTime? GetLastValidGnssTime()
+    {
+        lock (_gnssTimeLock)
+        {
+            return _lastValidGnssTime;
         }
     }
     

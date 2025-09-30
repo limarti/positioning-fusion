@@ -83,6 +83,9 @@ public static class PositionVelocityTimeParser
                 {
                     var gnssDateTime = new DateTime(year, month, day, hour, min, sec, DateTimeKind.Utc);
                     gnssTimestamp = ((DateTimeOffset)gnssDateTime).ToUnixTimeMilliseconds();
+
+                    // Update static GNSS time for session folder renaming
+                    GnssService.UpdateGnssTime(gnssDateTime);
                 }
             }
             catch
