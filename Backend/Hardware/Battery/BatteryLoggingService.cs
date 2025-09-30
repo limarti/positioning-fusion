@@ -1,6 +1,7 @@
 using Backend.Hubs;
 using Backend.Storage;
 using Backend.GnssSystem;
+using Backend.Hardware.Camera;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Backend.Hardware.Battery;
@@ -9,16 +10,19 @@ public class BatteryLoggingService : BackgroundService
 {
     private readonly ILogger<BatteryLoggingService> _logger;
     private readonly SystemMonitoringService _systemMonitoringService;
+    private readonly CameraService _cameraService;
     private readonly DataFileWriter _dataFileWriter;
     private bool _headerWritten = false;
 
     public BatteryLoggingService(
         ILogger<BatteryLoggingService> logger,
         SystemMonitoringService systemMonitoringService,
+        CameraService cameraService,
         ILoggerFactory loggerFactory)
     {
         _logger = logger;
         _systemMonitoringService = systemMonitoringService;
+        _cameraService = cameraService;
         _dataFileWriter = new DataFileWriter("Battery.txt", loggerFactory.CreateLogger<DataFileWriter>());
     }
 
@@ -62,19 +66,23 @@ public class BatteryLoggingService : BackgroundService
             // Write CSV header if this is the first data
             if (!_headerWritten)
             {
-                var csvHeader = "timestamp,battery_level,voltage,external_power_connected";
+                var csvHeader = "timestamp,battery_level,voltage,external_power_connected,camera_connected,usb_drive_connected";
                 _dataFileWriter.WriteData(csvHeader);
                 _headerWritten = true;
             }
 
+            // Get camera and USB drive status
+            var cameraConnected = _cameraService.IsAvailable;
+            var usbDriveConnected = DataFileWriter.SharedDriveAvailable;
+
             // Format CSV line
             var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-            var csvLine = $"{timestamp},{systemHealth.BatteryLevel:F2},{systemHealth.BatteryVoltage:F3},{systemHealth.IsExternalPowerConnected}";
+            var csvLine = $"{timestamp},{systemHealth.BatteryLevel:F2},{systemHealth.BatteryVoltage:F3},{systemHealth.IsExternalPowerConnected},{cameraConnected},{usbDriveConnected}";
 
             _dataFileWriter.WriteData(csvLine);
 
-            _logger.LogDebug("Battery data logged: Level={BatteryLevel:F1}%, Voltage={BatteryVoltage:F2}V, ExternalPower={IsExternalPowerConnected}",
-                systemHealth.BatteryLevel, systemHealth.BatteryVoltage, systemHealth.IsExternalPowerConnected);
+            _logger.LogDebug("Battery data logged: Level={BatteryLevel:F1}%, Voltage={BatteryVoltage:F2}V, ExternalPower={IsExternalPowerConnected}, Camera={CameraConnected}, USB={UsbDriveConnected}",
+                systemHealth.BatteryLevel, systemHealth.BatteryVoltage, systemHealth.IsExternalPowerConnected, cameraConnected, usbDriveConnected);
         }
         catch (Exception ex)
         {
