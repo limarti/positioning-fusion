@@ -198,12 +198,9 @@ export function registerGnssEvents(connection)
 
   connection.on("PvtUpdate", (data) =>
   {
-    // Update position and navigation data from NAV-PVT messages
-    gnssData.latitude = data.latitude;
-    gnssData.longitude = data.longitude;
-    gnssData.altitude = data.heightMSL / 1000; // Convert mm to m
-    gnssData.hAcc = data.horizontalAccuracy / 1000; // Convert mm to m
-    gnssData.vAcc = data.verticalAccuracy / 1000; // Convert mm to m
+    // Update metadata from NAV-PVT messages (coordinates removed - see HpPositionUpdate)
+    gnssData.hAcc = data.horizontalAccuracy;
+    gnssData.vAcc = data.verticalAccuracy;
 
     // Update GNSS time data
     gnssData.gnssTimestamp = data.gnssTimestamp;
@@ -223,6 +220,16 @@ export function registerGnssEvents(connection)
     }
 
     gnssData.satellitesUsed = data.numSatellites;
+  });
+
+  connection.on("HpPositionUpdate", (data) =>
+  {
+    // Update high-precision position from NAV-HPPOSLLH messages (11 decimal precision)
+    gnssData.latitude = data.latitude;
+    gnssData.longitude = data.longitude;
+    gnssData.altitude = data.heightMSL; // Already in meters
+    // Note: hAcc and vAcc from HpPositionUpdate could override PvtUpdate values if needed
+    // For now, we'll keep using accuracy from PvtUpdate for consistency
   });
 
   connection.on("MessageRatesUpdate", (data) => 

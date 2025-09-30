@@ -18,41 +18,10 @@ public class GnssService : BackgroundService
     private readonly GnssInitializer _gnssInitializer;
     private readonly DataFileWriter _dataFileWriter;
     private readonly BluetoothStreamingService _bluetoothService;
-    
-    // Unified high-precision position tracking
-    private static double? _lastHighPrecisionLatitude = null;
-    private static double? _lastHighPrecisionLongitude = null;
-    private static double? _lastHighPrecisionHeight = null;
-    private static DateTime _highPrecisionTimestamp = DateTime.MinValue;
-    private static readonly object _positionLock = new object();
 
     // GNSS time tracking
     private static DateTime? _lastValidGnssTime = null;
     private static readonly object _gnssTimeLock = new object();
-
-    // Methods to manage high-precision position data
-    public static void UpdateHighPrecisionPosition(double latitude, double longitude, double height)
-    {
-        lock (_positionLock)
-        {
-            _lastHighPrecisionLatitude = latitude;
-            _lastHighPrecisionLongitude = longitude;
-            _lastHighPrecisionHeight = height;
-            _highPrecisionTimestamp = DateTime.UtcNow;
-        }
-    }
-
-    public static (double? lat, double? lng, double? height) GetHighPrecisionPosition(TimeSpan maxAge)
-    {
-        lock (_positionLock)
-        {
-            if (DateTime.UtcNow - _highPrecisionTimestamp <= maxAge)
-            {
-                return (_lastHighPrecisionLatitude, _lastHighPrecisionLongitude, _lastHighPrecisionHeight);
-            }
-            return (null, null, null);
-        }
-    }
 
     // Methods to manage GNSS time
     public static void UpdateGnssTime(DateTime gnssTime)

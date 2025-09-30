@@ -56,15 +56,30 @@ public static class HighPrecisionPositionParser
 
         try
         {
-            // Update the unified high-precision position store
-            GnssService.UpdateHighPrecisionPosition(latitudeDeg, longitudeDeg, hMSLMeters);
-            
-            logger.LogDebug("📍 High precision position stored: Lat = {Lat:F9}°, Lon = {Lon:F9}°, HAcc = {HAcc:F4}m",
-                latitudeDeg, longitudeDeg, hAccMeters);
+            // Throttle high precision position updates to dashboard rate
+            var throttleInterval = TimeSpan.FromMilliseconds(1000.0 / SystemConfiguration.GnssDataRateDashboard);
+            if (DateTime.UtcNow - _lastSentTime >= throttleInterval)
+            {
+                _lastSentTime = DateTime.UtcNow;
+
+                var hpPositionData = new HpPositionUpdate
+                {
+                    Latitude = latitudeDeg,
+                    Longitude = longitudeDeg,
+                    HeightMSL = hMSLMeters,
+                    HorizontalAccuracy = hAccMeters,
+                    VerticalAccuracy = vAccMeters
+                };
+
+                await hubContext.Clients.All.SendAsync("HpPositionUpdate", hpPositionData, stoppingToken);
+
+                logger.LogDebug("📍 HpPositionUpdate sent: Lat = {Lat:F11}°, Lon = {Lon:F11}°, Height = {Height:F4}m, HAcc = {HAcc:F4}m, VAcc = {VAcc:F4}m",
+                    latitudeDeg, longitudeDeg, hMSLMeters, hAccMeters, vAccMeters);
+            }
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "❌ Failed to store high precision position data");
+            logger.LogError(ex, "❌ Failed to send high precision position data to frontend");
         }
     }
 }

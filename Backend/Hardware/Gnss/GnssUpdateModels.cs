@@ -39,13 +39,26 @@ public class PvtUpdate
     public bool GnssFixOk { get; set; }
     public bool DifferentialSolution { get; set; }
     public byte NumSatellites { get; set; }
-    public double Longitude { get; set; }
-    public double Latitude { get; set; }
-    public int HeightEllipsoid { get; set; }
-    public int HeightMSL { get; set; }
+
+    // Coordinates removed - NAV-PVT provides only 7 decimal places (~11mm precision)
+    // Use HpPositionUpdate instead, which provides 11 decimal places (~0.01mm precision) from NAV-HPPOSLLH
+    // public double Longitude { get; set; }
+    // public double Latitude { get; set; }
+    // public int HeightEllipsoid { get; set; }
+    // public int HeightMSL { get; set; }
+
     public double HorizontalAccuracy { get; set; }
     public double VerticalAccuracy { get; set; }
     public int CarrierSolution { get; set; }
+}
+
+public class HpPositionUpdate
+{
+    public double Latitude { get; set; }         // High precision latitude (1e-11 degrees, ~0.01mm)
+    public double Longitude { get; set; }        // High precision longitude (1e-11 degrees, ~0.01mm)
+    public double HeightMSL { get; set; }        // Height above mean sea level (meters, 0.1mm precision)
+    public double HorizontalAccuracy { get; set; } // Horizontal accuracy estimate (meters)
+    public double VerticalAccuracy { get; set; }   // Vertical accuracy estimate (meters)
 }
 
 public class BroadcastDataUpdate
