@@ -198,7 +198,7 @@ export function registerGnssEvents(connection)
 
   connection.on("PvtUpdate", (data) =>
   {
-    // Update metadata from NAV-PVT messages (coordinates removed - see HpPositionUpdate)
+    // Update metadata from NAV-PVT messages
     gnssData.hAcc = data.horizontalAccuracy;
     gnssData.vAcc = data.verticalAccuracy;
 
@@ -220,14 +220,26 @@ export function registerGnssEvents(connection)
     }
 
     gnssData.satellitesUsed = data.numSatellites;
+
+    // Use standard precision position when in base mode (mode === 'Send')
+    if (gnssData.corrections.mode === 'Send')
+    {
+      gnssData.latitude = data.latitude;
+      gnssData.longitude = data.longitude;
+      gnssData.altitude = data.heightMSL / 1000.0; // Convert mm to meters
+    }
   });
 
   connection.on("HpPositionUpdate", (data) =>
   {
     // Update high-precision position from NAV-HPPOSLLH messages (11 decimal precision)
-    gnssData.latitude = data.latitude;
-    gnssData.longitude = data.longitude;
-    gnssData.altitude = data.heightMSL; // Already in meters
+    // Only use high precision when NOT in base mode
+    if (gnssData.corrections.mode !== 'Send')
+    {
+      gnssData.latitude = data.latitude;
+      gnssData.longitude = data.longitude;
+      gnssData.altitude = data.heightMSL; // Already in meters
+    }
     // Note: hAcc and vAcc from HpPositionUpdate could override PvtUpdate values if needed
     // For now, we'll keep using accuracy from PvtUpdate for consistency
   });

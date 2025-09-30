@@ -40,12 +40,12 @@ public class PvtUpdate
     public bool DifferentialSolution { get; set; }
     public byte NumSatellites { get; set; }
 
-    // Coordinates removed - NAV-PVT provides only 7 decimal places (~11mm precision)
-    // Use HpPositionUpdate instead, which provides 11 decimal places (~0.01mm precision) from NAV-HPPOSLLH
-    // public double Longitude { get; set; }
-    // public double Latitude { get; set; }
-    // public int HeightEllipsoid { get; set; }
-    // public int HeightMSL { get; set; }
+    // Coordinates from NAV-PVT (7 decimal places, ~11mm precision)
+    // Use HpPositionUpdate for higher precision (11 decimal places, ~0.01mm precision) when not in base mode
+    public double Longitude { get; set; }
+    public double Latitude { get; set; }
+    public int HeightEllipsoid { get; set; }
+    public int HeightMSL { get; set; }
 
     public double HorizontalAccuracy { get; set; }
     public double VerticalAccuracy { get; set; }

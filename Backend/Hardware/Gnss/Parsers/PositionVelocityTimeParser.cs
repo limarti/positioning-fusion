@@ -33,11 +33,11 @@ public static class PositionVelocityTimeParser
         var flags2 = data[22];
         var numSV = data[23];
 
-        // Skip coordinate parsing - coordinates are sent via HpPositionUpdate from NAV-HPPOSLLH
-        // var lon = BitConverter.ToInt32(data, 24) * 1e-7;  // Only 7 decimal precision
-        // var lat = BitConverter.ToInt32(data, 28) * 1e-7;  // Only 7 decimal precision
-        // var height = BitConverter.ToInt32(data, 32);
-        // var hMSL = BitConverter.ToInt32(data, 36);
+        // Parse coordinates from NAV-PVT (7 decimal precision, ~11mm)
+        var lon = BitConverter.ToInt32(data, 24) * 1e-7;
+        var lat = BitConverter.ToInt32(data, 28) * 1e-7;
+        var height = BitConverter.ToInt32(data, 32); // Height above ellipsoid (mm)
+        var hMSL = BitConverter.ToInt32(data, 36); // Height above MSL (mm)
 
         var hAcc = BitConverter.ToUInt32(data, 40);
         var vAcc = BitConverter.ToUInt32(data, 44);
@@ -104,7 +104,10 @@ public static class PositionVelocityTimeParser
             GnssFixOk = gnssFixOk,
             DifferentialSolution = diffSoln,
             NumSatellites = numSV,
-            // Coordinates removed - see HpPositionUpdate for high-precision positioning
+            Longitude = lon,
+            Latitude = lat,
+            HeightEllipsoid = height,
+            HeightMSL = hMSL,
             HorizontalAccuracy = hAcc / 1000.0, // Convert mm to meters
             VerticalAccuracy = vAcc / 1000.0, // Convert mm to meters
             CarrierSolution = carrSoln
