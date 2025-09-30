@@ -188,8 +188,38 @@ public class FileLoggingStatusService : BackgroundService
 
     private bool IsSessionDirectory(string dirName)
     {
-        // Session directories follow pattern: yyyy-MM-dd-HH-mm
-        return DateTime.TryParseExact(dirName, "yyyy-MM-dd-HH-mm", null, global::System.Globalization.DateTimeStyles.None, out _);
+        // Session directories can have multiple patterns:
+        // 1. session_XXXXX (not yet renamed)
+        // 2. yyyy-MM-dd-HH-mm (GNSS time)
+        // 3. yyyy-MM-dd-HH-mm-ss-systemtime (system time)
+        // 4. Any of above with -XX suffix (duplicates)
+        
+        // Check for session_XXXXX pattern
+        if (dirName.StartsWith("session_"))
+            return true;
+            
+        // Check for date patterns (with or without suffix)
+        var baseName = dirName.Split('-')[0..5]; // Get first 5 parts for date check
+        if (baseName.Length >= 5)
+        {
+            var dateString = string.Join("-", baseName.Take(5));
+            if (DateTime.TryParseExact(dateString, "yyyy-MM-dd-HH-mm", null, global::System.Globalization.DateTimeStyles.None, out _))
+                return true;
+        }
+        
+        // Check for date with seconds pattern
+        if (dirName.Contains("-systemtime") || baseName.Length >= 6)
+        {
+            var dateString = dirName.Replace("-systemtime", "").Split('-')[0..6];
+            if (dateString.Length >= 6)
+            {
+                var fullDateString = string.Join("-", dateString.Take(6));
+                if (DateTime.TryParseExact(fullDateString, "yyyy-MM-dd-HH-mm-ss", null, global::System.Globalization.DateTimeStyles.None, out _))
+                    return true;
+            }
+        }
+        
+        return false;
     }
 
     private long GetDirectorySize(string directoryPath)

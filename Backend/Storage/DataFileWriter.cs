@@ -36,8 +36,10 @@ public class DataFileWriter : BackgroundService
     // Session counter and rename tracking
     private static int _sessionCounter = -1;
     private static bool _sessionRenamed = false;
+    private static DateTime _sessionStartTime = DateTime.UtcNow;
     private static readonly object _renameLock = new object();
     private const string SessionCounterFileName = ".session_counter";
+    private const int FallbackRenameMinutes = 5;  // Wait 5 minutes before using system time
 
     public DataFileWriter(string fileName, ILogger<DataFileWriter> logger)
     {
@@ -103,19 +105,25 @@ public class DataFileWriter : BackgroundService
                         timeUntilNextFlush = TimeSpan.FromMilliseconds(flushIntervalMs);
                     }
 
-                    // Check for GNSS time and attempt rename every 15 seconds
+                    // Check for rename opportunities every 15 seconds
                     var timeSinceLastGnssCheck = DateTime.UtcNow - lastGnssTimeCheck;
                     if (timeSinceLastGnssCheck.TotalSeconds >= gnssTimeCheckIntervalSeconds && !_sessionRenamed)
                     {
+                        // Try to rename the session folder with the most reliable time available
                         var gnssTime = GnssService.GetLastValidGnssTime();
                         if (gnssTime.HasValue)
                         {
-                            _logger.LogInformation("Valid GNSS time detected: {GnssTime}, attempting to rename session folder", gnssTime.Value);
-                            if (TryRenameSessionWithGnssTime(gnssTime.Value, _logger))
-                            {
-                                _logger.LogInformation("Session folder successfully renamed with GNSS time");
-                            }
+                            // Use GNSS time - most accurate
+                            _logger.LogInformation("Valid GNSS time detected: {GnssTime}, renaming session folder", gnssTime.Value);
+                            TryRenameSessionFolder(gnssTime.Value, useGnssTime: true);
                         }
+                        else if ((DateTime.UtcNow - _sessionStartTime).TotalMinutes >= FallbackRenameMinutes)
+                        {
+                            // Fallback to system time after waiting
+                            _logger.LogInformation("No GNSS time after {Minutes} minutes, using system time for rename", FallbackRenameMinutes);
+                            TryRenameSessionFolder(DateTime.UtcNow, useGnssTime: false);
+                        }
+                        
                         lastGnssTimeCheck = DateTime.UtcNow;
                     }
 
@@ -167,6 +175,17 @@ public class DataFileWriter : BackgroundService
         if (!_driveAvailable)
         {
             EnsureSessionPathExists();
+        }
+        // Also check if shared session path has changed (from rename)
+        else if (!string.IsNullOrEmpty(SharedSessionPath) && SharedSessionPath != _currentSessionPath)
+        {
+            // Session was renamed, update our paths
+            if (Directory.Exists(SharedSessionPath))
+            {
+                _currentSessionPath = SharedSessionPath;
+                _currentFilePath = Path.Combine(SharedSessionPath, _fileName);
+                _logger.LogDebug("Updated paths after session rename: {Path}", _currentFilePath);
+            }
         }
 
         if (_dataBuffer.Count == 0)
@@ -312,31 +331,50 @@ public class DataFileWriter : BackgroundService
 
             var loggingDir = Path.Combine(_currentDrivePath, LoggingDirectoryName);
 
-            // Initialize session counter on first run
+            // Initialize session counter on first run (app startup)
             if (_sessionCounter == -1)
             {
+                // App just started - read and increment counter for new session
                 _sessionCounter = ReadOrCreateSessionCounter(loggingDir);
                 WriteSessionCounter(loggingDir, _sessionCounter);
+                _sessionStartTime = DateTime.UtcNow;
+                _sessionRenamed = false;
+                _logger.LogInformation("Initializing new session {SessionNumber} on application startup", _sessionCounter);
             }
 
-            // Create session directory with counter-based naming
+            // Create or reuse session directory
             var sessionFolder = $"session_{_sessionCounter:D5}";
             var sessionPath = Path.Combine(loggingDir, sessionFolder);
-
-            if (_currentSessionPath != sessionPath)
+            
+            // Only create/set paths if not already set or path changed
+            if (string.IsNullOrEmpty(_currentSessionPath) || _currentSessionPath != sessionPath)
             {
-                Directory.CreateDirectory(sessionPath);
-                _currentSessionPath = sessionPath;
-                _currentFilePath = Path.Combine(sessionPath, _fileName);
-
-                if (!_driveAvailable)
+                // Check if session was renamed (look in SharedSessionPath)
+                if (!string.IsNullOrEmpty(SharedSessionPath) && 
+                    Directory.Exists(SharedSessionPath) && 
+                    !SharedSessionPath.Contains("session_"))
                 {
-                    _logger.LogInformation("USB drive reconnected - resuming logging to: {SessionPath}", sessionPath);
-                    _logger.LogInformation("Buffered data will be written to: {FilePath}", _currentFilePath);
+                    // Session was already renamed, use the renamed path
+                    _currentSessionPath = SharedSessionPath;
+                    _currentFilePath = Path.Combine(SharedSessionPath, _fileName);
+                    _sessionRenamed = true;
+                    _logger.LogDebug("Using renamed session: {SessionPath}", SharedSessionPath);
                 }
                 else
                 {
-                    _logger.LogInformation("Created new logging session: {SessionPath}", sessionPath);
+                    // Use the session_XXXXX path
+                    if (!Directory.Exists(sessionPath))
+                    {
+                        Directory.CreateDirectory(sessionPath);
+                        _logger.LogInformation("Created new logging session: {SessionPath}", sessionPath);
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Resuming logging to existing session: {SessionPath}", sessionPath);
+                    }
+                    
+                    _currentSessionPath = sessionPath;
+                    _currentFilePath = Path.Combine(sessionPath, _fileName);
                     _logger.LogInformation("Data will be written to: {FilePath}", _currentFilePath);
                 }
             }
@@ -533,59 +571,93 @@ public class DataFileWriter : BackgroundService
         }
     }
 
-    public static bool TryRenameSessionWithGnssTime(DateTime gnssDateTime, ILogger logger)
+    // Removed FindExistingSessionPath - no longer needed
+
+    private void TryRenameSessionFolder(DateTime dateTime, bool useGnssTime)
     {
         lock (_renameLock)
         {
-            // Check if already renamed
+            // Check if already renamed (by any writer)
             if (_sessionRenamed)
+                return;
+                
+            // Check if another writer already renamed it
+            if (!string.IsNullOrEmpty(SharedSessionPath) && 
+                !SharedSessionPath.Contains("session_") &&
+                Directory.Exists(SharedSessionPath))
             {
-                return false;
+                // Another writer already renamed it, just update our paths
+                _currentSessionPath = SharedSessionPath;
+                _currentFilePath = Path.Combine(SharedSessionPath, _fileName);
+                _sessionRenamed = true;
+                _logger.LogDebug("Session already renamed by another writer: {Path}", SharedSessionPath);
+                return;
             }
 
             // Check if we have a session path to rename
-            if (string.IsNullOrEmpty(SharedSessionPath) || !Directory.Exists(SharedSessionPath))
+            if (string.IsNullOrEmpty(_currentSessionPath) || !Directory.Exists(_currentSessionPath))
             {
-                logger.LogWarning("Cannot rename session - no valid session path exists");
-                return false;
+                _logger.LogWarning("Cannot rename session - no valid session path exists");
+                return;
             }
 
             try
             {
-                // Create new folder name with GNSS timestamp
-                var parentDir = Path.GetDirectoryName(SharedSessionPath);
+                // Create new folder name
+                var parentDir = Path.GetDirectoryName(_currentSessionPath);
                 if (string.IsNullOrEmpty(parentDir))
                 {
-                    logger.LogError("Cannot determine parent directory of session path");
-                    return false;
+                    _logger.LogError("Cannot determine parent directory of session path");
+                    return;
                 }
 
-                var newFolderName = gnssDateTime.ToString("yyyy-MM-dd-HH-mm");
+                string newFolderName;
+                if (useGnssTime)
+                {
+                    // GNSS time format: yyyy-MM-dd-HH-mm
+                    newFolderName = dateTime.ToString("yyyy-MM-dd-HH-mm");
+                }
+                else
+                {
+                    // System time format: yyyy-MM-dd-HH-mm-ss-systemtime
+                    newFolderName = dateTime.ToString("yyyy-MM-dd-HH-mm-ss") + "-systemtime";
+                }
+
                 var newSessionPath = Path.Combine(parentDir, newFolderName);
 
-                // Check if target already exists
-                if (Directory.Exists(newSessionPath))
+                // Check if target already exists - add counter if needed
+                int counter = 1;
+                var finalPath = newSessionPath;
+                while (Directory.Exists(finalPath))
                 {
-                    logger.LogWarning("Target session folder already exists: {NewPath}", newSessionPath);
-                    return false;
+                    finalPath = $"{newSessionPath}-{counter:D2}";
+                    counter++;
+                    if (counter > 99)
+                    {
+                        _logger.LogError("Too many duplicate session folders");
+                        return;
+                    }
                 }
 
                 // Perform the rename
-                Directory.Move(SharedSessionPath, newSessionPath);
+                Directory.Move(_currentSessionPath, finalPath);
 
-                logger.LogInformation("Successfully renamed session folder: {OldPath} → {NewPath}",
-                    SharedSessionPath, newSessionPath);
+                _logger.LogInformation("Successfully renamed session folder: {OldPath} → {NewPath}",
+                    _currentSessionPath, finalPath);
 
-                // Update shared path
-                SharedSessionPath = newSessionPath;
+                // Update all paths
+                _currentSessionPath = finalPath;
+                _currentFilePath = Path.Combine(finalPath, _fileName);
+                
+                // Update shared properties so other writers can see the change
+                SharedSessionPath = finalPath;
+                
+                // Mark as renamed
                 _sessionRenamed = true;
-
-                return true;
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error renaming session folder with GNSS time");
-                return false;
+                _logger.LogError(ex, "Error renaming session folder");
             }
         }
     }

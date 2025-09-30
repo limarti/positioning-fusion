@@ -3,6 +3,7 @@ using Backend.Hardware.Imu;
 using Backend.Hardware.Camera;
 using Backend.Hardware.Bluetooth;
 using Backend.Hardware.LoRa;
+using Backend.Hardware.Battery;
 using Backend.Hubs;
 using Backend.Storage;
 using Backend.GnssSystem;
@@ -87,6 +88,9 @@ builder.Services.AddHostedService<LoRaService>(provider => provider.GetRequiredS
 
 // Add file logging status service
 builder.Services.AddHostedService<FileLoggingStatusService>();
+
+// Add battery logging service
+builder.Services.AddHostedService<BatteryLoggingService>();
 
 // Add CORS for frontend
 builder.Services.AddCors(options =>

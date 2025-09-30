@@ -115,7 +115,7 @@ const initializeConnection = async () =>
 {
   // Dynamic URL resolution based on environment
   const hubUrl = import.meta.env.DEV
-    ? "http://rover.local/datahub"  // Development mode: use hardcoded localhost
+    ? "http://base.local/datahub"  // Development mode: use hardcoded localhost
     : `${window.location.protocol}//${window.location.hostname}/datahub`;  // Production: use same host as frontend
 
   console.log(`Environment: ${import.meta.env.DEV ? 'Development' : 'Production'}`);
