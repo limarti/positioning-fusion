@@ -12,6 +12,10 @@ public static class CorrectionStatusParser
     {
         logger.LogDebug("ProcessRxmCorMessage: Received {DataLength} bytes", data.Length);
 
+        // Notify NavigationSatelliteParser that we received RXM-COR
+        // This prevents it from sending synthetic SBAS corrections when we have authoritative data
+        NavigationSatelliteParser.NotifyRxmCorReceived();
+
         if (data.Length < 16)
         {
             logger.LogWarning("RXM-COR message too short: {Length} bytes, minimum 16 required", data.Length);
@@ -55,6 +59,16 @@ public static class CorrectionStatusParser
             logger.LogDebug("🔧 RXM-COR: Version={Version}, Source={Source}, Status={Status}, Age={Age}ms, NumMsgs={NumMsgs}",
                 version, correctionSource, correctionStatus, corrAge, numMsgs);
 
+            // AUTHORITATIVE CORRECTION STATUS UPDATE
+            // This is the official correction status from the receiver via RXM-COR messages.
+            // RXM-COR is sent when the receiver actively processes correction streams:
+            // - RTCM corrections from external base stations
+            // - SPARTN corrections from commercial services
+            // - SBAS corrections (though SBAS is sometimes not reported here)
+            //
+            // CONFLICT WARNING: NavigationSatelliteParser may also send synthetic SBAS correction
+            // status updates based on satellite data. This RXM-COR data is authoritative when present,
+            // but may race with the synthetic updates. Whichever arrives last wins.
             var correctionData = new CorrectionStatusUpdate
             {
                 Version = version,

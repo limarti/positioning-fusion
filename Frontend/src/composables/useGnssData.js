@@ -37,7 +37,8 @@ const gnssData = reactive({
     gps: { used: null, tracked: null },
     glonass: { used: null, tracked: null },
     galileo: { used: null, tracked: null },
-    beidou: { used: null, tracked: null }
+    beidou: { used: null, tracked: null },
+    sbas: { used: null, tracked: null }
   },
 
   // Per-satellite data
@@ -161,12 +162,13 @@ export function registerGnssEvents(connection)
       gps: { used: 0, tracked: 0 },
       glonass: { used: 0, tracked: 0 },
       galileo: { used: 0, tracked: 0 },
-      beidou: { used: 0, tracked: 0 }
+      beidou: { used: 0, tracked: 0 },
+      sbas: { used: 0, tracked: 0 }
     };
 
-    data.satellites.forEach(sat => 
+    data.satellites.forEach(sat =>
     {
-      switch (sat.gnssName.toLowerCase()) 
+      switch (sat.gnssName.toLowerCase())
       {
         case 'gps':
           constellations.gps.tracked++;
@@ -183,6 +185,10 @@ export function registerGnssEvents(connection)
         case 'beidou':
           constellations.beidou.tracked++;
           if (sat.svUsed) constellations.beidou.used++;
+          break;
+        case 'sbas':
+          constellations.sbas.tracked++;
+          if (sat.svUsed) constellations.sbas.used++;
           break;
       }
     });
