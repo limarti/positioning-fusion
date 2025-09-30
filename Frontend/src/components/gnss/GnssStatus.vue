@@ -16,6 +16,14 @@
             <div v-if="gnssState.gnssData.altitude !== null" class="text-sm text-gray-600 font-mono mt-1">
               Altitude: {{ gnssState.gnssData.altitude.toFixed(2) }}m
             </div>
+            <!-- GNSS Clock - compact inline -->
+            <div class="text-xs text-gray-500 font-mono mt-2 flex items-center space-x-2">
+              <span>{{ formattedTime }} UTC</span>
+              <div class="flex items-center space-x-1">
+                <div class="w-1.5 h-1.5 rounded-full" :class="timeValidStatus.color" />
+                <span :class="timeValidStatus.textColor">{{ timeValidStatus.label }}</span>
+              </div>
+            </div>
           </div>
         </div>
         <div class="text-right">
@@ -41,7 +49,7 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Core Health Summary -->
       <div class="border-t border-gray-200 pt-4">
         <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-center text-sm">
@@ -100,11 +108,119 @@
 </template>
 
 <script setup>
+  import { computed, ref, onMounted, onUnmounted } from 'vue';
   import Card from '../common/Card.vue';
   import { useGnssData } from '@/composables/useGnssData';
 
   // Get data from composable
   const { state: gnssState } = useGnssData();
+
+  // Local time ref for real-time updates
+  const currentTime = ref(Date.now());
+  let timeInterval = null;
+
+  // Update current time every second
+  onMounted(() =>
+  {
+    timeInterval = setInterval(() =>
+    {
+      currentTime.value = Date.now();
+    }, 1000);
+  });
+
+  onUnmounted(() =>
+  {
+    if (timeInterval)
+    {
+      clearInterval(timeInterval);
+    }
+  });
+
+  // GNSS Time computed properties
+  const gnssTime = computed(() =>
+  {
+    if (!gnssState.gnssData.gnssTimestamp || gnssState.gnssData.gnssTimestamp === 0)
+    {
+      return null;
+    }
+    return new Date(gnssState.gnssData.gnssTimestamp);
+  });
+
+  const formattedTime = computed(() =>
+  {
+    if (!gnssTime.value)
+    {
+      return '--:--:--';
+    }
+
+    return gnssTime.value.toLocaleTimeString('en-US', {
+      timeZone: 'UTC',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  });
+
+  const formattedDate = computed(() =>
+  {
+    if (!gnssTime.value)
+    {
+      return 'No GNSS time available';
+    }
+
+    return gnssTime.value.toLocaleDateString('en-US', {
+      timeZone: 'UTC',
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    }) + ' UTC';
+  });
+
+  const timeValidStatus = computed(() =>
+  {
+    const timeValid = gnssState.gnssData.timeValid;
+
+    if (timeValid === null || timeValid === undefined)
+    {
+      return {
+        label: 'Unknown',
+        color: 'bg-gray-400',
+        textColor: 'text-gray-600'
+      };
+    }
+
+    // Check time validity bits (based on UBlox NAV-PVT documentation)
+    const dateValid = (timeValid & 0x01) !== 0;  // validDate bit
+    const timeOfWeekValid = (timeValid & 0x02) !== 0;  // validTime bit
+    const utcTimeValid = (timeValid & 0x04) !== 0;  // fullyResolved bit
+
+    if (utcTimeValid && dateValid && timeOfWeekValid)
+    {
+      return {
+        label: 'Valid',
+        color: 'bg-emerald-500',
+        textColor: 'text-emerald-700'
+      };
+    }
+    else if (dateValid && timeOfWeekValid)
+    {
+      return {
+        label: 'Partial',
+        color: 'bg-amber-500',
+        textColor: 'text-amber-700'
+      };
+    }
+    else
+    {
+      return {
+        label: 'Invalid',
+        color: 'bg-red-500',
+        textColor: 'text-red-700'
+      };
+    }
+  });
 
   const formatAccuracy = (meters) =>
   {

@@ -5,11 +5,6 @@
 
     <!-- GNSS Subpanels -->
     <div class="columns-1 lg:columns-2 gap-6 space-y-6">
-      <!-- GNSS Clock -->
-      <div class="break-inside-avoid mb-6">
-        <GnssClock />
-      </div>
-
       <!-- Satellite Health Subsection -->
       <div class="break-inside-avoid mb-6">
         <SatelliteHealthPanel />
@@ -35,7 +30,6 @@
 
 <script setup>
   import GnssStatus from '@/components/gnss/GnssStatus.vue';
-  import GnssClock from '@/components/gnss/GnssClock.vue';
   import SatelliteHealthPanel from '@/components/gnss/SatelliteHealthPanel.vue';
   import RtkPanel from '@/components/gnss/RtkPanel.vue';
   import PositionScatterPlot from '@/components/gnss/PositionScatterPlot.vue';
