@@ -166,7 +166,7 @@ public class SerialPortManager : IDisposable
     /// <summary>
     /// Starts the serial port manager with the provided serial port
     /// </summary>
-    public async Task StartAsync(SerialPort serialPort, CancellationToken cancellationToken = default)
+    public Task StartAsync(SerialPort serialPort, CancellationToken cancellationToken = default)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(SerialPortManager));
@@ -177,7 +177,7 @@ public class SerialPortManager : IDisposable
         if (_serialPort == null || !_serialPort.IsOpen)
         {
             _logger.LogWarning("Serial port not available for {DeviceName}", _deviceName);
-            return;
+            return Task.CompletedTask;
         }
 
         _logger.LogInformation("SerialPortManager started for {DeviceName} on {PortName} at {BaudRate} baud",
@@ -203,6 +203,8 @@ public class SerialPortManager : IDisposable
             ResetEventWatchdog();
             _logger.LogInformation("Producer-Consumer pattern and event-driven watchdog setup completed for {DeviceName}", _deviceName);
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -315,7 +317,7 @@ public class SerialPortManager : IDisposable
         }
     }
 
-    private async void OnEventWatchdogTimeout(object? state)
+    private void OnEventWatchdogTimeout(object? state)
     {
         try
         {
@@ -476,7 +478,7 @@ public class SerialPortManager : IDisposable
     }
 
 
-    private async Task ProcessBufferedDataAsync()
+    private Task ProcessBufferedDataAsync()
     {
         const int maxProcessingCycles = 50;
         int processed = 0;
@@ -493,7 +495,7 @@ public class SerialPortManager : IDisposable
             }
 
             if (_dataBuffer.Count == 0)
-                return;
+                return Task.CompletedTask;
         }
 
         while (processed < maxProcessingCycles)
@@ -522,6 +524,8 @@ public class SerialPortManager : IDisposable
 
             processed++;
         }
+
+        return Task.CompletedTask;
     }
 
     private async Task ProcessingLoop(CancellationToken stoppingToken)
@@ -583,7 +587,7 @@ public class SerialPortManager : IDisposable
         }
     }
 
-    private async Task UpdateRateAsync()
+    private Task UpdateRateAsync()
     {
         var now = DateTime.UtcNow;
         var timeDelta = (now - _lastRateUpdate).TotalSeconds;
@@ -598,6 +602,8 @@ public class SerialPortManager : IDisposable
 
             _logger.LogDebug("Rate updated for {DeviceName}: {Rate:F1} kbps", _deviceName, _currentReceiveRate);
         }
+
+        return Task.CompletedTask;
     }
 
     public async Task StopAsync()
@@ -755,7 +761,7 @@ public class SerialPortManager : IDisposable
         }
     }
 
-    private async Task AttemptReconnectAsync(CancellationToken cancellationToken)
+    private Task AttemptReconnectAsync(CancellationToken cancellationToken)
     {
         // Clean up old port
         if (_serialPort != null)
@@ -815,6 +821,8 @@ public class SerialPortManager : IDisposable
             _serialPort.DataReceived += OnDataReceived;
             ResetEventWatchdog();
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>

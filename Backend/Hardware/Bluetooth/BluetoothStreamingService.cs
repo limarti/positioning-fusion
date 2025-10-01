@@ -15,6 +15,7 @@ public class BluetoothStreamingService : BackgroundService
     private long _bluetoothBytesSent = 0;
     private long _totalBluetoothBytesSent = 0;
     private DateTime _lastRateUpdate = DateTime.UtcNow;
+    private DateTime _lastBluetoothSend = DateTime.UtcNow;
 
     public BluetoothStreamingService(ILogger<BluetoothStreamingService> logger, ILoggerFactory loggerFactory)
     {
@@ -72,16 +73,24 @@ public class BluetoothStreamingService : BackgroundService
 
     public async Task SendData(byte[] data)
     {
-        _logger.LogDebug("📡 Bluetooth: SendData called with {Length} bytes", data.Length);
-
         // Check if Bluetooth port exists
         if (!File.Exists(BLUETOOTH_PORT))
         {
-            _logger.LogDebug("📡 Bluetooth: Port {Port} does not exist - no device connected", BLUETOOTH_PORT);
+            // Only log occasionally to avoid spam
+            var now = DateTime.UtcNow;
+            if ((now - _lastBluetoothSend).TotalSeconds >= 10)
+            {
+                _logger.LogDebug("📡 Bluetooth: Port {Port} does not exist - waiting for client connection", BLUETOOTH_PORT);
+                _lastBluetoothSend = now;
+            }
             return;
         }
 
-        _logger.LogDebug("📡 Bluetooth: Port {Port} exists, checking connection", BLUETOOTH_PORT);
+        // Log first successful detection of port
+        if (_serialPortManager == null)
+        {
+            _logger.LogInformation("📡 Bluetooth: Port {Port} detected! Attempting to connect...", BLUETOOTH_PORT);
+        }
 
         // Initialize connection if needed
         if (_serialPortManager == null || !_serialPortManager.IsConnected)
@@ -134,7 +143,7 @@ public class BluetoothStreamingService : BackgroundService
         }
     }
 
-    private async Task UpdateDataRatesAsync(CancellationToken stoppingToken)
+    private Task UpdateDataRatesAsync(CancellationToken stoppingToken)
     {
         var now = DateTime.UtcNow;
         var timeDelta = (now - _lastRateUpdate).TotalSeconds;
@@ -156,6 +165,8 @@ public class BluetoothStreamingService : BackgroundService
                 //    bluetoothRate, totalBytesInPeriod, timeDelta, _totalBluetoothBytesSent);
             }
         }
+
+        return Task.CompletedTask;
     }
 
     public bool IsConnected => _serialPortManager?.IsConnected == true;

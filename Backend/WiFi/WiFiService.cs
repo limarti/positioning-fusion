@@ -692,7 +692,7 @@ public class WiFiService : BackgroundService
         await _hubContext.Clients.All.SendAsync("WiFiKnownNetworksUpdate", update);
     }
 
-    private async Task<string> GetWiFiInterfaceName()
+    private async Task<string?> GetWiFiInterfaceName()
     {
         try
         {
@@ -849,13 +849,13 @@ public class WiFiService : BackgroundService
         return _currentStatus;
     }
 
-    public async Task<List<KnownWiFiNetwork>> GetKnownNetworks()
+    public Task<List<KnownWiFiNetwork>> GetKnownNetworks()
     {
-        return _configManager.WiFiConfiguration.KnownNetworks.Select(n => new KnownWiFiNetwork
+        return Task.FromResult(_configManager.WiFiConfiguration.KnownNetworks.Select(n => new KnownWiFiNetwork
         {
             SSID = n.SSID,
             LastConnected = n.LastConnected
-        }).ToList();
+        }).ToList());
     }
 
     public WiFiMode GetPreferredMode()

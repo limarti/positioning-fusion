@@ -266,7 +266,7 @@ public class LoRaService : BackgroundService
         }
     }
 
-    private async Task UpdateDataRatesAsync(CancellationToken stoppingToken)
+    private Task UpdateDataRatesAsync(CancellationToken stoppingToken)
     {
         _logger.LogDebug("UpdateDataRatesAsync called (cancellation requested: {Cancelled})", stoppingToken.IsCancellationRequested);
 
@@ -305,6 +305,8 @@ public class LoRaService : BackgroundService
             //}
         }
         _logger.LogDebug("UpdateDataRatesAsync completed");
+
+        return Task.CompletedTask;
     }
 
     public bool IsConnected => _serialPortManager?.IsConnected == true;

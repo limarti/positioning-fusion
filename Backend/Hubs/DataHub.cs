@@ -84,7 +84,7 @@ public class DataHub : Hub
         await Clients.All.SendAsync("CameraUpdate", cameraUpdate);
     }
 
-    public async Task<string> GetCurrentMode()
+    public Task<string> GetCurrentMode()
     {
         var connectionId = Context.ConnectionId;
         _logger.LogDebug("GetCurrentMode called by client: {ConnectionId}", connectionId);
@@ -92,7 +92,7 @@ public class DataHub : Hub
         var currentMode = _modeManagementService.CurrentMode.ToString();
         _logger.LogInformation("Returning current mode '{Mode}' to client: {ConnectionId}", currentMode, connectionId);
 
-        return currentMode;
+        return Task.FromResult(currentMode);
     }
 
     public async Task<bool> SetOperatingMode(string mode)
@@ -335,7 +335,7 @@ public class DataHub : Hub
         }
     }
 
-    public async Task<HardwareStatusUpdate> GetHardwareStatus()
+    public Task<HardwareStatusUpdate> GetHardwareStatus()
     {
         var connectionId = Context.ConnectionId;
         _logger.LogDebug("GetHardwareStatus called by client: {ConnectionId}", connectionId);
@@ -357,18 +357,18 @@ public class DataHub : Hub
                 EncoderAvailable = false // Always disabled for now
             };
 
-            return status;
+            return Task.FromResult(status);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception getting hardware status for client: {ConnectionId}", connectionId);
-            return new HardwareStatusUpdate
+            return Task.FromResult(new HardwareStatusUpdate
             {
                 GnssAvailable = false,
                 ImuAvailable = false,
                 CameraAvailable = false,
                 EncoderAvailable = false
-            };
+            });
         }
     }
 }

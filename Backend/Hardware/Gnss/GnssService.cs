@@ -645,12 +645,12 @@ public class GnssService : BackgroundService
     }
 
     // Method to send RTCM data directly to GNSS port (for Receive mode)
-    public async Task SendRtcmToGnss(byte[] rtcmData)
+    public Task SendRtcmToGnss(byte[] rtcmData)
     {
         if (_serialPortManager == null || !_serialPortManager.IsConnected)
         {
             _logger.LogWarning("Cannot send RTCM to GNSS - serial port not available");
-            return;
+            return Task.CompletedTask;
         }
 
         try
@@ -663,6 +663,8 @@ public class GnssService : BackgroundService
         {
             _logger.LogError(ex, "Failed to send RTCM data to GNSS port");
         }
+
+        return Task.CompletedTask;
     }
 
     // Event handler for LoRa data received (forwards directly to GNSS)

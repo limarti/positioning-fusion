@@ -510,19 +510,19 @@ public class CameraService : BackgroundService, IDisposable
         }
     }
     
-    private async Task StartMkvProcess()
+    private Task StartMkvProcess()
     {
         if (string.IsNullOrEmpty(_currentVideoFilePath))
         {
             _logger.LogWarning("Cannot start MKV process - no current video file path set");
-            return;
+            return Task.CompletedTask;
         }
-            
+
         try
         {
             _logger.LogInformation("Starting MKV creation process for {FilePath}", _currentVideoFilePath);
             _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_START_ATTEMPT,file:{Path.GetFileName(_currentVideoFilePath)}");
-            
+
             var processInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
@@ -536,16 +536,18 @@ public class CameraService : BackgroundService, IDisposable
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
-            
+
             _currentMkvProcess = Process.Start(processInfo);
-            
+
             if (_currentMkvProcess == null)
             {
                 throw new InvalidOperationException("Failed to start MKV creation process");
             }
-            
+
             _logger.LogInformation("Started MKV creation process (PID: {ProcessId}) for {FilePath}", _currentMkvProcess.Id, _currentVideoFilePath);
             _dataFileWriter.WriteData($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff},MKV_PROCESS_STARTED,pid:{_currentMkvProcess.Id},file:{Path.GetFileName(_currentVideoFilePath)}");
+
+            return Task.CompletedTask;
         }
         catch (Exception ex)
         {
