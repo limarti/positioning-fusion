@@ -262,10 +262,12 @@ const toggleNetworkPassword = (ssid) =>
   showNetworkPasswords.value[ssid] = !showNetworkPasswords.value[ssid];
 };
 
-const formatLastConnected = (timestamp) => 
+const formatLastConnected = (timestamp) =>
 {
   if (!timestamp) return 'Never';
   const date = new Date(timestamp);
+  // Check for DateTime.MinValue (year 1) which indicates never connected
+  if (date.getFullYear() <= 1) return 'Never';
   return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' });
 };
 

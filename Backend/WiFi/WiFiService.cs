@@ -377,6 +377,12 @@ public class WiFiService : BackgroundService
 
         try
         {
+            // Always save to known networks first, regardless of connection success
+            if (saveToKnown)
+            {
+                await AddToKnownNetworks(ssid, password);
+            }
+
             var result = await ExecuteNmcliCommand(BuildWiFiConnectCommand(ssid, password));
 
             if (result.Success)
@@ -392,9 +398,13 @@ public class WiFiService : BackgroundService
                     _configManager.SaveConfiguration();
                 }
 
-                if (saveToKnown)
+                // Update LastConnected time for successful connection
+                var knownNetworks = _configManager.WiFiConfiguration.KnownNetworks;
+                var existingNetwork = knownNetworks.FirstOrDefault(n => n.SSID == ssid);
+                if (existingNetwork != null)
                 {
-                    await AddToKnownNetworks(ssid, password);
+                    existingNetwork.LastConnected = DateTime.Now;
+                    _configManager.SaveConfiguration();
                 }
 
                 _isAttemptingConnection = false;
@@ -522,23 +532,23 @@ public class WiFiService : BackgroundService
     private async Task AddToKnownNetworks(string ssid, string password)
     {
         var knownNetworks = _configManager.WiFiConfiguration.KnownNetworks;
-        
+
         var existing = knownNetworks.FirstOrDefault(n => n.SSID == ssid);
         if (existing != null)
         {
             existing.Password = password;
-            existing.LastConnected = DateTime.Now;
+            // Don't update LastConnected here - it will be updated on successful connection
         }
         else
         {
             knownNetworks.Add(new StoredWiFiNetwork
             {
                 SSID = ssid,
-                Password = password,
-                LastConnected = DateTime.Now
+                Password = password
+                // LastConnected will be default (DateTime.MinValue) until first successful connection
             });
         }
-        
+
         _configManager.SaveConfiguration();
         await SendKnownNetworksUpdate();
     }

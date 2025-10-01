@@ -192,7 +192,7 @@
                   <div v-if="wifiState.isAPPasswordModified" class="flex space-x-1 pr-2">
                     <button class="p-1 bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
                             title="Save changes"
-                            @click="saveAPPassword">
+                            @click="onSaveAPPassword">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                       </svg>
@@ -247,7 +247,7 @@
             </div>
             <div class="ml-4">
               <button class="btn-danger"
-                      @click="removeKnownNetwork(network.ssid)">
+                      @click="onRemoveKnownNetwork(network.ssid)">
                 Remove
               </button>
             </div>
@@ -339,7 +339,7 @@
           </button>
           <button :disabled="wifiState.isConnecting || !wifiState.dialogNetworkConfig.ssid || !wifiState.dialogNetworkConfig.password"
                   class="btn-primary"
-                  @click="addNetwork">
+                  @click="onAddNetwork">
             <div v-if="wifiState.isConnecting" class="flex items-center">
               <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
