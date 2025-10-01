@@ -6,27 +6,19 @@ namespace Backend.Hardware.Bluetooth;
 public class BluetoothInitializer : IDisposable
 {
     private readonly ILogger<BluetoothInitializer> _logger;
-    private readonly ILoggerFactory _loggerFactory;
     private readonly GeoConfigurationManager _configurationManager;
     private Process? _bluetoothCtlProcess;
     private StreamWriter? _bluetoothCtlStdin;
-    private Process? _rfcommProcess;
-    private SppProfileManager? _sppProfileManager;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _outputMonitorTask;
-    private Task? _rfcommMonitorTask;
     private bool _disposed = false;
     private readonly object _processLock = new object();
 
-    private const string RFCOMM_DEVICE = "/dev/rfcomm0";
-    private const int RFCOMM_CHANNEL = 1;
-
     public bool IsInitialized { get; private set; } = false;
 
-    public BluetoothInitializer(ILogger<BluetoothInitializer> logger, ILoggerFactory loggerFactory, GeoConfigurationManager configurationManager)
+    public BluetoothInitializer(ILogger<BluetoothInitializer> logger, GeoConfigurationManager configurationManager)
     {
         _logger = logger;
-        _loggerFactory = loggerFactory;
         _configurationManager = configurationManager;
     }
 
@@ -36,52 +28,22 @@ public class BluetoothInitializer : IDisposable
 
         try
         {
-            // Start the interactive bluetoothctl process
+            // Start the interactive bluetoothctl process for pairing monitoring
             if (!await StartBluetoothCtlProcessAsync())
             {
                 _logger.LogError("Failed to start bluetoothctl process");
                 return false;
             }
 
-            // Send initialization commands
-            await SendCommandAsync("power on");
-            await Task.Delay(500);
-
-            // Register SPP profile via D-Bus BEFORE starting rfcomm
-            _sppProfileManager = new SppProfileManager(_loggerFactory.CreateLogger<SppProfileManager>());
-            if (!await _sppProfileManager.RegisterProfileAsync())
-            {
-                _logger.LogError("Failed to register SPP profile");
-                return false;
-            }
-
-            // Start rfcomm listener (now that SPP profile is registered)
-            if (!await StartRfcommListenerAsync())
-            {
-                _logger.LogError("Failed to start rfcomm listener");
-                return false;
-            }
-
-            // Set device name after powering on
+            // Set device name from configuration
             var deviceName = _configurationManager.BluetoothName;
             _logger.LogInformation("Setting Bluetooth device name to: {Name}", deviceName);
             await SendCommandAsync($"system-alias {deviceName}");
             await Task.Delay(500);
 
-            await SendCommandAsync("agent on");
-            await Task.Delay(200);
-
-            await SendCommandAsync("default-agent");
-            await Task.Delay(200);
-
-            await SendCommandAsync("discoverable on");
-            await Task.Delay(200);
-
-            await SendCommandAsync("pairable on");
-            await Task.Delay(200);
-
-            _logger.LogInformation("Bluetooth adapter initialized successfully - Name: {Name}, Discoverable: Yes, Pairable: Yes",
+            _logger.LogInformation("Bluetooth adapter initialized successfully - Name: {Name}, Pairing monitoring active",
                 _configurationManager.BluetoothName);
+            _logger.LogInformation("Note: SPP service and rfcomm are managed by system services (bt-spp-sdp, bt-spp-rfcomm)");
 
             IsInitialized = true;
             return true;
@@ -141,7 +103,7 @@ public class BluetoothInitializer : IDisposable
 
     private async Task MonitorOutputAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Started bluetoothctl output monitor");
+        _logger.LogInformation("Started bluetoothctl pairing monitor");
 
         try
         {
@@ -163,142 +125,31 @@ public class BluetoothInitializer : IDisposable
                 // Check for pairing requests and accept them
                 if (IsPairingRequest(line))
                 {
-                    _logger.LogInformation("Detected pairing request: {Line}", line);
+                    _logger.LogInformation("📱 Pairing request detected: {Line}", line);
                     await AcceptPairingAsync();
                 }
+
+                // Log device connections for visibility
+                if (line.Contains("Connected: yes", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation("📱 Bluetooth device connected");
+                }
+                else if (line.Contains("Connected: no", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation("📱 Bluetooth device disconnected");
+                }
             }
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("bluetoothctl output monitor cancelled");
+            _logger.LogInformation("bluetoothctl pairing monitor cancelled");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in bluetoothctl output monitor");
+            _logger.LogError(ex, "Error in bluetoothctl pairing monitor");
         }
 
-        _logger.LogInformation("bluetoothctl output monitor stopped");
-    }
-
-    private Task<bool> StartRfcommListenerAsync()
-    {
-        try
-        {
-            lock (_processLock)
-            {
-                if (_rfcommProcess != null)
-                {
-                    _logger.LogDebug("rfcomm listener already running");
-                    return Task.FromResult(true);
-                }
-
-                _rfcommProcess = new Process
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "rfcomm",
-                        Arguments = $"listen {RFCOMM_DEVICE} {RFCOMM_CHANNEL}",
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true
-                    }
-                };
-
-                _rfcommProcess.Start();
-
-                _logger.LogInformation("Started rfcomm listener on {Device} channel {Channel} (PID: {ProcessId})",
-                    RFCOMM_DEVICE, RFCOMM_CHANNEL, _rfcommProcess.Id);
-
-                // Start monitoring output for connection events (fire and forget)
-                _rfcommMonitorTask = Task.Run(() => MonitorRfcommOutputAsync(_cancellationTokenSource!.Token), _cancellationTokenSource!.Token);
-            }
-
-            return Task.FromResult(true);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to start rfcomm listener");
-            return Task.FromResult(false);
-        }
-    }
-
-    private async Task MonitorRfcommOutputAsync(CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Started rfcomm output monitor - watching for connection attempts");
-
-        try
-        {
-            var stdout = _rfcommProcess?.StandardOutput;
-            var stderr = _rfcommProcess?.StandardError;
-
-            if (stdout == null || stderr == null)
-            {
-                _logger.LogError("rfcomm stdout/stderr is null");
-                return;
-            }
-
-            // Monitor both stdout and stderr
-            var stdoutTask = Task.Run(async () =>
-            {
-                while (!cancellationToken.IsCancellationRequested && !stdout.EndOfStream)
-                {
-                    var line = await stdout.ReadLineAsync(cancellationToken);
-                    if (!string.IsNullOrEmpty(line))
-                    {
-                        _logger.LogInformation("📱 rfcomm stdout: {Line}", line);
-
-                        // Log connection events with more detail
-                        if (line.Contains("connect", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogInformation("✅ Bluetooth client CONNECTED on {Device} - port should now be available", RFCOMM_DEVICE);
-
-                            // Check if port was created
-                            if (File.Exists(RFCOMM_DEVICE))
-                            {
-                                _logger.LogInformation("✅ Verified {Device} exists and is ready for use", RFCOMM_DEVICE);
-                            }
-                            else
-                            {
-                                _logger.LogWarning("⚠️ {Device} does not exist yet after connection", RFCOMM_DEVICE);
-                            }
-                        }
-                        else if (line.Contains("disconnect", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogInformation("❌ Bluetooth client DISCONNECTED from {Device}", RFCOMM_DEVICE);
-                        }
-                        else if (line.Contains("waiting", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogInformation("⏳ rfcomm is waiting for incoming connections on channel {Channel}", RFCOMM_CHANNEL);
-                        }
-                    }
-                }
-            }, cancellationToken);
-
-            var stderrTask = Task.Run(async () =>
-            {
-                while (!cancellationToken.IsCancellationRequested && !stderr.EndOfStream)
-                {
-                    var line = await stderr.ReadLineAsync(cancellationToken);
-                    if (!string.IsNullOrEmpty(line))
-                    {
-                        _logger.LogError("❌ rfcomm ERROR: {Line}", line);
-                    }
-                }
-            }, cancellationToken);
-
-            await Task.WhenAll(stdoutTask, stderrTask);
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation("rfcomm output monitor cancelled");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in rfcomm output monitor");
-        }
-
-        _logger.LogInformation("rfcomm output monitor stopped");
+        _logger.LogInformation("bluetoothctl pairing monitor stopped");
     }
 
     private bool IsPairingRequest(string line)
@@ -311,12 +162,12 @@ public class BluetoothInitializer : IDisposable
             "Authorize service",
             "Request authorization",
             "[agent] Confirm",
-            "[agent] Authorize",
-            "Pairing successful"
+            "[agent] Authorize"
         };
 
         return pairingIndicators.Any(indicator => line.Contains(indicator, StringComparison.OrdinalIgnoreCase));
     }
+
 
     private async Task AcceptPairingAsync()
     {
@@ -331,6 +182,7 @@ public class BluetoothInitializer : IDisposable
             _logger.LogWarning(ex, "Failed to accept pairing request");
         }
     }
+
 
     private async Task SendCommandAsync(string command)
     {
@@ -355,49 +207,6 @@ public class BluetoothInitializer : IDisposable
         }
     }
 
-    private async Task<(bool Success, string Output, string Error)> ExecuteBluetoothCtlCommandAsync(string command)
-    {
-        try
-        {
-            using var process = new Process();
-            process.StartInfo = new ProcessStartInfo
-            {
-                FileName = "bluetoothctl",
-                Arguments = command,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            _logger.LogDebug("Executing: bluetoothctl {Command}", command);
-
-            process.Start();
-
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            var errorTask = process.StandardError.ReadToEndAsync();
-
-            await process.WaitForExitAsync();
-
-            var output = await outputTask;
-            var error = await errorTask;
-
-            var success = process.ExitCode == 0;
-
-            if (!success)
-            {
-                _logger.LogDebug("bluetoothctl command failed: {Command}, Exit Code: {ExitCode}, Error: {Error}",
-                    command, process.ExitCode, error);
-            }
-
-            return (success, output, error);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Exception executing bluetoothctl command: {Command}", command);
-            return (false, string.Empty, ex.Message);
-        }
-    }
 
     public void Dispose()
     {
@@ -430,31 +239,6 @@ public class BluetoothInitializer : IDisposable
 
             _bluetoothCtlProcess?.Dispose();
             _bluetoothCtlProcess = null;
-
-            // Stop rfcomm listener
-            if (_rfcommProcess != null && !_rfcommProcess.HasExited)
-            {
-                _logger.LogInformation("Stopping rfcomm listener");
-                try
-                {
-                    _rfcommProcess.Kill();
-                    if (!_rfcommProcess.WaitForExit(2000))
-                    {
-                        _logger.LogWarning("rfcomm process did not exit, forcing termination");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error stopping rfcomm process");
-                }
-            }
-
-            _rfcommProcess?.Dispose();
-            _rfcommProcess = null;
-
-            // Unregister SPP profile
-            _sppProfileManager?.Dispose();
-            _sppProfileManager = null;
         }
 
         _cancellationTokenSource?.Dispose();

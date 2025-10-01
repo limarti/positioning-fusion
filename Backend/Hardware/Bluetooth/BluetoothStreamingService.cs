@@ -1,26 +1,24 @@
-using System.IO.Ports;
 using Backend.Configuration;
-using Backend.Hardware.Common;
 
 namespace Backend.Hardware.Bluetooth;
 
 public class BluetoothStreamingService : BackgroundService
 {
     private const string BLUETOOTH_PORT = "/dev/rfcomm0";
-    private const int BLUETOOTH_BAUD_RATE = 9600;
-    
+    private const int WRITE_TIMEOUT_MS = 1000;
+
     private readonly ILogger<BluetoothStreamingService> _logger;
-    private readonly ILoggerFactory _loggerFactory;
-    private SerialPortManager? _serialPortManager;
+    private FileStream? _bluetoothStream;
+    private bool _isInitializing = false;
+    private bool _isReconnecting = false;
     private long _bluetoothBytesSent = 0;
     private long _totalBluetoothBytesSent = 0;
     private DateTime _lastRateUpdate = DateTime.UtcNow;
-    private DateTime _lastBluetoothSend = DateTime.UtcNow;
+    private readonly object _connectionLock = new object();
 
-    public BluetoothStreamingService(ILogger<BluetoothStreamingService> logger, ILoggerFactory loggerFactory)
+    public BluetoothStreamingService(ILogger<BluetoothStreamingService> logger)
     {
         _logger = logger;
-        _loggerFactory = loggerFactory;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,32 +41,31 @@ public class BluetoothStreamingService : BackgroundService
         }
     }
 
-    private async Task InitializeBluetoothPort()
+    private Task InitializeBluetoothPort()
     {
         try
         {
-            _logger.LogDebug("📡 Bluetooth: Creating SerialPortManager for {Port} at {BaudRate} baud", BLUETOOTH_PORT, BLUETOOTH_BAUD_RATE);
+            _logger.LogDebug("📡 Bluetooth: Opening {Port} for write-only access", BLUETOOTH_PORT);
 
-            _serialPortManager = new SerialPortManager(
-                "Bluetooth",
+            // Open FileStream in write-only mode - no reading, no events, just pure output
+            _bluetoothStream = new FileStream(
                 BLUETOOTH_PORT,
-                BLUETOOTH_BAUD_RATE,
-                _loggerFactory.CreateLogger<SerialPortManager>(),
-                100, // pollingIntervalMs
-                1024, // readBufferSize
-                10240 // maxBufferSize
+                FileMode.Open,
+                FileAccess.Write,
+                FileShare.ReadWrite,
+                bufferSize: 4096,
+                useAsync: false
             );
-
-            _logger.LogDebug("📡 Bluetooth: Starting SerialPortManager...");
-            await _serialPortManager.StartAsync();
 
             _logger.LogInformation("📡 Bluetooth: Successfully connected to {Port}", BLUETOOTH_PORT);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "📡 Bluetooth: Failed to open port {Port} - will retry on next data send. Check if device is paired and rfcomm port is bound.", BLUETOOTH_PORT);
-            _serialPortManager = null;
+            _bluetoothStream = null;
         }
+
+        return Task.CompletedTask;
     }
 
     public async Task SendData(byte[] data)
@@ -76,49 +73,93 @@ public class BluetoothStreamingService : BackgroundService
         // Check if Bluetooth port exists
         if (!File.Exists(BLUETOOTH_PORT))
         {
-            // Only log occasionally to avoid spam
-            var now = DateTime.UtcNow;
-            if ((now - _lastBluetoothSend).TotalSeconds >= 10)
-            {
-                _logger.LogDebug("📡 Bluetooth: Port {Port} does not exist - waiting for client connection", BLUETOOTH_PORT);
-                _lastBluetoothSend = now;
-            }
+            // Port doesn't exist - silently skip (no client connected)
             return;
         }
 
-        // Log first successful detection of port
-        if (_serialPortManager == null)
+        // Check if we need to initialize (without holding lock)
+        bool shouldInit = false;
+        lock (_connectionLock)
         {
-            _logger.LogInformation("📡 Bluetooth: Port {Port} detected! Attempting to connect...", BLUETOOTH_PORT);
+            // Don't initialize if reconnecting (device is being removed/cleaned up)
+            if (_bluetoothStream == null && !_isInitializing && !_isReconnecting)
+            {
+                _isInitializing = true;
+                shouldInit = true;
+            }
         }
 
-        // Initialize connection if needed
-        if (_serialPortManager == null || !_serialPortManager.IsConnected)
+        if (shouldInit)
         {
-            _logger.LogInformation("📡 Bluetooth: Initializing connection to {Port}", BLUETOOTH_PORT);
-            await InitializeBluetoothPort();
-            if (_serialPortManager == null || !_serialPortManager.IsConnected)
+            _logger.LogInformation("📡 Bluetooth: Port {Port} detected! Client connected, attempting to open port...", BLUETOOTH_PORT);
+
+            // Open outside the lock with timeout
+            var openTask = Task.Run(() => InitializeBluetoothPort());
+            if (await Task.WhenAny(openTask, Task.Delay(3000)) != openTask)
             {
-                _logger.LogWarning("📡 Bluetooth: Failed to establish connection");
+                _logger.LogWarning("📡 Bluetooth: Timeout opening {Port} - device may not be ready yet", BLUETOOTH_PORT);
+                lock (_connectionLock)
+                {
+                    _isInitializing = false;
+                }
                 return;
             }
+
+            lock (_connectionLock)
+            {
+                _isInitializing = false;
+                if (_bluetoothStream == null)
+                {
+                    _logger.LogWarning("📡 Bluetooth: Failed to establish connection - port may be busy or not ready");
+                    return;
+                }
+                _logger.LogInformation("✅ Bluetooth: Successfully connected to {Port}, ready to stream data", BLUETOOTH_PORT);
+            }
+        }
+        else if (_isInitializing || _isReconnecting)
+        {
+            // Another thread is initializing or device is disconnecting, skip this data
+            return;
         }
 
         try
         {
             // Write data to Bluetooth
-            _serialPortManager.Write(data, 0, data.Length);
+            _bluetoothStream.Write(data, 0, data.Length);
+            _bluetoothStream.Flush();
+
             _bluetoothBytesSent += data.Length;
             _totalBluetoothBytesSent += data.Length;
+        }
+        catch (IOException ex)
+        {
+            // Device disconnected - close stream immediately and trigger single reconnect attempt
+            bool shouldReconnect = false;
+            lock (_connectionLock)
+            {
+                if (_bluetoothStream != null && !_isReconnecting)
+                {
+                    _logger.LogInformation("📡 Bluetooth: Client disconnected, closing stream");
+                    try
+                    {
+                        _bluetoothStream.Close();
+                        _bluetoothStream.Dispose();
+                    }
+                    catch { }
+                    _bluetoothStream = null;
+                    _isReconnecting = true;
+                    shouldReconnect = true;
+                }
+            }
 
-            _logger.LogDebug("📡 Bluetooth: Successfully sent {Length} bytes - Session Total: {TotalBytes} bytes", data.Length, _totalBluetoothBytesSent);
+            if (shouldReconnect)
+            {
+                await TryReconnectBluetoothPort();
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "📡 Bluetooth: Failed to send data. Will attempt to reconnect.");
-            
-            // Try to reconnect
-            await TryReconnectBluetoothPort();
+            _logger.LogWarning(ex, "📡 Bluetooth: Unexpected error sending data");
         }
     }
 
@@ -126,20 +167,21 @@ public class BluetoothStreamingService : BackgroundService
     {
         try
         {
-            _logger.LogInformation("📡 Bluetooth: Attempting to reconnect...");
-            if (_serialPortManager != null)
-            {
-                await _serialPortManager.StopAsync();
-                _serialPortManager.Dispose();
-                _serialPortManager = null;
-            }
-            _logger.LogDebug("📡 Bluetooth: Waiting 2 seconds before reconnection attempt");
-            await Task.Delay(2000); // Wait before reconnecting
-            await InitializeBluetoothPort();
+            _logger.LogDebug("📡 Bluetooth: Waiting for device to reconnect...");
+            await Task.Delay(1000); // Brief delay to let device disconnect cleanly
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "📡 Bluetooth: Reconnection attempt failed");
+            _logger.LogDebug(ex, "📡 Bluetooth: Error during reconnect delay");
+        }
+        finally
+        {
+            // Reset flags so next connection can be established
+            lock (_connectionLock)
+            {
+                _isInitializing = false;
+                _isReconnecting = false;
+            }
         }
     }
 
@@ -169,36 +211,40 @@ public class BluetoothStreamingService : BackgroundService
         return Task.CompletedTask;
     }
 
-    public bool IsConnected => _serialPortManager?.IsConnected == true;
+    public bool IsConnected => _bluetoothStream != null && _bluetoothStream.CanWrite;
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Stopping Bluetooth Streaming Service");
-        
-        // Stop SerialPortManager if connected
-        if (_serialPortManager != null)
+
+        // Close FileStream if open
+        lock (_connectionLock)
         {
-            try
+            if (_bluetoothStream != null)
             {
-                await _serialPortManager.StopAsync();
-                _serialPortManager.Dispose();
-                _logger.LogInformation("Bluetooth SerialPortManager stopped");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error stopping Bluetooth SerialPortManager");
+                try
+                {
+                    _bluetoothStream.Close();
+                    _bluetoothStream.Dispose();
+                    _bluetoothStream = null;
+                    _logger.LogInformation("Bluetooth stream closed");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error closing Bluetooth stream");
+                }
             }
         }
-        
+
         await base.StopAsync(cancellationToken);
     }
 
     public override void Dispose()
     {
         _logger.LogInformation("Bluetooth Streaming Service disposing");
-        
-        // SerialPortManager disposal is handled in StopAsync
-        
+
+        // FileStream disposal is handled in StopAsync
+
         base.Dispose();
     }
 }

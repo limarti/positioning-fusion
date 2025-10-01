@@ -718,8 +718,8 @@ public class GnssService : BackgroundService
             var hexDump = string.Join(" ", nmeaBytes.Select(b => $"{b:X2}"));
             
             // Log attempt to send
-            //_logger.LogInformation("📤 Attempting to send NMEA via Bluetooth ({Bytes} bytes): {Sentence}", nmeaBytes.Length, nmeaSentence);
-            
+            _logger.LogDebug("📤 Sending NMEA to Bluetooth ({Bytes} bytes): {Sentence}", nmeaBytes.Length, nmeaSentence.Trim());
+
             // Send via Bluetooth service
             await _bluetoothService.SendData(nmeaBytes);
         }
