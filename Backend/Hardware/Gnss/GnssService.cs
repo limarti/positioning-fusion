@@ -63,14 +63,14 @@ public class GnssService : BackgroundService
     private DateTime _lastBluetoothSend = DateTime.UtcNow;
     
     
-    public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, GeoConfigurationManager configurationManager)
+    public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, GeoConfigurationManager configurationManager, BluetoothStreamingService bluetoothService)
     {
         _hubContext = hubContext;
         _logger = logger;
         _gnssInitializer = gnssInitializer;
         _configurationManager = configurationManager;
         _dataFileWriter = new DataFileWriter("GNSS.raw", loggerFactory.CreateLogger<DataFileWriter>());
-        _bluetoothService = new BluetoothStreamingService(loggerFactory.CreateLogger<BluetoothStreamingService>(), loggerFactory);
+        _bluetoothService = bluetoothService;
         _frameParser = new GnssFrameParser(loggerFactory.CreateLogger<GnssFrameParser>());
 
         // Initialize SerialPortManager with GNSS-specific configuration
@@ -103,8 +103,7 @@ public class GnssService : BackgroundService
         // Start the data file writer
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
 
-        // Start the Bluetooth streaming service
-        _ = Task.Run(() => _bluetoothService.StartAsync(stoppingToken), stoppingToken);
+        // Note: BluetoothStreamingService is started automatically as a hosted service
 
         _serialPortManager = _gnssInitializer.GetSerialPortManager();
         if (_serialPortManager == null || !_serialPortManager.IsConnected)
@@ -803,9 +802,7 @@ public class GnssService : BackgroundService
         await _dataFileWriter.StopAsync(cancellationToken);
         _logger.LogInformation("GNSS Service data file writer stopped");
 
-        _logger.LogInformation("GNSS Service stopping bluetooth service");
-        await _bluetoothService.StopAsync(cancellationToken);
-        _logger.LogInformation("GNSS Service bluetooth service stopped");
+        // Note: BluetoothStreamingService is stopped automatically as a hosted service
 
         _logger.LogInformation("GNSS Service calling base.StopAsync");
         await base.StopAsync(cancellationToken);
@@ -817,7 +814,7 @@ public class GnssService : BackgroundService
         _logger.LogInformation("GNSS Service disposing");
         _serialPortManager?.Dispose();
         _dataFileWriter.Dispose();
-        _bluetoothService.Dispose();
+        // Note: BluetoothStreamingService is disposed automatically as a hosted service
         base.Dispose();
     }
 }

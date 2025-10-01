@@ -80,7 +80,9 @@ builder.Services.AddSingleton<CameraService>();
 builder.Services.AddHostedService<CameraService>(provider => provider.GetRequiredService<CameraService>());
 
 // Add Bluetooth services
-builder.Services.AddHostedService<BluetoothStreamingService>();
+builder.Services.AddSingleton<BluetoothInitializer>();
+builder.Services.AddSingleton<BluetoothStreamingService>();
+builder.Services.AddHostedService<BluetoothStreamingService>(provider => provider.GetRequiredService<BluetoothStreamingService>());
 
 // Add LoRa services
 builder.Services.AddSingleton<LoRaService>();
@@ -126,12 +128,31 @@ Console.WriteLine();
 // Start WiFi service manually to begin connecting immediately
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 var wifiService = app.Services.GetRequiredService<WiFiService>();
+var bluetoothInitializer = app.Services.GetRequiredService<BluetoothInitializer>();
 var imuInitializer = app.Services.GetRequiredService<ImuInitializer>();
 var gnssInitializer = app.Services.GetRequiredService<GnssInitializer>();
 
 logger.LogInformation("Starting WiFi service to begin connection attempts immediately...");
 await wifiService.StartAsync(CancellationToken.None);
 logger.LogInformation("WiFi service started - connecting in parallel with hardware initialization");
+
+logger.LogInformation("Initializing Bluetooth adapter...");
+try
+{
+    var bluetoothInitialized = await bluetoothInitializer.InitializeAsync();
+    if (!bluetoothInitialized)
+    {
+        logger.LogWarning("Bluetooth initialization failed - continuing without Bluetooth");
+    }
+    else
+    {
+        logger.LogInformation("Bluetooth initialization completed successfully");
+    }
+}
+catch (Exception ex)
+{
+    logger.LogError(ex, "Exception during Bluetooth initialization");
+}
 logger.LogInformation("Initializing IM19 IMU hardware...");
 try 
 {
