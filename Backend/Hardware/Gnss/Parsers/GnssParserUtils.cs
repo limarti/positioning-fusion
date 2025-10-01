@@ -1,11 +1,12 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 
 namespace Backend.Hardware.Gnss.Parsers;
 
 public static class GnssParserUtils
 {
-    private static readonly Dictionary<byte, string> _constantNameCache = new();
-    private static readonly Dictionary<uint, string> _keyIdNameCache = new();
+    private static readonly ConcurrentDictionary<byte, string> _constantNameCache = new();
+    private static readonly ConcurrentDictionary<uint, string> _keyIdNameCache = new();
     public static string GetGnssName(byte gnssId)
     {
         return gnssId switch
@@ -24,50 +25,38 @@ public static class GnssParserUtils
 
     public static string GetConstantName(byte value)
     {
-        if (_constantNameCache.TryGetValue(value, out var cachedName))
+        return _constantNameCache.GetOrAdd(value, val =>
         {
-            return cachedName;
-        }
+            var fields = typeof(UbxConstants).GetFields(BindingFlags.Public | BindingFlags.Static);
 
-        var fields = typeof(UbxConstants).GetFields(BindingFlags.Public | BindingFlags.Static);
-        
-        foreach (var field in fields)
-        {
-            if (field.FieldType == typeof(byte) && field.GetValue(null) is byte fieldValue && fieldValue == value)
+            foreach (var field in fields)
             {
-                var name = field.Name;
-                _constantNameCache[value] = name;
-                return name;
+                if (field.FieldType == typeof(byte) && field.GetValue(null) is byte fieldValue && fieldValue == val)
+                {
+                    return field.Name;
+                }
             }
-        }
-        
-        var fallbackName = $"0x{value:X2}";
-        _constantNameCache[value] = fallbackName;
-        return fallbackName;
+
+            return $"0x{val:X2}";
+        });
     }
 
     public static string GetKeyIdConstantName(uint keyId)
     {
-        if (_keyIdNameCache.TryGetValue(keyId, out var cachedName))
+        return _keyIdNameCache.GetOrAdd(keyId, key =>
         {
-            return cachedName;
-        }
+            var fields = typeof(UbxConstants).GetFields(BindingFlags.Public | BindingFlags.Static);
 
-        var fields = typeof(UbxConstants).GetFields(BindingFlags.Public | BindingFlags.Static);
-        
-        foreach (var field in fields)
-        {
-            if (field.FieldType == typeof(uint) && field.GetValue(null) is uint fieldValue && fieldValue == keyId)
+            foreach (var field in fields)
             {
-                var name = field.Name;
-                _keyIdNameCache[keyId] = name;
-                return name;
+                if (field.FieldType == typeof(uint) && field.GetValue(null) is uint fieldValue && fieldValue == key)
+                {
+                    return field.Name;
+                }
             }
-        }
-        
-        var fallbackName = $"0x{keyId:X8}";
-        _keyIdNameCache[keyId] = fallbackName;
-        return fallbackName;
+
+            return $"0x{key:X8}";
+        });
     }
 
 }
