@@ -8,7 +8,11 @@ namespace Backend.Hardware.Gnss;
 /// Aggregates correction status from multiple sources (RXM-COR, NAV-SAT, NAV-PVT)
 /// and produces a single authoritative correction status update.
 ///
-/// Priority order: RXM-COR > NAV-SAT > NAV-PVT > None
+/// Priority order (by correction type):
+/// - SPARTN (PPP-RTK/SSR): Use RXM-COR.age
+/// - RTCM (DGNSS/RTK/OSR): Use NAV-PVT.diffAge
+/// - SBAS: Use NAV-SAT (NAV-SBAS.ionoAge not implemented)
+/// - None: No corrections detected
 /// </summary>
 public static class CorrectionStatusAggregator
 {
@@ -47,10 +51,12 @@ public static class CorrectionStatusAggregator
 
             CorrectionStatusUpdate? update = null;
 
-            // Priority 1: RXM-COR (if recent)
-            if (rxmCor != null && (now - rxmCor.ReceivedAt).TotalSeconds <= RxmCorStaleSeconds)
+            // Priority 1: SPARTN (PPP-RTK/SSR) - Use RXM-COR.age
+            if (rxmCor != null &&
+                rxmCor.SpartnCorrections &&
+                (now - rxmCor.ReceivedAt).TotalSeconds <= RxmCorStaleSeconds)
             {
-                logger.LogDebug("📊 Aggregator: Using RXM-COR (age: {Age:F1}s)", (now - rxmCor.ReceivedAt).TotalSeconds);
+                logger.LogDebug("📊 Aggregator: Using RXM-COR SPARTN (age: {Age:F1}s)", (now - rxmCor.ReceivedAt).TotalSeconds);
 
                 update = new CorrectionStatusUpdate
                 {
@@ -70,41 +76,13 @@ public static class CorrectionStatusAggregator
                     Timestamp = DateTime.UtcNow
                 };
             }
-            // Priority 2: NAV-SAT (if DiffCorr flags set and recent)
-            else if (navSat != null &&
-                     navSat.DiffCorrInUse &&
-                     (now - navSat.ReceivedAt).TotalSeconds <= NavSatStaleSeconds)
-            {
-                logger.LogDebug("📊 Aggregator: Using NAV-SAT (age: {Age:F1}s, diffCorr={Count})",
-                    (now - navSat.ReceivedAt).TotalSeconds, navSat.DiffCorrSatellites);
-
-                var source = navSat.SbasInUse ? "SBAS" : "RTCM";
-
-                update = new CorrectionStatusUpdate
-                {
-                    Version = 1,
-                    CorrectionFlags = (ushort)(navSat.SbasInUse ? 0x11 : 0x21), // Valid + SBAS/RTCM
-                    MessageType = 0,
-                    MessageSubType = 0,
-                    NumMessages = 0,
-                    CorrectionAge = null, // NAV-SAT doesn't provide age
-                    CorrectionValid = true,
-                    CorrectionStale = false,
-                    SbasCorrections = navSat.SbasInUse,
-                    RtcmCorrections = !navSat.SbasInUse,
-                    SpartnCorrections = false,
-                    CorrectionSource = source,
-                    CorrectionStatus = "Valid (NAV-SAT)",
-                    Timestamp = DateTime.UtcNow
-                };
-            }
-            // Priority 3: NAV-PVT (if diffSoln flag set and recent)
+            // Priority 2: RTCM (DGNSS/RTK/OSR) - Use NAV-PVT.diffAge
             else if (navPvt != null &&
                      navPvt.DiffSoln &&
                      (now - navPvt.ReceivedAt).TotalSeconds <= NavPvtStaleSeconds)
             {
-                logger.LogDebug("📊 Aggregator: Using NAV-PVT (age: {Age:F1}s, carrSoln={CarrSoln})",
-                    (now - navPvt.ReceivedAt).TotalSeconds, navPvt.CarrierSolution);
+                logger.LogDebug("📊 Aggregator: Using NAV-PVT RTCM (age: {Age:F1}s, carrSoln={CarrSoln}, diffAge={DiffAge}ms)",
+                    (now - navPvt.ReceivedAt).TotalSeconds, navPvt.CarrierSolution, navPvt.DiffAge);
 
                 // Determine source from carrier solution
                 string source;
@@ -125,7 +103,7 @@ public static class CorrectionStatusAggregator
                     MessageType = 0,
                     MessageSubType = 0,
                     NumMessages = 0,
-                    CorrectionAge = null, // NAV-PVT doesn't provide age
+                    CorrectionAge = navPvt.DiffAge, // Use diffAge from NAV-PVT (per UBX rule)
                     CorrectionValid = true,
                     CorrectionStale = false,
                     SbasCorrections = false,
@@ -136,7 +114,60 @@ public static class CorrectionStatusAggregator
                     Timestamp = DateTime.UtcNow
                 };
             }
-            // Priority 4: No corrections detected
+            // Priority 3: SBAS - Use NAV-SAT (NAV-SBAS.ionoAge not implemented)
+            else if (navSat != null &&
+                     navSat.SbasInUse &&
+                     navSat.DiffCorrInUse &&
+                     (now - navSat.ReceivedAt).TotalSeconds <= NavSatStaleSeconds)
+            {
+                logger.LogDebug("📊 Aggregator: Using NAV-SAT SBAS (age: {Age:F1}s, diffCorr={Count})",
+                    (now - navSat.ReceivedAt).TotalSeconds, navSat.DiffCorrSatellites);
+
+                update = new CorrectionStatusUpdate
+                {
+                    Version = 1,
+                    CorrectionFlags = 0x11, // Valid + SBAS
+                    MessageType = 0,
+                    MessageSubType = 0,
+                    NumMessages = 0,
+                    CorrectionAge = null, // NAV-SAT doesn't provide age (would need NAV-SBAS.ionoAge)
+                    CorrectionValid = true,
+                    CorrectionStale = false,
+                    SbasCorrections = true,
+                    RtcmCorrections = false,
+                    SpartnCorrections = false,
+                    CorrectionSource = "SBAS",
+                    CorrectionStatus = "Valid (NAV-SAT)",
+                    Timestamp = DateTime.UtcNow
+                };
+            }
+            // Priority 4: Fallback to RXM-COR for RTCM/SBAS if NAV-PVT/NAV-SAT unavailable
+            else if (rxmCor != null &&
+                     (rxmCor.RtcmCorrections || rxmCor.SbasCorrections) &&
+                     (now - rxmCor.ReceivedAt).TotalSeconds <= RxmCorStaleSeconds)
+            {
+                logger.LogDebug("📊 Aggregator: Using RXM-COR fallback (age: {Age:F1}s, source={Source})",
+                    (now - rxmCor.ReceivedAt).TotalSeconds, rxmCor.CorrectionSource);
+
+                update = new CorrectionStatusUpdate
+                {
+                    Version = rxmCor.Version,
+                    CorrectionFlags = rxmCor.CorrectionFlags,
+                    MessageType = rxmCor.MessageType,
+                    MessageSubType = rxmCor.MessageSubType,
+                    NumMessages = rxmCor.NumMessages,
+                    CorrectionAge = rxmCor.CorrectionAge,
+                    CorrectionValid = rxmCor.CorrectionValid,
+                    CorrectionStale = rxmCor.CorrectionStale,
+                    SbasCorrections = rxmCor.SbasCorrections,
+                    RtcmCorrections = rxmCor.RtcmCorrections,
+                    SpartnCorrections = rxmCor.SpartnCorrections,
+                    CorrectionSource = rxmCor.CorrectionSource,
+                    CorrectionStatus = rxmCor.CorrectionStatus,
+                    Timestamp = DateTime.UtcNow
+                };
+            }
+            // Priority 5: No corrections detected
             else
             {
                 logger.LogDebug("📊 Aggregator: No corrections detected");

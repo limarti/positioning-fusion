@@ -98,6 +98,10 @@
         <span>GNSS Fixed</span>
       </div>
       <div class="flex items-center space-x-1">
+        <div class="w-3 h-3 bg-purple-500 rounded-full" />
+        <span>DGPS</span>
+      </div>
+      <div class="flex items-center space-x-1">
         <div class="w-3 h-3 bg-gray-500 rounded-full" />
         <span>Other</span>
       </div>
@@ -145,11 +149,12 @@
   };
 
   // Get color based on fix type
-  const getPointColor = (fixType) => 
+  const getPointColor = (fixType) =>
   {
     if (fixType === 'RTK Fixed') return '#10b981';
     if (fixType === 'RTK Float') return '#f59e0b';
     if (fixType === 'GNSS Fixed') return '#3b82f6';
+    if (fixType === 'DGPS') return '#a855f7';
     return '#6b7280';
   };
 

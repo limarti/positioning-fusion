@@ -27,4 +27,7 @@ public class PvtUpdate
     public double HorizontalAccuracy { get; set; }
     public double VerticalAccuracy { get; set; }
     public int CarrierSolution { get; set; }
+
+    // Differential correction age in milliseconds (null when not available, 0xFFFF in protocol)
+    public uint? DiffAge { get; set; }
 }

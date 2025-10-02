@@ -9,4 +9,7 @@ public class NavPvtData
     public byte FixTypeRaw { get; set; }
     public bool GnssFixOk { get; set; }
     public byte NumSatellites { get; set; }
+
+    // Differential correction age in milliseconds (null when not available, 0xFFFF in protocol)
+    public uint? DiffAge { get; set; }
 }

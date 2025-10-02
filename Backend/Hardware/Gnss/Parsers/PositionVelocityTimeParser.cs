@@ -43,6 +43,11 @@ public static class PositionVelocityTimeParser
         var hAcc = BitConverter.ToUInt32(data, 40);
         var vAcc = BitConverter.ToUInt32(data, 44);
 
+        // Parse differential correction age (offset 76, U2, milliseconds)
+        // 0xFFFF = not available
+        var diffAge = BitConverter.ToUInt16(data, 76);
+        uint? diffAgeMs = diffAge == 0xFFFF ? null : (uint)diffAge;
+
         var gnssFixOk = (flags & 0x01) != 0;
         var diffSoln = (flags & 0x02) != 0;
         var psmState = (flags >> 2) & 0x07;
@@ -111,7 +116,8 @@ public static class PositionVelocityTimeParser
             HeightMSL = hMSL,
             HorizontalAccuracy = hAcc / 1000.0, // Convert mm to meters
             VerticalAccuracy = vAcc / 1000.0, // Convert mm to meters
-            CarrierSolution = carrSoln
+            CarrierSolution = carrSoln,
+            DiffAge = diffAgeMs
         };
 
         try
@@ -140,7 +146,8 @@ public static class PositionVelocityTimeParser
                 FixType = fixTypeString,
                 FixTypeRaw = fixType,
                 GnssFixOk = gnssFixOk,
-                NumSatellites = numSV
+                NumSatellites = numSV,
+                DiffAge = diffAgeMs
             };
 
             GnssDataStore.UpdateNavPvt(navPvtData);
