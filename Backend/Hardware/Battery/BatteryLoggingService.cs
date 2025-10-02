@@ -12,6 +12,7 @@ public class BatteryLoggingService : BackgroundService
     private readonly SystemMonitoringService _systemMonitoringService;
     private readonly CameraService _cameraService;
     private readonly DataFileWriter _dataFileWriter;
+    private readonly LocalFileWriter _localFileWriter;
     private bool _headerWritten = false;
 
     public BatteryLoggingService(
@@ -24,14 +25,16 @@ public class BatteryLoggingService : BackgroundService
         _systemMonitoringService = systemMonitoringService;
         _cameraService = cameraService;
         _dataFileWriter = new DataFileWriter("Battery.txt", loggerFactory.CreateLogger<DataFileWriter>());
+        _localFileWriter = new LocalFileWriter(loggerFactory.CreateLogger<LocalFileWriter>());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Battery Logging Service started - logging every 10 seconds");
 
-        // Start the data file writer
+        // Start both data file writers
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
+        _ = Task.Run(() => _localFileWriter.StartAsync(stoppingToken), stoppingToken);
 
         var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
 
@@ -68,6 +71,7 @@ public class BatteryLoggingService : BackgroundService
             {
                 var csvHeader = "timestamp,battery_level,voltage,external_power_connected,camera_connected,usb_drive_connected";
                 _dataFileWriter.WriteData(csvHeader);
+                _localFileWriter.WriteData(csvHeader);
                 _headerWritten = true;
             }
 
@@ -80,6 +84,7 @@ public class BatteryLoggingService : BackgroundService
             var csvLine = $"{timestamp},{systemHealth.BatteryLevel:F2},{systemHealth.BatteryVoltage:F3},{systemHealth.IsExternalPowerConnected},{cameraConnected},{usbDriveConnected}";
 
             _dataFileWriter.WriteData(csvLine);
+            _localFileWriter.WriteData(csvLine);
 
             _logger.LogDebug("Battery data logged: Level={BatteryLevel:F1}%, Voltage={BatteryVoltage:F2}V, ExternalPower={IsExternalPowerConnected}, Camera={CameraConnected}, USB={UsbDriveConnected}",
                 systemHealth.BatteryLevel, systemHealth.BatteryVoltage, systemHealth.IsExternalPowerConnected, cameraConnected, usbDriveConnected);
@@ -120,6 +125,7 @@ public class BatteryLoggingService : BackgroundService
     {
         _logger.LogInformation("Stopping Battery Logging Service");
         await _dataFileWriter.StopAsync(cancellationToken);
+        await _localFileWriter.StopAsync(cancellationToken);
         await base.StopAsync(cancellationToken);
     }
 
@@ -127,6 +133,7 @@ public class BatteryLoggingService : BackgroundService
     {
         _logger.LogInformation("Battery Logging Service disposing");
         _dataFileWriter.Dispose();
+        _localFileWriter.Dispose();
         base.Dispose();
     }
 }
