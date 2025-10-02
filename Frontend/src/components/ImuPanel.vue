@@ -1,18 +1,12 @@
 <template>
-  <div class="space-y-6">
-    <!-- Main Card Container -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100">
-      <div class="px-6 py-5 border-b border-gray-100">
-        <div class="flex items-center justify-between">
-          <h2 class="text-xl font-semibold text-gray-900">IMU Sensors</h2>
-          <div class="flex items-center space-x-2">
-            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span class="text-sm text-gray-500">Live</span>
-          </div>
-        </div>
-      </div>
+  <Card title="IMU Sensors">
+    <!-- Live Status Indicator -->
+    <div class="flex items-center justify-end space-x-2 -mt-2 mb-4">
+      <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+      <span class="text-sm text-gray-500">Live</span>
+    </div>
 
-      <div class="p-6 space-y-6">
+    <div class="space-y-6">
         <!-- Visual Representations -->
         <div class="grid grid-cols-3 gap-6">
           <!-- 3D Attitude Visualization -->
@@ -222,13 +216,13 @@
         </div>
       </div>
     </div>
-  </div>
-</div>
+  </Card>
 </template>
 
 <script setup>
-  import { useSystemData } from '@/composables/useSystemData';
-  import { computed } from 'vue';
+import Card from './common/Card.vue';
+import { useSystemData } from '@/composables/useSystemData';
+import { computed } from 'vue';
 
   // Get data from composable
   const { state: systemState } = useSystemData();
