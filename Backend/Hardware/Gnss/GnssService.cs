@@ -2,6 +2,7 @@ using Backend.Hubs;
 using Backend.Hardware.Bluetooth;
 using Backend.Hardware.LoRa;
 using Backend.Hardware.Gnss;
+using Backend.Hardware.Gnss.Models;
 using Backend.Hardware.Gnss.Parsers;
 using Backend.Hardware.Common;
 using Backend.Storage;

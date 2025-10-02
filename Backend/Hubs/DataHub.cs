@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Backend.Hardware.Imu;
 using Backend.Hardware.Gnss;
+using Backend.Hardware.Gnss.Models;
 using Backend.Hardware.Camera;
 using Backend.GnssSystem;
 using Backend.Storage;

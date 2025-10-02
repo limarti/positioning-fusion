@@ -1,5 +1,6 @@
 using Backend.Hubs;
 using Backend.Configuration;
+using Backend.Hardware.Gnss.Models;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Backend.Hardware.Gnss.Parsers;
