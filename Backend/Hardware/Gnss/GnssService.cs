@@ -421,7 +421,6 @@ public class GnssService : BackgroundService
                 try
                 {
                     await _loraService.SendData(completeMessage);
-                    _logger.LogDebug("📡 LoRa: Sent RTCM3 message type {Type} ({Length} bytes)", messageType, completeMessage.Length);
                 }
                 catch (Exception ex)
                 {
@@ -687,7 +686,6 @@ public class GnssService : BackgroundService
         {
             _serialPortManager.Write(rtcmData, 0, rtcmData.Length);
             TrackBytesSent(rtcmData.Length);
-            _logger.LogDebug("Sent {Length} bytes of RTCM data to GNSS port", rtcmData.Length);
         }
         catch (Exception ex)
         {
@@ -703,48 +701,172 @@ public class GnssService : BackgroundService
     private int _loraPartialFrames = 0;
     private DateTime _lastLoraStatLog = DateTime.UtcNow;
 
-    // Event handler for LoRa data received (forwards directly to GNSS)
+    // LoRa RTCM3 buffering for frame reassembly
+    private readonly List<byte> _loraRtcmBuffer = new();
+    private readonly object _loraRtcmBufferLock = new();
+
+    // Event handler for LoRa data received (buffers for RTCM3 frame reassembly)
     private async void OnLoRaDataReceived(object? sender, byte[] data)
     {
         try
         {
-            // Validate RTCM3 frame before forwarding
-            if (data.Length >= 3 && data[0] == 0xD3) // RTCM3 preamble
+            // Add data to RTCM3 buffer for frame extraction
+            lock (_loraRtcmBufferLock)
             {
-                var length = ((data[1] & 0x03) << 8) | data[2]; // RTCM3 length
-                var expectedLength = 3 + length + 3; // header(3) + payload(length) + CRC(3)
-
-                if (data.Length >= expectedLength)
-                {
-                    _loraValidFrames++;
-                }
-                else
-                {
-                    _loraPartialFrames++;
-                }
-            }
-            else
-            {
-                _loraInvalidFrames++;
+                _loraRtcmBuffer.AddRange(data);
             }
 
-            // Log summary stats every 5 seconds instead of every frame
-            var now = DateTime.UtcNow;
-            if ((now - _lastLoraStatLog).TotalSeconds >= 5)
-            {
-                _logger.LogInformation("📡 LoRa→GNSS Stats (last 5s): Valid={Valid}, Partial={Partial}, Invalid={Invalid}",
-                    _loraValidFrames, _loraPartialFrames, _loraInvalidFrames);
-                _loraValidFrames = 0;
-                _loraPartialFrames = 0;
-                _loraInvalidFrames = 0;
-                _lastLoraStatLog = now;
-            }
-
-            await SendRtcmToGnss(data);
+            // Process the buffered data asynchronously to extract complete RTCM3 frames
+            _ = Task.Run(async () => await ProcessLoraRtcmBufferAsync());
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error forwarding LoRa data to GNSS");
+            _logger.LogError(ex, "Error processing LoRa data");
+        }
+    }
+
+    private async Task ProcessLoraRtcmBufferAsync()
+    {
+        const int maxMessagesPerLoop = 50; // Prevent infinite loops
+        const int maxBufferBytes = 1 << 20; // 1 MiB cap
+        int processed = 0;
+
+        // Quick guard: nothing to do yet
+        lock (_loraRtcmBufferLock)
+        {
+            if (_loraRtcmBuffer.Count == 0)
+            {
+                _logger.LogDebug("📭 ProcessLoraRtcmBufferAsync: Buffer is empty");
+                return;
+            }
+        }
+
+        // Trim runaway buffers (drop oldest)
+        lock (_loraRtcmBufferLock)
+        {
+            if (_loraRtcmBuffer.Count > maxBufferBytes)
+            {
+                int toDrop = _loraRtcmBuffer.Count - maxBufferBytes;
+                _logger.LogWarning("LoRa buffer exceeded {Max} bytes; dropping {Drop} oldest bytes.", maxBufferBytes, toDrop);
+                _loraRtcmBuffer.RemoveRange(0, toDrop);
+            }
+        }
+
+        while (processed < maxMessagesPerLoop)
+        {
+            // Check if buffer is empty before trying to parse
+            lock (_loraRtcmBufferLock)
+            {
+                if (_loraRtcmBuffer.Count == 0)
+                {
+                    _logger.LogDebug("📭 ProcessLoraRtcmBufferAsync: Buffer became empty during processing");
+                    break;
+                }
+            }
+
+            // Try to locate next RTCM3 frame
+            bool frameFound;
+            FrameKind kind;
+            int start, totalLen, partialNeeded;
+
+            lock (_loraRtcmBufferLock)
+            {
+                frameFound = _frameParser.TryFindNextFrame(_loraRtcmBuffer, out kind, out start, out totalLen, out partialNeeded);
+            }
+
+            if (!frameFound)
+            {
+                // If we saw a plausible, but partial frame, wait for more data
+                if (partialNeeded > 0)
+                {
+                    _logger.LogDebug("Waiting for {Bytes} more bytes to complete a partial RTCM3 frame.", partialNeeded);
+                    break;
+                }
+
+                // No valid frames found, drop 1 garbage byte if buffer is large enough
+                lock (_loraRtcmBufferLock)
+                {
+                    if (_loraRtcmBuffer.Count >= 100) // Don't drop if buffer is too small
+                    {
+                        var hexDump = string.Join(" ", _loraRtcmBuffer.Take(32).Select(b => $"{b:X2}"));
+                        _logger.LogInformation("🗑️ No RTCM3 frames found, dropping 1 garbage byte (0x{Byte:X2}). Buffer: {BufferSize} bytes. Context: {HexDump}",
+                            _loraRtcmBuffer[0], _loraRtcmBuffer.Count, hexDump);
+                        _loraRtcmBuffer.RemoveAt(0);
+                        _loraInvalidFrames++;
+                    }
+                    else
+                    {
+                        _logger.LogDebug("⏳ Buffer too small ({BufferSize} < 100) to discard bytes, waiting for more data", _loraRtcmBuffer.Count);
+                    }
+                }
+                break;
+            }
+
+            // Only process RTCM3 frames (skip UBX/NMEA if somehow detected)
+            if (kind != FrameKind.Rtcm3)
+            {
+                _logger.LogWarning("Unexpected frame kind {Kind} in LoRa buffer, skipping", kind);
+                lock (_loraRtcmBufferLock)
+                {
+                    if (start > 0) _loraRtcmBuffer.RemoveRange(0, start);
+                    if (_loraRtcmBuffer.Count >= totalLen) _loraRtcmBuffer.RemoveRange(0, totalLen);
+                }
+                continue;
+            }
+
+            // Extract RTCM3 frame data within lock
+            byte[] frame;
+            lock (_loraRtcmBufferLock)
+            {
+                // Drop garbage before the frame
+                if (start > 0)
+                {
+                    var garbageBytes = _loraRtcmBuffer.Take(Math.Min(start, 32)).ToArray();
+                    var hexDump = string.Join(" ", garbageBytes.Select(b => $"{b:X2}"));
+                    _logger.LogInformation("🗑️ Dropping {Count} garbage bytes before RTCM3 frame. Garbage data (first {ShowCount} bytes): {HexDump}",
+                        start, garbageBytes.Length, hexDump);
+                    _loraRtcmBuffer.RemoveRange(0, start);
+                }
+
+                // If the frame is partial, wait
+                if (_loraRtcmBuffer.Count < totalLen)
+                {
+                    int need = totalLen - _loraRtcmBuffer.Count;
+                    _logger.LogDebug("Partial RTCM3 frame detected. Need {Need} more bytes.", need);
+                    _loraPartialFrames++;
+                    break;
+                }
+
+                // Extract and remove frame
+                frame = _loraRtcmBuffer.GetRange(0, totalLen).ToArray();
+                _loraRtcmBuffer.RemoveRange(0, totalLen);
+            }
+
+            try
+            {
+                _loraValidFrames++;
+
+                // Log stats every 5 seconds
+                var now = DateTime.UtcNow;
+                if ((now - _lastLoraStatLog).TotalSeconds >= 5)
+                {
+                    _logger.LogInformation("📡 LoRa→GNSS Stats (last 5s): Valid={Valid}, Partial={Partial}, Invalid={Invalid}",
+                        _loraValidFrames, _loraPartialFrames, _loraInvalidFrames);
+                    _loraValidFrames = 0;
+                    _loraPartialFrames = 0;
+                    _loraInvalidFrames = 0;
+                    _lastLoraStatLog = now;
+                }
+
+                // Forward valid RTCM3 frame to GNSS
+                await SendRtcmToGnss(frame);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing RTCM3 frame from LoRa buffer");
+            }
+
+            processed++;
         }
     }
 

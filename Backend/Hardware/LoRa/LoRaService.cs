@@ -223,8 +223,6 @@ public class LoRaService : BackgroundService
 
             _loraBytesSent += data.Length;
             _totalLoRaBytesSent += data.Length;
-
-            _logger.LogDebug("📡 LoRa: Successfully sent {Length} bytes - Session Total: {TotalBytes} bytes", data.Length, _totalLoRaBytesSent);
         }
         catch (Exception ex)
         {
