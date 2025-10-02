@@ -32,7 +32,7 @@
       <div class="flex items-center justify-between py-2">
         <span class="text-sm text-gray-600">Solution Status:</span>
         <span class="text-xs font-semibold px-3 py-1 rounded-lg"
-              :class="gnssState.gnssData.rtkMode === 'Fixed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-700'">
+              :class="getSolutionStatusClass()">
           {{ gnssState.gnssData.rtkMode }}
         </span>
       </div>
@@ -269,12 +269,35 @@
   {
     const status = gnssState.gnssData.corrections.status.status;
 
-    switch (status) 
+    switch (status)
     {
     case 'Valid': return 'bg-green-100 text-green-800';
     case 'Stale': return 'bg-yellow-100 text-yellow-700';
     case 'Invalid': return 'bg-red-100 text-red-700';
     default: return 'bg-gray-100 text-gray-600';
     }
+  };
+
+  const getSolutionStatusClass = () =>
+  {
+    const fixType = gnssState.gnssData.rtkMode;
+
+    // RTK Fixed solutions - best accuracy (green)
+    if (fixType?.includes('RTK Fix')) return 'bg-green-100 text-green-800';
+
+    // RTK Float solutions - good accuracy (yellow)
+    if (fixType?.includes('RTK Float')) return 'bg-yellow-100 text-yellow-700';
+
+    // DGPS solutions - moderate accuracy (blue)
+    if (fixType?.includes('DGPS')) return 'bg-blue-100 text-blue-700';
+
+    // Single point solutions - standard GPS (slate)
+    if (fixType?.includes('Single')) return 'bg-slate-100 text-slate-700';
+
+    // No fix or other states (red)
+    if (fixType?.includes('No Fix')) return 'bg-red-100 text-red-700';
+
+    // Default for other types (DR, Time Only, etc.)
+    return 'bg-gray-100 text-gray-600';
   };
 </script>

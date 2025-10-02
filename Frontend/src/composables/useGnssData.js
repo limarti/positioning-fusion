@@ -206,18 +206,9 @@ export function registerGnssEvents(connection)
     gnssData.gnssTimestamp = data.gnssTimestamp;
     gnssData.timeValid = data.timeValid;
 
-    // Use the enhanced fix type string from backend instead of hardcoded logic
-    gnssData.fixType = data.fixTypeString || 'No Fix';
-
-    // Update RTK mode based on fix type string
-    if (data.fixTypeString && data.fixTypeString.includes('RTK'))
-    {
-      gnssData.rtkMode = data.fixTypeString.includes('Fixed') ? 'Fixed' : 'Float';
-    }
-    else
-    {
-      gnssData.rtkMode = null;
-    }
+    // Use the enhanced fix type string from backend
+    gnssData.fixType = data.fixTypeString;
+    gnssData.rtkMode = data.fixTypeString;
 
     gnssData.satellitesUsed = data.numSatellites;
 
