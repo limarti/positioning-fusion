@@ -64,7 +64,7 @@ const gnssData = reactive({
 
   // Corrections mode and status
   corrections: {
-    mode: 'Disabled', // 'Disabled', 'Receive', 'Send'
+    mode: 'DISABLED', // 'DISABLED', 'RECEIVE', 'SEND'
     status: {
       source: 'None',
       status: 'Unknown',
@@ -94,25 +94,25 @@ const messageRates = reactive({
 
 // RTK mode management
 const isChangingMode = ref(false);
-const selectedMode = ref('Disabled');
+const selectedMode = ref('DISABLED');
 
 const modeOptions = [
   {
-    value: 'Disabled',
+    value: 'DISABLED',
     label: 'Disabled',
     description: 'RTK corrections disabled',
     color: 'slate'
   },
   {
-    value: 'Send',
-    label: 'Base Station',
+    value: 'SEND',
+    label: 'Send',
     description: 'Send RTK corrections to rovers',
     color: 'blue'
   },
   {
-    value: 'Receive',
-    label: 'Rover',
-    description: 'Receive RTK corrections',
+    value: 'RECEIVE',
+    label: 'Receive',
+    description: 'Receive RTK corrections from base station',
     color: 'purple'
   }
 ];
@@ -122,7 +122,7 @@ const getModeConfig = (mode) =>
   return modeOptions.find(option => option.value === mode) || modeOptions[0];
 };
 
-const currentModeConfig = computed(() => getModeConfig(gnssData.corrections.mode || 'Disabled'));
+const currentModeConfig = computed(() => getModeConfig(gnssData.corrections.mode || 'DISABLED'));
 
 // Create a single reactive state object
 const state = reactive({
@@ -212,8 +212,8 @@ export function registerGnssEvents(connection)
 
     gnssData.satellitesUsed = data.numSatellites;
 
-    // Use standard precision position when in base mode (mode === 'Send')
-    if (gnssData.corrections.mode === 'Send')
+    // Use standard precision position when in base mode (mode === 'SEND')
+    if (gnssData.corrections.mode === 'SEND')
     {
       gnssData.latitude = data.latitude;
       gnssData.longitude = data.longitude;
@@ -225,7 +225,7 @@ export function registerGnssEvents(connection)
   {
     // Update high-precision position from NAV-HPPOSLLH messages (11 decimal precision)
     // Only use high precision when NOT in base mode
-    if (gnssData.corrections.mode !== 'Send')
+    if (gnssData.corrections.mode !== 'SEND')
     {
       gnssData.latitude = data.latitude;
       gnssData.longitude = data.longitude;
@@ -321,11 +321,11 @@ export function handleModeChange(connection, newMode)
       {
         const success = await connection.invoke('SetOperatingMode', newMode);
 
-        if (!success) 
+        if (!success)
         {
           console.error('Failed to change mode - server returned false');
           // Reset selected mode on failure
-          selectedMode.value = gnssData.corrections.mode || 'Disabled';
+          selectedMode.value = gnssData.corrections.mode || 'DISABLED';
           resolve(false);
         }
         else 
@@ -334,18 +334,18 @@ export function handleModeChange(connection, newMode)
         }
         // On success, the mode will be updated via SignalR ModeChanged event
       }
-      else 
+      else
       {
         console.error('No SignalR connection available or connection not in Connected state');
-        selectedMode.value = gnssData.corrections.mode || 'Disabled';
+        selectedMode.value = gnssData.corrections.mode || 'DISABLED';
         resolve(false);
       }
     }
-    catch (error) 
+    catch (error)
     {
       console.error('Error changing mode:', error);
       // Reset selected mode on error
-      selectedMode.value = gnssData.corrections.mode || 'Disabled';
+      selectedMode.value = gnssData.corrections.mode || 'DISABLED';
       reject(error);
     }
     finally 

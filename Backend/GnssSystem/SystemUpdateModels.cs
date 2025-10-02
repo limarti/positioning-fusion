@@ -13,7 +13,7 @@ public class SystemHealthUpdate
 
 public class CorrectionsStatusUpdate
 {
-    public string Mode { get; set; } = "Disabled"; // "Disabled", "Receive", "Send"
+    public string Mode { get; set; } = "DISABLED"; // "DISABLED", "RECEIVE", "SEND"
 }
 
 public class HostnameUpdateRequest

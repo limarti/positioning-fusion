@@ -336,11 +336,11 @@ public class GnssInitializer
 
     private async Task ConfigureOperatingMode()
     {
-        if (_configurationManager.OperatingMode == OperatingMode.Send)
+        if (_configurationManager.OperatingMode == OperatingMode.SEND)
         {
             await ConfigureBaseStation();
         }
-        else if (_configurationManager.OperatingMode == OperatingMode.Receive)
+        else if (_configurationManager.OperatingMode == OperatingMode.RECEIVE)
         {
             await ConfigureRover();
         }

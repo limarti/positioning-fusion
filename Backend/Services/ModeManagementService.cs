@@ -78,7 +78,7 @@ public class ModeManagementService : BackgroundService
             _logger.LogDebug("Broadcasting mode change to all SignalR clients");
             await _hubContext.Clients.All.SendAsync("ModeChanged", new
             {
-                Mode = newMode.ToString(),
+                Mode = newMode,
                 Timestamp = DateTime.UtcNow
             });
 
@@ -110,7 +110,7 @@ public class ModeManagementService : BackgroundService
             _logger.LogDebug("Broadcasting initial operating mode: {Mode}", _currentMode);
             await _hubContext.Clients.All.SendAsync("ModeChanged", new
             {
-                Mode = _currentMode.ToString(),
+                Mode = _currentMode,
                 Timestamp = DateTime.UtcNow
             }, stoppingToken);
 

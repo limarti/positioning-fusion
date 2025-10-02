@@ -17,7 +17,7 @@ let retryTimer = null;
 let retryCountdown = null;
 
 // Current mode tracking
-const currentMode = ref('Disabled');
+const currentMode = ref('DISABLED');
 
 // Connection management functions
 const updateConnectionStatus = () => 

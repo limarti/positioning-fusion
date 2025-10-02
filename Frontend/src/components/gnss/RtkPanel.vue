@@ -27,7 +27,7 @@
     </div>
 
     <!-- RTK Status and Data (when active) -->
-    <div v-if="gnssState.gnssData.corrections.mode !== 'Disabled'" class="space-y-6">
+    <div v-if="gnssState.gnssData.corrections.mode !== 'DISABLED'" class="space-y-6">
       <!-- RTK Solution Status (Both Modes) -->
       <div class="flex items-center justify-between py-2">
         <span class="text-sm text-gray-600">Solution Status:</span>
@@ -88,7 +88,7 @@
       </div>
 
       <!-- RTK-Specific Data (Rover Mode Only) -->
-      <div v-if="gnssState.gnssData.corrections.mode === 'Receive'" class="border-t border-gray-200 pt-4 space-y-4">
+      <div v-if="gnssState.gnssData.corrections.mode === 'RECEIVE'" class="border-t border-gray-200 pt-4 space-y-4">
         <div class="flex justify-between py-1">
           <span class="text-sm text-gray-600">Baseline Distance:</span>
           <span class="text-sm font-medium" :class="gnssState.gnssData.rtk.baselineLength !== null ? 'text-gray-800' : 'text-slate-400'">{{ gnssState.gnssData.rtk.baselineLength !== null ? gnssState.gnssData.rtk.baselineLength.toFixed(0) + 'm' : '—' }}</span>
@@ -102,14 +102,14 @@
       <!-- Radio Communication (Both Modes) -->
       <div class="border-t border-gray-200 pt-4">
         <!-- Base Station Mode: Show LoRa Out (corrections being sent) -->
-        <div v-if="gnssState.gnssData.corrections.mode === 'Send'" class="flex justify-between py-1">
+        <div v-if="gnssState.gnssData.corrections.mode === 'SEND'" class="flex justify-between py-1">
           <span class="text-sm text-gray-600">Radio Throughput:</span>
           <span class="text-sm font-medium" :class="systemState.dataRates.kbpsLoRaOut !== null && systemState.dataRates.kbpsLoRaOut > 0 ? 'text-gray-800' : 'text-slate-400'">
             {{ systemState.dataRates.kbpsLoRaOut !== null ? systemState.dataRates.kbpsLoRaOut.toFixed(1) + ' kbps' : '—' }}
           </span>
         </div>
         <!-- Rover Mode: Show LoRa In (corrections being received) -->
-        <div v-if="gnssState.gnssData.corrections.mode === 'Receive'" class="flex justify-between py-1">
+        <div v-if="gnssState.gnssData.corrections.mode === 'RECEIVE'" class="flex justify-between py-1">
           <span class="text-sm text-gray-600">Radio Throughput:</span>
           <span class="text-sm font-medium" :class="systemState.dataRates.kbpsLoRaIn !== null && systemState.dataRates.kbpsLoRaIn > 0 ? 'text-gray-800' : 'text-slate-400'">
             {{ systemState.dataRates.kbpsLoRaIn !== null ? systemState.dataRates.kbpsLoRaIn.toFixed(1) + ' kbps' : '—' }}
@@ -118,9 +118,9 @@
       </div>
 
       <!-- Base Station Setup (Base Station Mode Only) -->
-      <div v-if="gnssState.gnssData.corrections.mode === 'Send'" class="border-t border-gray-200 pt-4 space-y-4">
+      <div v-if="gnssState.gnssData.corrections.mode === 'SEND'" class="border-t border-gray-200 pt-4 space-y-4">
         <div class="text-sm font-semibold text-gray-800">
-          Base Station Setup
+          Correction Station Setup
         </div>
 
         <div class="space-y-3">
@@ -179,13 +179,13 @@
         RTK Corrections Disabled
       </div>
       <div class="text-sm text-gray-500">
-        Click the settings icon above to select Base Station or Rover mode
+        Click the settings icon above to enable corrections
       </div>
     </div>
 
     <!-- RTK Mode Dialog -->
     <RtkModeDialog :show="showModeDialog"
-                   :current-mode="gnssState.gnssData.corrections.mode || 'Disabled'"
+                   :current-mode="gnssState.gnssData.corrections.mode || 'DISABLED'"
                    :mode-options="modeOptions"
                    @close="showModeDialog = false"
                    @change="onModeChange" />

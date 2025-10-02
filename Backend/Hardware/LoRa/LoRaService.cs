@@ -60,7 +60,7 @@ public class LoRaService : BackgroundService
                 var now = DateTime.UtcNow;
                 
                 // In Receive mode, try to initialize LoRa port every 5 seconds if not connected
-                if (_configurationManager.OperatingMode == OperatingMode.Receive)
+                if (_configurationManager.OperatingMode == OperatingMode.RECEIVE)
                 {
                     if ((_serialPortManager == null || !_serialPortManager.IsConnected) && (now - lastInitAttempt).TotalSeconds >= 5)
                     {
@@ -168,9 +168,9 @@ public class LoRaService : BackgroundService
         {
             bool shouldEnablePolling = mode switch
             {
-                OperatingMode.Receive => true,  // Rover mode - receiving corrections
-                OperatingMode.Send => false,    // Base mode - only sending corrections
-                OperatingMode.Disabled => false, // No LoRa activity
+                OperatingMode.RECEIVE => true,  // Rover mode - receiving corrections
+                OperatingMode.SEND => false,    // Base mode - only sending corrections
+                OperatingMode.DISABLED => false, // No LoRa activity
                 _ => false
             };
 
@@ -178,9 +178,9 @@ public class LoRaService : BackgroundService
 
             string modeDescription = mode switch
             {
-                OperatingMode.Receive => "Rover (receiving corrections)",
-                OperatingMode.Send => "Base (sending corrections)",
-                OperatingMode.Disabled => "Disabled",
+                OperatingMode.RECEIVE => "Rover (receiving corrections)",
+                OperatingMode.SEND => "Base (sending corrections)",
+                OperatingMode.DISABLED => "Disabled",
                 _ => "Unknown"
             };
 

@@ -94,7 +94,7 @@ public class GnssService : BackgroundService
         _loraService = serviceProvider.GetService<LoRaService>();
 
         // Subscribe to LoRa data events if in Receive mode
-        if (_configurationManager.OperatingMode == OperatingMode.Receive && _loraService != null)
+        if (_configurationManager.OperatingMode == OperatingMode.RECEIVE && _loraService != null)
         {
             _loraService.DataReceived += OnLoRaDataReceived;
             _logger.LogInformation("📡 Subscribed to LoRa data events for RTCM forwarding to GNSS");

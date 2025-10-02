@@ -7,9 +7,9 @@ namespace Backend.Configuration;
 
 public enum OperatingMode
 {
-    Disabled,
-    Receive,
-    Send
+    DISABLED,
+    RECEIVE,
+    SEND
 }
 
 public class GeoConfigurationManager
@@ -183,7 +183,7 @@ public class GeoConfigurationManager
     private class AppConfiguration
     {
         public string DeviceName { get; set; } = GetDefaultDeviceName();
-        public OperatingMode OperatingMode { get; set; } = OperatingMode.Disabled;
+        public OperatingMode OperatingMode { get; set; } = OperatingMode.DISABLED;
         public WiFiConfiguration WiFiConfiguration { get; set; } = new();
 
         private static string GetDefaultDeviceName()

@@ -101,7 +101,7 @@ public class DataHub : Hub
         var connectionId = Context.ConnectionId;
         _logger.LogInformation("SetOperatingMode called with mode '{Mode}' by client: {ConnectionId}", mode, connectionId);
 
-        if (!Enum.TryParse<OperatingMode>(mode, true, out var operatingMode))
+        if (!Enum.TryParse<OperatingMode>(mode, ignoreCase: true, out var operatingMode))
         {
             _logger.LogWarning("Invalid operating mode '{Mode}' provided by client: {ConnectionId}", mode, connectionId);
             return false;

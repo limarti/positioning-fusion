@@ -13,6 +13,7 @@ using Backend.WiFi;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
 using Serilog;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -50,8 +51,12 @@ builder.Services.AddSingleton<ConsoleFormatter, InlineFormatter>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Add SignalR
-builder.Services.AddSignalR();
+// Add SignalR with JSON serialization configured for enums
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 // Add configuration manager
 builder.Services.AddSingleton<GeoConfigurationManager>();
