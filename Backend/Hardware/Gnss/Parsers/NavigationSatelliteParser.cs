@@ -1,5 +1,6 @@
 using Backend.Hubs;
 using Backend.Configuration;
+using Backend.Hardware.Gnss.Models;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Backend.Hardware.Gnss.Parsers;
@@ -90,51 +91,34 @@ public static class NavigationSatelliteParser
         //var constellationSummary = string.Join(", ", constellationCounts.Select(kv => $"{kv.Key}:{kv.Value}"));
         //logger.LogInformation("Parsed {TotalSats} satellites: {ConstellationSummary}", satellites.Count, constellationSummary);
 
-        // Detect SBAS corrections from satellite data
+        // Detect corrections from satellite data (SBAS or differential corrections applied)
         var sbasInUse = satellites.Any(s => s.GnssId == UbxConstants.GNSS_ID_SBAS && s.SvUsed && s.DifferentialCorrection);
-        if (sbasInUse)
+        var diffCorrInUse = satellites.Any(s => s.DifferentialCorrection && s.SvUsed);
+
+        // Count satellites with differential corrections for debugging
+        var diffCorrCount = satellites.Count(s => s.DifferentialCorrection && s.SvUsed);
+        var totalUsedSats = satellites.Count(s => s.SvUsed);
+
+        // Check if RXM-COR has been received recently
+        var timeSinceLastRxmCor = DateTime.UtcNow - _lastRxmCorTime;
+        bool rxmCorActive = timeSinceLastRxmCor.TotalSeconds <= 5;
+
+        //logger.LogInformation("🛰️ NAV-SAT: Total={Total}, Used={Used}, DiffCorr={DiffCount}, SBAS={SbasUsed}, RxmCorAge={RxmAge:F1}s", satellites.Count, totalUsedSats, diffCorrCount, sbasInUse, timeSinceLastRxmCor.TotalSeconds);
+
+        // Store data in centralized store
+        var navSatData = new NavSatData
         {
-            // Only send synthetic SBAS correction status if RXM-COR hasn't been received recently
-            // This prevents overriding authoritative RXM-COR data with our derived data
-            var timeSinceLastRxmCor = DateTime.UtcNow - _lastRxmCorTime;
-            if (timeSinceLastRxmCor.TotalSeconds > 5) // No RXM-COR in last 5 seconds
-            {
-                logger.LogDebug("🛰️ SBAS corrections detected from satellite data (no recent RXM-COR)");
+            TotalSatellites = satellites.Count,
+            UsedSatellites = totalUsedSats,
+            DiffCorrSatellites = diffCorrCount,
+            SbasInUse = sbasInUse,
+            DiffCorrInUse = diffCorrInUse
+        };
 
-                // SYNTHETIC CORRECTION STATUS UPDATE
-                // We create this correction status ourselves (not from RXM-COR) because:
-                // - RXM-COR messages primarily report external correction streams (RTCM, SPARTN)
-                // - SBAS corrections are broadcast in GPS L1 signal, not a separate stream
-                // - We detect SBAS usage from NAV-SAT DifferentialCorrection flags
-                //
-                // CONFLICT AVOIDANCE: We only send this if no RXM-COR received in last 5 seconds.
-                // This ensures we don't override authoritative RXM-COR data with synthetic data.
-                var correctionStatus = new CorrectionStatusUpdate
-                {
-                    Version = 1,
-                    CorrectionFlags = 0x11, // Valid (0x01) + SBAS (0x10)
-                    MessageType = 0,
-                    MessageSubType = 0,
-                    NumMessages = 0,
-                    CorrectionAge = 0,
-                    CorrectionValid = true,
-                    CorrectionStale = false,
-                    SbasCorrections = true,
-                    RtcmCorrections = false,
-                    SpartnCorrections = false,
-                    CorrectionSource = "SBAS",
-                    CorrectionStatus = "Valid",
-                    Timestamp = DateTime.UtcNow
-                };
+        GnssDataStore.UpdateNavSat(navSatData);
 
-                await hubContext.Clients.All.SendAsync("CorrectionStatusUpdate", correctionStatus, stoppingToken);
-            }
-            else
-            {
-                logger.LogDebug("🛰️ SBAS corrections detected but RXM-COR active (age: {Age:F1}s), deferring to RXM-COR",
-                    timeSinceLastRxmCor.TotalSeconds);
-            }
-        }
+        // Let aggregator decide if update should be sent
+        await CorrectionStatusAggregator.ProcessUpdate(hubContext, logger, stoppingToken);
 
         var satelliteData = new SatelliteUpdate
         {

@@ -1,5 +1,6 @@
 using Backend.Hubs;
 using Backend.Configuration;
+using Backend.Hardware.Gnss.Models;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Backend.Hardware.Gnss.Parsers;
@@ -130,6 +131,22 @@ public static class PositionVelocityTimeParser
                     pvtData.FixTypeString, pvtData.NumSatellites, carrierString);
                 await hubContext.Clients.All.SendAsync("PvtUpdate", pvtData, stoppingToken);
             }
+
+            // Store PVT data in centralized store for correction aggregation
+            var navPvtData = new NavPvtData
+            {
+                DiffSoln = diffSoln,
+                CarrierSolution = carrSoln,
+                FixType = fixTypeString,
+                FixTypeRaw = fixType,
+                GnssFixOk = gnssFixOk,
+                NumSatellites = numSV
+            };
+
+            GnssDataStore.UpdateNavPvt(navPvtData);
+
+            // Let aggregator decide if update should be sent
+            await CorrectionStatusAggregator.ProcessUpdate(hubContext, logger, stoppingToken);
         }
         catch (Exception ex)
         {

@@ -677,7 +677,8 @@ public class GnssService : BackgroundService
     {
         if (_serialPortManager == null || !_serialPortManager.IsConnected)
         {
-            _logger.LogWarning("Cannot send RTCM to GNSS - serial port not available");
+            _logger.LogWarning("❌ Cannot send RTCM to GNSS - serial port not available (Manager={Manager}, Connected={Connected})",
+                _serialPortManager != null, _serialPortManager?.IsConnected ?? false);
             return Task.CompletedTask;
         }
 
@@ -685,22 +686,59 @@ public class GnssService : BackgroundService
         {
             _serialPortManager.Write(rtcmData, 0, rtcmData.Length);
             TrackBytesSent(rtcmData.Length);
-            _logger.LogDebug("📤 Sent {Length} bytes of RTCM data to GNSS port", rtcmData.Length);
+            _logger.LogDebug("Sent {Length} bytes of RTCM data to GNSS port", rtcmData.Length);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send RTCM data to GNSS port");
+            _logger.LogError(ex, "❌ Failed to send RTCM data to GNSS port");
         }
 
         return Task.CompletedTask;
     }
+
+    // Track statistics for cleaner logging
+    private int _loraValidFrames = 0;
+    private int _loraInvalidFrames = 0;
+    private int _loraPartialFrames = 0;
+    private DateTime _lastLoraStatLog = DateTime.UtcNow;
 
     // Event handler for LoRa data received (forwards directly to GNSS)
     private async void OnLoRaDataReceived(object? sender, byte[] data)
     {
         try
         {
-            _logger.LogDebug("📡 LoRa: Received {Length} bytes, forwarding directly to GNSS", data.Length);
+            // Validate RTCM3 frame before forwarding
+            if (data.Length >= 3 && data[0] == 0xD3) // RTCM3 preamble
+            {
+                var length = ((data[1] & 0x03) << 8) | data[2]; // RTCM3 length
+                var expectedLength = 3 + length + 3; // header(3) + payload(length) + CRC(3)
+
+                if (data.Length >= expectedLength)
+                {
+                    _loraValidFrames++;
+                }
+                else
+                {
+                    _loraPartialFrames++;
+                }
+            }
+            else
+            {
+                _loraInvalidFrames++;
+            }
+
+            // Log summary stats every 5 seconds instead of every frame
+            var now = DateTime.UtcNow;
+            if ((now - _lastLoraStatLog).TotalSeconds >= 5)
+            {
+                _logger.LogInformation("📡 LoRa→GNSS Stats (last 5s): Valid={Valid}, Partial={Partial}, Invalid={Invalid}",
+                    _loraValidFrames, _loraPartialFrames, _loraInvalidFrames);
+                _loraValidFrames = 0;
+                _loraPartialFrames = 0;
+                _loraInvalidFrames = 0;
+                _lastLoraStatLog = now;
+            }
+
             await SendRtcmToGnss(data);
         }
         catch (Exception ex)
