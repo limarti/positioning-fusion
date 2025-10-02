@@ -17,12 +17,8 @@
               Altitude: {{ gnssState.gnssData.altitude.toFixed(2) }}m
             </div>
             <!-- GNSS Clock - compact inline -->
-            <div class="text-xs text-gray-500 font-mono mt-2 flex items-center space-x-2">
+            <div class="text-xs text-gray-500 font-mono mt-2">
               <span>{{ formattedTime }} UTC</span>
-              <div class="flex items-center space-x-1">
-                <div class="w-1.5 h-1.5 rounded-full" :class="timeValidStatus.color" />
-                <span :class="timeValidStatus.textColor">{{ timeValidStatus.label }}</span>
-              </div>
             </div>
           </div>
         </div>
