@@ -145,36 +145,36 @@ const initializeWiFiData = async (connection) =>
   }
 };
 
-const addNetwork = async (connection) => 
+const addNetwork = async (connection) =>
 {
-  if (!dialogNetworkConfig.ssid || !dialogNetworkConfig.password) 
+  if (!dialogNetworkConfig.ssid || !dialogNetworkConfig.password)
   {
     return;
   }
 
   isConnecting.value = true;
 
-  try 
+  try
   {
     const success = await connection.invoke('ConnectToWiFi', dialogNetworkConfig.ssid, dialogNetworkConfig.password);
 
-    if (success) 
+    if (success)
     {
       console.log('Network connection initiated successfully');
-      closeAddNetworkDialog();
     }
-    else 
+    else
     {
-      console.error('Network connection failed');
+      console.log('Network saved but connection failed - this is normal if the network is out of range');
     }
   }
-  catch (error) 
+  catch (error)
   {
     console.error('Error connecting to network:', error);
   }
-  finally 
+  finally
   {
     isConnecting.value = false;
+    closeAddNetworkDialog();
   }
 };
 

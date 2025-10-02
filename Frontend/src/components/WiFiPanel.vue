@@ -240,95 +240,17 @@
     </Card>
 
     <!-- Add Network Dialog -->
-    <div v-if="wifiState.showAddNetworkDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <!-- Background overlay -->
-      <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity" @click="closeAddNetworkDialog" />
-
-      <!-- Modal panel -->
-      <div class="relative bg-white border border-gray-200 rounded-lg shadow-xl max-w-md w-full max-h-screen overflow-y-auto">
-        <!-- Header -->
-        <div class="px-6 py-4 border-b border-gray-100">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-medium text-gray-900">
-              Add Network
-            </h2>
-            <button type="button"
-                    class="btn-icon"
-                    :disabled="wifiState.isConnecting"
-                    @click="closeAddNetworkDialog">
-              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <p class="text-sm text-gray-600 mt-1">
-            Enter network credentials to connect
-          </p>
-        </div>
-
-        <!-- Content -->
-        <div class="px-6 py-5 space-y-4">
-          <div>
-            <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Network Name (SSID)</label>
-            <input v-model="wifiState.dialogNetworkConfig.ssid"
-                   type="text"
-                   class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all duration-200"
-                   placeholder="Enter network name"
-                   :disabled="wifiState.isConnecting">
-          </div>
-
-          <div>
-            <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Password</label>
-            <div class="relative">
-              <input v-model="wifiState.dialogNetworkConfig.password"
-                     :type="wifiState.showDialogPassword ? 'text' : 'password'"
-                     class="w-full px-4 py-3 pr-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all duration-200"
-                     placeholder="Enter network password"
-                     :disabled="wifiState.isConnecting">
-              <button type="button"
-                      class="absolute inset-y-0 right-0 pr-4 flex items-center btn-icon"
-                      @click="wifiState.showDialogPassword = !wifiState.showDialogPassword">
-                <svg v-if="wifiState.showDialogPassword" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-                <svg v-else class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.115 8.114m0 0L6.937 6.937m0 0a8.977 8.977 0 00-1.942-.845m1.942.845A8.977 8.977 0 0012 5c2.14 0 4.135.601 5.828 1.635l-1.937 1.937m0 0a3 3 0 00-4.243 4.243l1.937-1.937z" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3">
-          <button type="button"
-                  :disabled="wifiState.isConnecting"
-                  class="btn-secondary"
-                  @click="closeAddNetworkDialog">
-            Cancel
-          </button>
-          <button :disabled="wifiState.isConnecting || !wifiState.dialogNetworkConfig.ssid || !wifiState.dialogNetworkConfig.password"
-                  class="btn-primary"
-                  @click="onAddNetwork">
-            <div v-if="wifiState.isConnecting" class="flex items-center">
-              <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              Connecting...
-            </div>
-            <span v-else>Connect to Network</span>
-          </button>
-        </div>
-      </div>
-    </div>
+    <AddWiFiDialog :show="wifiState.showAddNetworkDialog"
+                   :is-connecting="wifiState.isConnecting"
+                   @close="closeAddNetworkDialog"
+                   @submit="onAddNetworkSubmit" />
   </div>
 </template>
 
 <script setup>
   import { onMounted, onUnmounted, watch } from 'vue';
   import Card from './common/Card.vue';
+  import AddWiFiDialog from './AddWiFiDialog.vue';
   import { useConnectionData } from '@/composables/useConnectionData';
   import { useSignalR } from '@/composables/useSignalR';
 
@@ -349,57 +271,62 @@
   const { signalrConnection } = useSignalR();
 
   // Component event handlers that call composable functions
-  const onAddNetwork = async () => 
+  const onAddNetworkSubmit = async (networkConfig) =>
   {
+    // Set the network config in the state
+    wifiState.dialogNetworkConfig.ssid = networkConfig.ssid;
+    wifiState.dialogNetworkConfig.password = networkConfig.password;
+
+    // Call the existing addNetwork function
     await addNetwork(signalrConnection.value);
   };
 
-  const onRemoveKnownNetwork = async (ssid) => 
+  const onRemoveKnownNetwork = async (ssid) =>
   {
     await removeKnownNetwork(signalrConnection.value, ssid);
   };
 
-  const onSaveAPPassword = async () => 
+  const onSaveAPPassword = async () =>
   {
     await saveAPPassword(signalrConnection.value);
   };
 
-  const onSetPreferredMode = async () => 
+  const onSetPreferredMode = async () =>
   {
     await setPreferredMode(signalrConnection.value);
   };
 
-  onMounted(async () => 
+  onMounted(async () =>
   {
     console.log('WiFiPanel mounted, SignalR connection available:', !!signalrConnection.value);
     await initializeWiFiData(signalrConnection.value);
   });
 
   // Watch for SignalR connection to become available - only initialize once
-  watch(signalrConnection, async (newConnection, oldConnection) => 
+  watch(signalrConnection, async (newConnection, oldConnection) =>
   {
     console.log('WiFiPanel - SignalR connection changed:', !!newConnection, 'state:', newConnection?.state);
 
-    if (newConnection && wifiState.preferredMode === null) 
+    if (newConnection && wifiState.preferredMode === null)
     {
       // Set up a one-time connected handler instead of polling state
-      if (newConnection.state === 'Connected') 
+      if (newConnection.state === 'Connected')
       {
         console.log('Connection already connected, initializing WiFi data...');
         await initializeWiFiData(newConnection);
       }
-      else 
+      else
       {
         console.log('Waiting for connection to be established...');
         // Use a simple retry approach instead of onconnected to avoid conflicts with App.vue
-        const checkAndInitialize = async () => 
+        const checkAndInitialize = async () =>
         {
-          if (newConnection.state === 'Connected' && wifiState.preferredMode === null) 
+          if (newConnection.state === 'Connected' && wifiState.preferredMode === null)
           {
             console.log('Connection now ready, initializing WiFi data...');
             await initializeWiFiData(newConnection);
           }
-          else if (wifiState.preferredMode === null) 
+          else if (wifiState.preferredMode === null)
           {
             // Retry after a short delay
             setTimeout(checkAndInitialize, 100);
@@ -412,9 +339,8 @@
     }
   }, { immediate: true });
 
-  onUnmounted(() => 
+  onUnmounted(() =>
   {
     cleanup(signalrConnection.value);
   });
 </script>
-
