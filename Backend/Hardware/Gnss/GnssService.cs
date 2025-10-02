@@ -695,12 +695,6 @@ public class GnssService : BackgroundService
         return Task.CompletedTask;
     }
 
-    // Track statistics for cleaner logging
-    private int _loraValidFrames = 0;
-    private int _loraInvalidFrames = 0;
-    private int _loraPartialFrames = 0;
-    private DateTime _lastLoraStatLog = DateTime.UtcNow;
-
     // LoRa RTCM3 buffering for frame reassembly
     private readonly List<byte> _loraRtcmBuffer = new();
     private readonly object _loraRtcmBufferLock = new();
@@ -792,7 +786,6 @@ public class GnssService : BackgroundService
                         _logger.LogInformation("🗑️ No RTCM3 frames found, dropping 1 garbage byte (0x{Byte:X2}). Buffer: {BufferSize} bytes. Context: {HexDump}",
                             _loraRtcmBuffer[0], _loraRtcmBuffer.Count, hexDump);
                         _loraRtcmBuffer.RemoveAt(0);
-                        _loraInvalidFrames++;
                     }
                     else
                     {
@@ -833,7 +826,6 @@ public class GnssService : BackgroundService
                 {
                     int need = totalLen - _loraRtcmBuffer.Count;
                     _logger.LogDebug("Partial RTCM3 frame detected. Need {Need} more bytes.", need);
-                    _loraPartialFrames++;
                     break;
                 }
 
@@ -844,20 +836,6 @@ public class GnssService : BackgroundService
 
             try
             {
-                _loraValidFrames++;
-
-                // Log stats every 5 seconds
-                var now = DateTime.UtcNow;
-                if ((now - _lastLoraStatLog).TotalSeconds >= 5)
-                {
-                    _logger.LogInformation("📡 LoRa→GNSS Stats (last 5s): Valid={Valid}, Partial={Partial}, Invalid={Invalid}",
-                        _loraValidFrames, _loraPartialFrames, _loraInvalidFrames);
-                    _loraValidFrames = 0;
-                    _loraPartialFrames = 0;
-                    _loraInvalidFrames = 0;
-                    _lastLoraStatLog = now;
-                }
-
                 // Forward valid RTCM3 frame to GNSS
                 await SendRtcmToGnss(frame);
             }

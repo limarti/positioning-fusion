@@ -205,10 +205,6 @@ public static class CorrectionStatusAggregator
 
             if (shouldSend)
             {
-                logger.LogInformation("📡 Aggregator: Sending update - Source={Source}, Status={Status}, Age={Age}",
-                    update.CorrectionSource, update.CorrectionStatus,
-                    update.CorrectionAge?.ToString() ?? "—");
-
                 await hubContext.Clients.All.SendAsync("CorrectionStatusUpdate", update, stoppingToken);
             }
         }
