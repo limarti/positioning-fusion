@@ -307,21 +307,58 @@ public class WiFiService : BackgroundService
             _isAttemptingConnection = true;
             _lastConnectionAttempt = DateTime.Now;
             _currentKnownNetworkIndex = 0;
-            _logger.LogInformation("Starting 2-minute connection attempt period for known networks");
+            _logger.LogInformation("Starting 2-minute connection attempt period for {Count} known networks", knownNetworks.Count);
+
+            // If currently in AP mode, disconnect it first to free the WiFi device
+            if (_currentStatus.CurrentMode == WiFiMode.AP && _currentStatus.IsConnected)
+            {
+                _logger.LogInformation("Currently in AP mode, disconnecting AP to attempt client connection");
+                var apName = _configManager.APName;
+                var downResult = await ExecuteNmcliCommand($"con down \"{apName}\"");
+                if (downResult.Success)
+                {
+                    _logger.LogDebug("Successfully disconnected AP mode");
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to disconnect AP: {Error}", downResult.Error);
+                }
+
+                // Update status after disconnecting AP
+                await UpdateWiFiStatus();
+            }
+
+            // Trigger WiFi scan to refresh available networks
+            _logger.LogDebug("Triggering WiFi scan to refresh network list");
+            await ExecuteNmcliCommand("device wifi rescan");
+
+            // Give scan a moment to populate results
+            await Task.Delay(2000);
         }
 
-        var network = knownNetworks[_currentKnownNetworkIndex % knownNetworks.Count];
-        _currentKnownNetworkIndex++;
-
-        _logger.LogInformation("Attempting to connect to known network: {SSID} (attempt in 2-minute window)", network.SSID);
-        var success = await ConnectToNetworkDuringRetry(network.SSID, network.Password);
-
-        if (success)
+        // Try all remaining networks in sequence until one succeeds or we've tried them all
+        while (_currentKnownNetworkIndex < knownNetworks.Count)
         {
-            _logger.LogInformation("Successfully connected to {SSID} during retry period", network.SSID);
-            _isAttemptingConnection = false;
-            _lastSuccessfulConnection = DateTime.Now;
+            var network = knownNetworks[_currentKnownNetworkIndex];
+            _currentKnownNetworkIndex++;
+
+            _logger.LogInformation("Attempting to connect to known network: {SSID} (attempt {Attempt}/{Total})",
+                network.SSID, _currentKnownNetworkIndex, knownNetworks.Count);
+            var success = await ConnectToNetworkDuringRetry(network.SSID, network.Password);
+
+            if (success)
+            {
+                _logger.LogInformation("Successfully connected to {SSID} during retry period", network.SSID);
+                _isAttemptingConnection = false;
+                _lastSuccessfulConnection = DateTime.Now;
+                return;
+            }
+            // If failed, immediately try next network in the loop
         }
+
+        // If we've tried all networks, reset index for next round (in 10 seconds)
+        _logger.LogDebug("Tried all {Count} known networks, none succeeded. Will retry in next check interval.", knownNetworks.Count);
+        _currentKnownNetworkIndex = 0;
     }
 
     private async Task<bool> ConnectToNetworkDuringRetry(string ssid, string password)

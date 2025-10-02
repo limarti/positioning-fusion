@@ -201,8 +201,7 @@ public class GnssService : BackgroundService
                     var btPortExists = System.IO.File.Exists("/dev/rfcomm0");
                     var btConnected = _bluetoothService.IsConnected;
 
-                    _logger.LogInformation("📊 Health Check: GNSS={GnssConn}, SerialRx={SerialCount}, NMEA={NmeaCount}, BT Port={BtPort}, BT Stream={BtConn}",
-                        gnssConnected, _serialDataReceivedCount, _nmeaMessagesProcessed, btPortExists, btConnected);
+                    //_logger.LogInformation("📊 Health Check: GNSS={GnssConn}, SerialRx={SerialCount}, NMEA={NmeaCount}, BT Port={BtPort}, BT Stream={BtConn}", gnssConnected, _serialDataReceivedCount, _nmeaMessagesProcessed, btPortExists, btConnected);
                 }
 
                 await Task.Delay(1000, stoppingToken);
@@ -717,7 +716,7 @@ public class GnssService : BackgroundService
         // Only log every 10th NMEA to avoid spam, but always log the first few
         if (_nmeaMessagesProcessed <= 5 || _nmeaMessagesProcessed % 10 == 0)
         {
-            _logger.LogInformation("🛰️ ProcessNmea called (#{Count}): {Sentence}", _nmeaMessagesProcessed, nmeaSentence.Trim());
+            //_logger.LogInformation("🛰️ ProcessNmea called (#{Count}): {Sentence}", _nmeaMessagesProcessed, nmeaSentence.Trim());
         }
 
         try
