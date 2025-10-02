@@ -61,6 +61,10 @@ public class GnssService : BackgroundService
     
     // Bluetooth streaming
     private DateTime _lastBluetoothSend = DateTime.UtcNow;
+
+    // Diagnostics
+    private int _nmeaMessagesProcessed = 0;
+    private int _serialDataReceivedCount = 0;
     
     
     public GnssService(IHubContext<DataHub> hubContext, ILogger<GnssService> logger, GnssInitializer gnssInitializer, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, GeoConfigurationManager configurationManager, BluetoothStreamingService bluetoothService)
@@ -98,7 +102,7 @@ public class GnssService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("GNSS Service started");
+        _logger.LogInformation("🛰️ GNSS Service started");
 
         // Start the data file writer
         _ = Task.Run(() => _dataFileWriter.StartAsync(stoppingToken), stoppingToken);
@@ -108,7 +112,8 @@ public class GnssService : BackgroundService
         _serialPortManager = _gnssInitializer.GetSerialPortManager();
         if (_serialPortManager == null || !_serialPortManager.IsConnected)
         {
-            _logger.LogWarning("GNSS serial port not available - service will not collect data");
+            _logger.LogError("❌ GNSS serial port not available - service will NOT collect data. SerialPortManager={Manager}, IsConnected={Connected}",
+                _serialPortManager != null, _serialPortManager?.IsConnected ?? false);
 
             // Send zero data rates since GNSS is disconnected
             await _hubContext.Clients.All.SendAsync("DataRatesUpdate", new DataRatesUpdate
@@ -120,11 +125,13 @@ public class GnssService : BackgroundService
             return;
         }
 
-        _logger.LogInformation("GNSS Service connected and using SerialPortManager");
+        _logger.LogInformation("✅ GNSS Service connected and using SerialPortManager - ready to receive data");
 
         // Set up SerialPortManager for reliable data collection
         _serialPortManager!.DataReceived += OnSerialDataReceived;
         _serialPortManager.RateUpdated += OnRateUpdated;
+
+        _logger.LogInformation("🛰️ GNSS data event handlers registered - waiting for serial data...");
 
         // SerialPortManager should already be started by GnssInitializer
         // await _serialPortManager.StartAsync(stoppingToken);
@@ -148,6 +155,14 @@ public class GnssService : BackgroundService
     {
         try
         {
+            Interlocked.Increment(ref _serialDataReceivedCount);
+
+            // Only log every 10th receive to avoid spam, but always log the first few
+            if (_serialDataReceivedCount <= 5 || _serialDataReceivedCount % 10 == 0)
+            {
+                //_logger.LogInformation("🛰️ Serial data received: {Bytes} bytes (Total receives: {Count})", data.Length, _serialDataReceivedCount);
+            }
+
             // Add data to our processing buffer for frame parsing
             lock (_dataBufferLock)
             {
@@ -171,11 +186,25 @@ public class GnssService : BackgroundService
 
     private async Task RateUpdateLoop(CancellationToken stoppingToken)
     {
+        int loopCount = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 await UpdateDataRatesAsync(stoppingToken);
+
+                // Periodic health check every 5 seconds
+                loopCount++;
+                if (loopCount % 5 == 0)
+                {
+                    var gnssConnected = _serialPortManager?.IsConnected ?? false;
+                    var btPortExists = System.IO.File.Exists("/dev/rfcomm0");
+                    var btConnected = _bluetoothService.IsConnected;
+
+                    _logger.LogInformation("📊 Health Check: GNSS={GnssConn}, SerialRx={SerialCount}, NMEA={NmeaCount}, BT Port={BtPort}, BT Stream={BtConn}",
+                        gnssConnected, _serialDataReceivedCount, _nmeaMessagesProcessed, btPortExists, btConnected);
+                }
+
                 await Task.Delay(1000, stoppingToken);
             }
             catch (OperationCanceledException)
@@ -683,6 +712,14 @@ public class GnssService : BackgroundService
 
     private async Task ProcessNmea(string nmeaSentence)
     {
+        Interlocked.Increment(ref _nmeaMessagesProcessed);
+
+        // Only log every 10th NMEA to avoid spam, but always log the first few
+        if (_nmeaMessagesProcessed <= 5 || _nmeaMessagesProcessed % 10 == 0)
+        {
+            _logger.LogInformation("🛰️ ProcessNmea called (#{Count}): {Sentence}", _nmeaMessagesProcessed, nmeaSentence.Trim());
+        }
+
         try
         {
             // Extract message type from NMEA sentence (e.g., "$GPGGA" -> "GPGGA")
@@ -718,10 +755,12 @@ public class GnssService : BackgroundService
             var hexDump = string.Join(" ", nmeaBytes.Select(b => $"{b:X2}"));
             
             // Log attempt to send
-            _logger.LogDebug("📤 Sending NMEA to Bluetooth ({Bytes} bytes): {Sentence}", nmeaBytes.Length, nmeaSentence.Trim());
+            //_logger.LogInformation("📤 Attempting to send NMEA to Bluetooth ({Bytes} bytes): {Sentence}", nmeaBytes.Length, nmeaSentence.Trim());
 
             // Send via Bluetooth service
             await _bluetoothService.SendData(nmeaBytes);
+
+            //_logger.LogInformation("✅ Sent NMEA to Bluetooth successfully");
         }
         catch (Exception ex)
         {

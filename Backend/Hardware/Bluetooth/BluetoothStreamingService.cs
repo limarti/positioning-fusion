@@ -23,13 +23,19 @@ public class BluetoothStreamingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Bluetooth Streaming Service started - will connect on first data send");
+        _logger.LogInformation("🔵 Bluetooth Streaming Service started - will connect on first data send");
 
         // Keep service running and monitor connection
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
+                // Periodic diagnostic logging
+                var portExists = File.Exists(BLUETOOTH_PORT);
+                var isConnected = IsConnected;
+                _logger.LogDebug("🔵 BT Health: Port exists={PortExists}, Stream connected={IsConnected}, IsInitializing={IsInit}, IsReconnecting={IsRecon}",
+                    portExists, isConnected, _isInitializing, _isReconnecting);
+
                 await UpdateDataRatesAsync(stoppingToken);
                 await Task.Delay(1000, stoppingToken); // Check every second
             }
@@ -70,12 +76,17 @@ public class BluetoothStreamingService : BackgroundService
 
     public async Task SendData(byte[] data)
     {
+        //_logger.LogInformation("🔵 SendData called with {Bytes} bytes", data.Length);
+
         // Check if Bluetooth port exists
         if (!File.Exists(BLUETOOTH_PORT))
         {
             // Port doesn't exist - silently skip (no client connected)
+            //_logger.LogInformation("🔵 SendData: Port {Port} does not exist - no client connected", BLUETOOTH_PORT);
             return;
         }
+
+        //_logger.LogInformation("🔵 SendData: Port {Port} EXISTS - client is connected, proceeding...", BLUETOOTH_PORT);
 
         // Check if we need to initialize (without holding lock)
         bool shouldInit = false;
@@ -125,11 +136,13 @@ public class BluetoothStreamingService : BackgroundService
         try
         {
             // Write data to Bluetooth
+            _logger.LogInformation("🔵 Writing {Bytes} bytes to Bluetooth stream...", data.Length);
             _bluetoothStream.Write(data, 0, data.Length);
             _bluetoothStream.Flush();
 
             _bluetoothBytesSent += data.Length;
             _totalBluetoothBytesSent += data.Length;
+            _logger.LogInformation("✅ Successfully sent {Bytes} bytes via Bluetooth (Total: {Total})", data.Length, _totalBluetoothBytesSent);
         }
         catch (IOException ex)
         {
