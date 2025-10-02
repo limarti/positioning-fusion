@@ -1,7 +1,5 @@
 <template>
-  <Card title="File Logging"
-        :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z'/></svg>`"
-        iconColor="bg-gray-500">
+  <Card title="File Logging">
 
     <!-- Drive Warning -->
     <div v-if="!systemState.fileLoggingStatus.driveAvailable" class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">

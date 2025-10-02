@@ -1,44 +1,29 @@
 <template>
-  <div class="panel">
-    <div class="panel-header">
-      <div class="flex items-center space-x-2">
-        <div v-if="icon" class="w-6 h-6 rounded-lg flex items-center justify-center" :class="iconColor">
-          <div class="w-4 h-4 text-white" v-html="icon" />
-        </div>
-        <div>
-          <h3 class="panel-title">
-            {{ title }}
-          </h3>
-          <div v-if="subtitle && subtitle !== '—'" class="panel-subtitle">
-            {{ subtitle }}
-          </div>
-        </div>
-      </div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+    <div class="px-6 py-5 border-b border-gray-100">
+      <h3 class="text-lg font-semibold text-gray-900">
+        {{ title }}
+      </h3>
+      <p v-if="subtitle" class="text-sm text-gray-600 mt-1">
+        {{ subtitle }}
+      </p>
     </div>
 
-    <div class="panel-content">
+    <div class="p-6">
       <slot />
     </div>
   </div>
 </template>
 
 <script setup>
-  const props = defineProps({
-    title: {
-      type: String,
-      required: true
-    },
-    subtitle: {
-      type: String,
-      default: null
-    },
-    icon: {
-      type: String,
-      default: null
-    },
-    iconColor: {
-      type: String,
-      default: 'bg-emerald-500'
-    }
-  });
+const props = defineProps({
+  title: {
+    type: String,
+    required: true
+  },
+  subtitle: {
+    type: String,
+    default: null
+  }
+});
 </script>

@@ -1,6 +1,5 @@
 <template>
-  <Card title="GNSS"
-        iconColor="bg-gray-500">
+  <Card title="GNSS">
     
     <!-- GNSS Status Summary -->
     <GnssStatus />

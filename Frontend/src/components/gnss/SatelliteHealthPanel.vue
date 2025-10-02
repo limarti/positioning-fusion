@@ -1,6 +1,5 @@
 <template>
-  <Card title="Satellite Health"
-        iconColor="bg-gray-500">
+  <Card title="Satellite Health">
 
     <!-- Constellation Summary -->
     <div class="grid grid-cols-4 gap-3 mb-6">

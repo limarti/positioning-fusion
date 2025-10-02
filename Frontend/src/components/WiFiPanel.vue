@@ -1,18 +1,10 @@
 <template>
-  <div class="main-container">
+  <div class="main-container space-y-6">
     <!-- Header Section -->
-    <div class="panel">
-      <div class="panel-header">
-        <h1 class="text-xl font-semibold text-gray-900">
-          Network Configuration
-        </h1>
-        <p class="panel-subtitle">
-          Manage WiFi connectivity and access point settings
-        </p>
-      </div>
-
+    <Card title="Network Configuration"
+          subtitle="Manage WiFi connectivity and access point settings">
       <!-- Fallback Notification -->
-      <div v-if="wifiState.fallbackNotification" class="mx-6 mt-4 p-4 bg-gray-50 border-l-4 border-gray-400 rounded-r-md">
+      <div v-if="wifiState.fallbackNotification" class="p-4 bg-gray-50 border-l-4 border-gray-400 rounded-r-md mb-4">
         <div class="flex items-center">
           <svg class="w-5 h-5 mr-3 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
             <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
@@ -22,11 +14,10 @@
       </div>
 
       <!-- Current Status Section -->
-      <div class="panel-content">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-medium text-gray-900">
-            Connection Status
-          </h2>
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-md font-medium text-gray-900">
+          Connection Status
+        </h3>
           <div class="flex items-center space-x-2">
             <div class="w-2 h-2 rounded-full" :class="wifiState.wifiStatus.isConnected ? 'bg-gray-900' : 'bg-gray-400'" />
             <span class="text-sm font-medium" :class="wifiState.wifiStatus.isConnected ? 'text-gray-900' : 'text-gray-500'">
@@ -80,21 +71,11 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Card>
 
     <!-- Mode Configuration -->
-    <div class="panel">
-      <div class="panel-header">
-        <h2 class="panel-title">
-          Operating Mode
-        </h2>
-        <p class="panel-subtitle">
-          Select the preferred WiFi operating mode for this device
-        </p>
-      </div>
-
-      <div class="panel-content">
+    <Card title="Operating Mode"
+          subtitle="Select the preferred WiFi operating mode for this device">
         <div v-if="wifiState.preferredMode === null" class="text-gray-500 text-sm flex items-center">
           <svg class="animate-spin -ml-1 mr-3 h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
@@ -210,32 +191,22 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Card>
 
     <!-- Known Networks -->
-    <div class="panel">
-      <div class="panel-header">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="panel-title">
-              Saved Networks
-            </h2>
-            <p class="panel-subtitle">
-              Manage your stored network credentials
-            </p>
-          </div>
-          <button class="btn-primary"
-                  @click="wifiState.showAddNetworkDialog = true">
-            Add Network
-          </button>
-        </div>
+    <Card title="Saved Networks"
+          subtitle="Manage your stored network credentials">
+      <div class="flex justify-end mb-4">
+        <button class="btn-primary"
+                @click="wifiState.showAddNetworkDialog = true">
+          Add Network
+        </button>
       </div>
 
-      <div v-if="wifiState.knownNetworks.length > 0" class="divide-y divide-gray-100">
+      <div v-if="wifiState.knownNetworks.length > 0" class="divide-y divide-gray-100 -mx-6">
         <div v-for="network in wifiState.knownNetworks"
              :key="network.ssid"
-             class="px-6 py-4">
+             class="px-6 py-4 first:pt-0">
           <div class="flex items-center justify-between">
             <div class="flex-1 min-w-0">
               <div class="font-medium text-gray-900 truncate">
@@ -255,7 +226,7 @@
         </div>
       </div>
 
-      <div v-else class="px-6 py-8 text-center">
+      <div v-else class="py-8 text-center">
         <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
         </svg>
@@ -266,7 +237,7 @@
           Get started by adding your first network.
         </p>
       </div>
-    </div>
+    </Card>
 
     <!-- Add Network Dialog -->
     <div v-if="wifiState.showAddNetworkDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">

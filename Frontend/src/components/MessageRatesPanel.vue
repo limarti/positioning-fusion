@@ -1,6 +1,5 @@
 <template>
-  <Card title="Message Rates"
-        iconColor="bg-gray-500">
+  <Card title="Message Rates">
 
     <div v-if="sortedMessageTypes.length === 0" class="text-center py-8 text-slate-500">
       No messages received

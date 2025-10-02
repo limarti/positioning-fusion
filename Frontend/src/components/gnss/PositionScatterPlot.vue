@@ -1,7 +1,6 @@
 <template>
   <Card title="Position Plot"
-        :subtitle="`${positionHistory.length} points`"
-        iconColor="bg-gray-500">
+        :subtitle="`${positionHistory.length} points`">
 
     <!-- Controls -->
     <div class="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">

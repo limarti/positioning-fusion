@@ -1,6 +1,5 @@
 <template>
-  <Card title="RTK"
-        iconColor="bg-gray-500">
+  <Card title="RTK">
 
     <!-- Mode Selection Section -->
     <div class="mb-6">
