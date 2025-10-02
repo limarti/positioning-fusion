@@ -86,51 +86,14 @@
 
         <div v-else class="space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label class="relative cursor-pointer">
-              <input v-model="wifiState.preferredMode"
-                     type="radio"
-                     value="Client"
-                     class="sr-only"
-                     @change="onSetPreferredMode">
-              <div class="p-4 rounded-lg border-2 transition-all duration-200"
-                   :class="wifiState.preferredMode === 'Client' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <div class="font-medium text-gray-900">Client Mode</div>
-                    <div class="text-xs text-gray-500 mt-1">
-                      Will try to connect to known networks first, falling back to AP mode if connection fails.
-                    </div>
-                  </div>
-                  <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
-                       :class="wifiState.preferredMode === 'Client' ? 'border-gray-900' : 'border-gray-300'">
-                    <div v-if="wifiState.preferredMode === 'Client'" class="w-2 h-2 rounded-full bg-gray-900" />
-                  </div>
-                </div>
-              </div>
-            </label>
-
-            <label class="relative cursor-pointer">
-              <input v-model="wifiState.preferredMode"
-                     type="radio"
-                     value="AP"
-                     class="sr-only"
-                     @change="onSetPreferredMode">
-              <div class="p-4 rounded-lg border-2 transition-all duration-200"
-                   :class="wifiState.preferredMode === 'AP' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <div class="font-medium text-gray-900">Access Point Mode</div>
-                    <div class="text-xs text-gray-500 mt-1">
-                      Will start directly in Access Point mode, creating a WiFi hotspot for other devices to connect to.
-                    </div>
-                  </div>
-                  <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
-                       :class="wifiState.preferredMode === 'AP' ? 'border-gray-900' : 'border-gray-300'">
-                    <div v-if="wifiState.preferredMode === 'AP'" class="w-2 h-2 rounded-full bg-gray-900" />
-                  </div>
-                </div>
-              </div>
-            </label>
+            <RadioOption v-model="wifiState.preferredMode"
+                         value="Client"
+                         label="Client Mode"
+                         description="Will try to connect to known networks first, falling back to AP mode if connection fails." />
+            <RadioOption v-model="wifiState.preferredMode"
+                         value="AP"
+                         label="Access Point Mode"
+                         description="Will start directly in Access Point mode, creating a WiFi hotspot for other devices to connect to." />
           </div>
 
           <!-- AP Configuration Form - always show -->
@@ -248,9 +211,10 @@
 </template>
 
 <script setup>
-  import { onMounted, onUnmounted, watch } from 'vue';
+  import { onMounted, onUnmounted, watch, ref } from 'vue';
   import Card from './common/Card.vue';
   import AddWiFiDialog from './AddWiFiDialog.vue';
+  import RadioOption from './common/RadioOption.vue';
   import { useConnectionData } from '@/composables/useConnectionData';
   import { useSignalR } from '@/composables/useSignalR';
 
@@ -269,6 +233,9 @@
     cleanup
   } = useConnectionData();
   const { signalrConnection } = useSignalR();
+
+  // Track initial load to avoid triggering mode change on mount
+  const isInitialLoad = ref(true);
 
   // Component event handlers that call composable functions
   const onAddNetworkSubmit = async (networkConfig) =>
@@ -338,6 +305,23 @@
       }
     }
   }, { immediate: true });
+
+  // Watch for preferred mode changes (from RadioOption component)
+  watch(() => wifiState.preferredMode, async (newMode, oldMode) =>
+  {
+    // Skip initial load and null values
+    if (isInitialLoad.value || newMode === null || oldMode === null)
+    {
+      if (newMode !== null)
+      {
+        isInitialLoad.value = false;
+      }
+      return;
+    }
+
+    // Trigger the mode change
+    await onSetPreferredMode();
+  });
 
   onUnmounted(() =>
   {

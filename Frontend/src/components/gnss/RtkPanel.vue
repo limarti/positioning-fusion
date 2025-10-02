@@ -1,45 +1,28 @@
 <template>
   <Card title="RTK">
 
-    <!-- Mode Selection Section -->
-    <div class="mb-6">
-      <div class="text-sm font-semibold text-gray-700 mb-3">
-        Operating Mode
-      </div>
-
-      <!-- Mode Selection Radio Buttons -->
-      <div class="space-y-3">
-        <div v-for="option in modeOptions" :key="option.value" class="flex items-center">
-          <div class="flex items-center h-5">
-            <input :id="option.value"
-                   v-model="gnssState.selectedMode"
-                   :value="option.value"
-                   type="radio"
-                   name="mode"
-                   :disabled="gnssState.isChangingMode"
-                   class="h-4 w-4 border-gray-300 focus:ring-2 text-gray-600 focus:ring-gray-500"
-                   @change="onModeChange(option.value)">
-          </div>
-          <div class="ml-3 text-sm">
-            <label :for="option.value" class="font-medium text-gray-700 cursor-pointer">
-              {{ option.label }}
-            </label>
-            <p class="text-sm text-gray-500">
-              {{ option.description }}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Loading State -->
-      <div v-if="gnssState.isChangingMode" class="mt-4 flex items-center justify-center">
-        <div class="flex items-center space-x-2 text-gray-600">
-          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+    <!-- Corrections Mode Row -->
+    <div class="flex items-center justify-between py-2 mb-6">
+      <span class="text-sm text-gray-600">Corrections Mode:</span>
+      <div class="flex items-center space-x-2">
+        <span class="text-sm font-medium text-gray-800">
+          {{ gnssState.currentModeConfig.label }}
+        </span>
+        <span v-if="gnssState.isChangingMode" class="flex items-center text-xs text-gray-500">
+          <svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          <span class="text-sm">Changing mode...</span>
-        </div>
+        </span>
+        <button type="button"
+                class="btn-icon"
+                :disabled="gnssState.isChangingMode"
+                @click="showModeDialog = true">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -196,15 +179,23 @@
         RTK Corrections Disabled
       </div>
       <div class="text-sm text-gray-500">
-        Select Base Station or Rover mode above to enable RTK corrections
+        Click the settings icon above to select Base Station or Rover mode
       </div>
     </div>
+
+    <!-- RTK Mode Dialog -->
+    <RtkModeDialog :show="showModeDialog"
+                   :current-mode="gnssState.gnssData.corrections.mode || 'Disabled'"
+                   :mode-options="modeOptions"
+                   @close="showModeDialog = false"
+                   @change="onModeChange" />
   </Card>
 </template>
 
 <script setup>
-  import { computed, watch } from 'vue';
+  import { ref, computed, watch } from 'vue';
   import Card from '../common/Card.vue';
+  import RtkModeDialog from './RtkModeDialog.vue';
   import { useGnssData } from '@/composables/useGnssData';
   import { useSystemData } from '@/composables/useSystemData';
   import { useSignalR } from '@/composables/useSignalR';
@@ -213,6 +204,9 @@
   const { state: gnssState, modeOptions, handleModeChange } = useGnssData();
   const { state: systemState } = useSystemData();
   const { signalrConnection } = useSignalR();
+
+  // Dialog state
+  const showModeDialog = ref(false);
 
   // Handle mode change using the composable function
   const onModeChange = async (newMode) =>
