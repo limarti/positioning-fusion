@@ -1,15 +1,23 @@
 <template>
-  <!-- IMU -->
-  <Card title="IMU"
-        subtitle=""
-        :icon="`<svg fill='currentColor' viewBox='0 0 24 24'><path d='M12 2L15.5 8.5L22 12L15.5 15.5L12 22L8.5 15.5L2 12L8.5 8.5L12 2Z'/></svg>`"
-        iconColor="bg-gray-500">
-    <div class="space-y-4">
-      <!-- Visual Representations -->
-      <div class="grid grid-cols-3 gap-4">
-        <!-- 3D Attitude Visualization -->
-        <div class="bg-slate-50 rounded-lg p-4">
-          <div class="text-xs text-slate-500 mb-2 text-center">3D Attitude</div>
+  <div class="space-y-6">
+    <!-- Main Card Container -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+      <div class="px-6 py-5 border-b border-gray-100">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold text-gray-900">IMU Sensors</h2>
+          <div class="flex items-center space-x-2">
+            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span class="text-sm text-gray-500">Live</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-6 space-y-6">
+        <!-- Visual Representations -->
+        <div class="grid grid-cols-3 gap-6">
+          <!-- 3D Attitude Visualization -->
+          <div class="bg-gray-100 rounded-xl p-5">
+            <div class="text-sm font-medium text-gray-700 mb-3 text-center">3D Attitude</div>
           <div class="relative w-full aspect-square">
             <svg viewBox="0 0 200 200" class="w-full h-full">
               <!-- Horizon line -->
@@ -28,25 +36,25 @@
               </g>
             </svg>
           </div>
-          <div class="grid grid-cols-3 gap-1 text-xs mt-2">
+          <div class="grid grid-cols-3 gap-2 text-xs mt-3">
             <div class="text-center">
-              <div class="text-slate-400">Roll</div>
-              <div class="font-mono text-blue-600">{{ roll.toFixed(1) }}°</div>
+              <div class="text-gray-500 mb-1">Roll</div>
+              <div class="font-semibold text-blue-600">{{ roll.toFixed(1) }}°</div>
             </div>
             <div class="text-center">
-              <div class="text-slate-400">Pitch</div>
-              <div class="font-mono text-blue-600">{{ pitch.toFixed(1) }}°</div>
+              <div class="text-gray-500 mb-1">Pitch</div>
+              <div class="font-semibold text-blue-600">{{ pitch.toFixed(1) }}°</div>
             </div>
             <div class="text-center">
-              <div class="text-slate-400">Yaw</div>
-              <div class="font-mono text-blue-600">{{ yaw.toFixed(1) }}°</div>
+              <div class="text-gray-500 mb-1">Yaw</div>
+              <div class="font-semibold text-blue-600">{{ yaw.toFixed(1) }}°</div>
             </div>
           </div>
         </div>
 
         <!-- Compass/Heading -->
-        <div class="bg-slate-50 rounded-lg p-4">
-          <div class="text-xs text-slate-500 mb-2 text-center">Compass</div>
+        <div class="bg-gray-100 rounded-xl p-5">
+          <div class="text-sm font-medium text-gray-700 mb-3 text-center">Compass</div>
           <div class="relative w-full aspect-square">
             <svg viewBox="0 0 200 200" class="w-full h-full">
               <!-- Compass circle -->
@@ -80,15 +88,15 @@
               <circle cx="100" cy="100" r="8" fill="white" stroke="#0f172a" stroke-width="2" />
             </svg>
           </div>
-          <div class="text-center text-xs mt-2">
-            <div class="text-slate-400">Heading</div>
-            <div class="font-mono text-green-600 text-lg">{{ heading.toFixed(1) }}°</div>
+          <div class="text-center text-xs mt-3">
+            <div class="text-gray-500 mb-1">Heading</div>
+            <div class="font-semibold text-green-600 text-lg">{{ heading.toFixed(1) }}°</div>
           </div>
         </div>
 
         <!-- Tilt/Stability Bubble Level -->
-        <div class="bg-slate-50 rounded-lg p-4">
-          <div class="text-xs text-slate-500 mb-2 text-center">Level</div>
+        <div class="bg-gray-100 rounded-xl p-5">
+          <div class="text-sm font-medium text-gray-700 mb-3 text-center">Level</div>
           <div class="relative w-full aspect-square">
             <svg viewBox="0 0 200 200" class="w-full h-full">
               <!-- Outer circle (limit) -->
@@ -115,9 +123,9 @@
               />
             </svg>
           </div>
-          <div class="text-center text-xs mt-2">
-            <div class="text-slate-400">Tilt</div>
-            <div class="font-mono" :class="isLevel ? 'text-green-600' : 'text-amber-600'">
+          <div class="text-center text-xs mt-3">
+            <div class="text-gray-500 mb-1">Tilt</div>
+            <div class="font-semibold" :class="isLevel ? 'text-green-600' : 'text-amber-600'">
               {{ isLevel ? 'Level' : `${tiltAngle.toFixed(1)}°` }}
             </div>
           </div>
@@ -125,59 +133,100 @@
       </div>
 
       <!-- Raw Sensor Data -->
-      <div class="border-t border-slate-200 pt-4">
-        <div class="text-xs text-slate-500 mb-2">Raw Sensor Data</div>
-        <div class="grid grid-cols-3 gap-2 text-sm">
-          <div class="text-center">
-            <div class="text-slate-500">
-              Accel
+      <div class="border-t border-gray-100 pt-6">
+        <h3 class="text-sm font-medium text-gray-700 mb-4">Raw Sensor Data</h3>
+        <div class="grid grid-cols-3 gap-4">
+          <!-- Accelerometer -->
+          <div class="bg-gray-100 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div class="text-xs font-medium text-gray-600 uppercase tracking-wide">Accelerometer</div>
+              <div class="w-2 h-2 rounded-full" :class="systemState.imuData.acceleration.x !== null ? 'bg-red-500' : 'bg-gray-300'"></div>
             </div>
-            <div class="font-mono" :class="systemState.imuData.acceleration.x !== null ? 'text-red-600' : 'text-slate-400'">
-              {{ systemState.imuData.acceleration.x !== null ? systemState.imuData.acceleration.x.toFixed(1) : '—' }}
-            </div>
-            <div class="font-mono" :class="systemState.imuData.acceleration.y !== null ? 'text-red-600' : 'text-slate-400'">
-              {{ systemState.imuData.acceleration.y !== null ? systemState.imuData.acceleration.y.toFixed(1) : '—' }}
-            </div>
-            <div class="font-mono" :class="systemState.imuData.acceleration.z !== null ? 'text-red-600' : 'text-slate-400'">
-              {{ systemState.imuData.acceleration.z !== null ? systemState.imuData.acceleration.z.toFixed(1) : '—' }}
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">X:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.acceleration.x !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.acceleration.x !== null ? systemState.imuData.acceleration.x.toFixed(1) : '—' }}
+                </span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">Y:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.acceleration.y !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.acceleration.y !== null ? systemState.imuData.acceleration.y.toFixed(1) : '—' }}
+                </span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">Z:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.acceleration.z !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.acceleration.z !== null ? systemState.imuData.acceleration.z.toFixed(1) : '—' }}
+                </span>
+              </div>
             </div>
           </div>
-          <div class="text-center">
-            <div class="text-slate-500">
-              Gyro
+
+          <!-- Gyroscope -->
+          <div class="bg-gray-100 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div class="text-xs font-medium text-gray-600 uppercase tracking-wide">Gyroscope</div>
+              <div class="w-2 h-2 rounded-full" :class="systemState.imuData.gyroscope.x !== null ? 'bg-blue-500' : 'bg-gray-300'"></div>
             </div>
-            <div class="font-mono" :class="systemState.imuData.gyroscope.x !== null ? 'text-blue-600' : 'text-slate-400'">
-              {{ systemState.imuData.gyroscope.x !== null ? systemState.imuData.gyroscope.x.toFixed(2) : '—' }}
-            </div>
-            <div class="font-mono" :class="systemState.imuData.gyroscope.y !== null ? 'text-blue-600' : 'text-slate-400'">
-              {{ systemState.imuData.gyroscope.y !== null ? systemState.imuData.gyroscope.y.toFixed(2) : '—' }}
-            </div>
-            <div class="font-mono" :class="systemState.imuData.gyroscope.z !== null ? 'text-blue-600' : 'text-slate-400'">
-              {{ systemState.imuData.gyroscope.z !== null ? systemState.imuData.gyroscope.z.toFixed(2) : '—' }}
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">X:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.gyroscope.x !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.gyroscope.x !== null ? systemState.imuData.gyroscope.x.toFixed(2) : '—' }}
+                </span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">Y:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.gyroscope.y !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.gyroscope.y !== null ? systemState.imuData.gyroscope.y.toFixed(2) : '—' }}
+                </span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">Z:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.gyroscope.z !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.gyroscope.z !== null ? systemState.imuData.gyroscope.z.toFixed(2) : '—' }}
+                </span>
+              </div>
             </div>
           </div>
-          <div class="text-center">
-            <div class="text-slate-500">
-              Mag
+
+          <!-- Magnetometer -->
+          <div class="bg-gray-100 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div class="text-xs font-medium text-gray-600 uppercase tracking-wide">Magnetometer</div>
+              <div class="w-2 h-2 rounded-full" :class="systemState.imuData.magnetometer.x !== null ? 'bg-green-500' : 'bg-gray-300'"></div>
             </div>
-            <div class="font-mono" :class="systemState.imuData.magnetometer.x !== null ? 'text-green-600' : 'text-slate-400'">
-              {{ systemState.imuData.magnetometer.x !== null ? systemState.imuData.magnetometer.x.toFixed(0) : '—' }}
-            </div>
-            <div class="font-mono" :class="systemState.imuData.magnetometer.y !== null ? 'text-green-600' : 'text-slate-400'">
-              {{ systemState.imuData.magnetometer.y !== null ? systemState.imuData.magnetometer.y.toFixed(0) : '—' }}
-            </div>
-            <div class="font-mono" :class="systemState.imuData.magnetometer.z !== null ? 'text-green-600' : 'text-slate-400'">
-              {{ systemState.imuData.magnetometer.z !== null ? systemState.imuData.magnetometer.z.toFixed(0) : '—' }}
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">X:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.magnetometer.x !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.magnetometer.x !== null ? systemState.imuData.magnetometer.x.toFixed(0) : '—' }}
+                </span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">Y:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.magnetometer.y !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.magnetometer.y !== null ? systemState.imuData.magnetometer.y.toFixed(0) : '—' }}
+                </span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-gray-500">Z:</span>
+                <span class="font-mono text-sm font-semibold" :class="systemState.imuData.magnetometer.z !== null ? 'text-gray-900' : 'text-gray-400'">
+                  {{ systemState.imuData.magnetometer.z !== null ? systemState.imuData.magnetometer.z.toFixed(0) : '—' }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </Card>
+  </div>
+</div>
 </template>
 
 <script setup>
-  import Card from './common/Card.vue';
   import { useSystemData } from '@/composables/useSystemData';
   import { computed } from 'vue';
 

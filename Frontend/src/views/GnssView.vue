@@ -1,34 +1,37 @@
 <template>
-  <div class="main-container">
-    <!-- GNSS Status Summary -->
-    <GnssStatus />
+  <ViewContainer title="GNSS">
+    <div class="main-container">
+      <!-- GNSS Status Summary -->
+      <GnssStatus />
 
-    <!-- GNSS Subpanels -->
-    <div class="columns-1 lg:columns-2 gap-6 space-y-6">
-      <!-- Satellite Health Subsection -->
-      <div class="break-inside-avoid mb-6">
-        <SatelliteHealthPanel />
-      </div>
+      <!-- GNSS Subpanels -->
+      <div class="columns-1 lg:columns-2 gap-6 space-y-6">
+        <!-- Satellite Health Subsection -->
+        <div class="break-inside-avoid mb-6">
+          <SatelliteHealthPanel />
+        </div>
 
-      <!-- Unified RTK Panel with Mode Selection -->
-      <div class="break-inside-avoid mb-6">
-        <RtkPanel />
-      </div>
+        <!-- Unified RTK Panel with Mode Selection -->
+        <div class="break-inside-avoid mb-6">
+          <RtkPanel />
+        </div>
 
-      <!-- Position Scatter Plot -->
-      <div class="break-inside-avoid mb-6">
-        <PositionScatterPlot />
-      </div>
+        <!-- Position Scatter Plot -->
+        <div class="break-inside-avoid mb-6">
+          <PositionScatterPlot />
+        </div>
 
-      <!-- UBX Message Rates Subsection -->
-      <div class="break-inside-avoid mb-6">
-        <MessageRatesPanel />
+        <!-- UBX Message Rates Subsection -->
+        <div class="break-inside-avoid mb-6">
+          <MessageRatesPanel />
+        </div>
       </div>
     </div>
-  </div>
+  </ViewContainer>
 </template>
 
 <script setup>
+  import ViewContainer from '@/components/layout/ViewContainer.vue';
   import GnssStatus from '@/components/gnss/GnssStatus.vue';
   import SatelliteHealthPanel from '@/components/gnss/SatelliteHealthPanel.vue';
   import RtkPanel from '@/components/gnss/RtkPanel.vue';

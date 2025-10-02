@@ -1,7 +1,10 @@
 <template>
-  <SystemPanel />
+  <ViewContainer title="System">
+    <SystemPanel />
+  </ViewContainer>
 </template>
 
 <script setup>
-  import SystemPanel from '@/components/SystemPanel.vue';
+import ViewContainer from '@/components/layout/ViewContainer.vue';
+import SystemPanel from '@/components/SystemPanel.vue';
 </script>
