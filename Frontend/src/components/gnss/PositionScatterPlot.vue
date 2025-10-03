@@ -256,8 +256,8 @@
           y: "y",
           fill: "color",
           stroke: "#ffffff",
-          strokeWidth: 1,
-          r: 4,
+          strokeWidth: 0.5,
+          r: 2,
           title: d => `${d.fixType}\nEast: ${d.x.toFixed(2)}m\nNorth: ${d.y.toFixed(2)}m`
         }),
         Plot.crosshair(positionHistory, { x: "x", y: "y" })
