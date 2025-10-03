@@ -141,7 +141,7 @@ public class GnssInitializer
             if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
             {
                 _logger.LogInformation("GNSS communication established at {BaudRate} baud", baudRate);
-                
+
                 // If we're not at optimal speed, try to switch
                 if (baudRate != 460800)
                 {
@@ -149,7 +149,7 @@ public class GnssInitializer
                     await SwitchTo460800BaudAsync(baudRate, portName);
                     // Note: SwitchTo460800BaudAsync will update _serialPortManager if successful
                 }
-                
+
                 return true;
             }
 
@@ -184,17 +184,17 @@ public class GnssInitializer
             _logger.LogDebug("Sending PUBX baud command: {Command}", pubxBaudCommand.Trim());
             _serialPortManager.Write(pubxBaudCommand);
 
-            // Wait for command to be processed
-            await Task.Delay(BaudRateDelayMs);
+            // Wait for GNSS to acknowledge and process the command (receiver echoes the command)
+            await Task.Delay(500);
 
             // Close current connection
             _serialPortManager.Dispose();
             _serialPortManager = null;
 
-            // Wait for device to reconfigure
-            await Task.Delay(BaudRateDelayMs);
+            // Wait for device to fully reconfigure
+            await Task.Delay(1000);
 
-            // Try connection at new baud rate
+            // Try connection at new baud rate - test multiple times
             _serialPortManager = new SerialPortManager(
                 "GNSS",
                 portName,
@@ -203,15 +203,36 @@ public class GnssInitializer
             );
 
             await _serialPortManager.StartAsync();
-            var response = await TestGnssCommunicationAsync(_serialPortManager);
 
-            if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
+            // Wait longer for data to flow and verify data integrity
+            await Task.Delay(1500);
+
+            // Check if we're receiving valid data - look at actual receive rate and buffer
+            var receiveRate = _serialPortManager.CurrentReceiveRate;
+            _logger.LogDebug("Testing 460800 baud: receive rate = {Rate} bytes/sec", receiveRate);
+
+            // At 460800 baud with active GNSS, we should see significant data flow (>100 bytes/sec)
+            if (receiveRate > 100)
             {
-                _logger.LogInformation("Successfully switched to 460800 baud");
-                return true;
+                // Now test if the data is actually valid
+                var response = await TestGnssCommunicationAsync(_serialPortManager);
+
+                if (!string.IsNullOrEmpty(response) && IsValidNmeaResponse(response))
+                {
+                    _logger.LogInformation("Successfully switched to 460800 baud - receiving {Rate} bytes/sec", receiveRate);
+                    return true;
+                }
+                else
+                {
+                    _logger.LogWarning("Data flowing at 460800 baud ({Rate} bytes/sec) but invalid/corrupted - GNSS likely didn't switch", receiveRate);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Insufficient data at 460800 baud ({Rate} bytes/sec) - GNSS didn't switch or command rejected", receiveRate);
             }
 
-            // Failed - try to restore original baud rate
+            // Failed - restore original baud rate
             _logger.LogWarning("Failed to switch to 460800, restoring {OriginalBaud} baud", currentBaudRate);
             _serialPortManager?.Dispose();
             _serialPortManager = new SerialPortManager(
@@ -221,6 +242,15 @@ public class GnssInitializer
                 _loggerFactory.CreateLogger<SerialPortManager>()
             );
             await _serialPortManager.StartAsync();
+
+            // Verify restoration worked
+            await Task.Delay(500);
+            var restoreResponse = await TestGnssCommunicationAsync(_serialPortManager);
+            if (!string.IsNullOrEmpty(restoreResponse))
+            {
+                _logger.LogInformation("Successfully restored {OriginalBaud} baud communication", currentBaudRate);
+            }
+
             return false;
         }
         catch (Exception ex)
