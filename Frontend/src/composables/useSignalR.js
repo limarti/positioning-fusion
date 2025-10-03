@@ -67,7 +67,7 @@ const scheduleRetry = () =>
   if (retryTimer) return; // Already scheduled
 
   retryAttempt.value++;
-  const delay = 5000; // Fixed 5 second retry interval
+  const delay = 2000; // Fixed 2 second retry interval
   nextRetryIn.value = Math.ceil(delay / 1000);
 
   // Countdown timer
