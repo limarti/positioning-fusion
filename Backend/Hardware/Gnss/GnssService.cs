@@ -553,10 +553,14 @@ public class GnssService : BackgroundService
                     }
                 }
             }
+            else if (messageClass == UbxConstants.CLASS_TIM && messageId == UbxConstants.TIM_TM2)
+            {
+                // TIM-TM2: Time mark data - received but not parsed
+            }
             else
             {
                 // Log unknown/unparsed UBX messages
-                _logger.LogInformation("❓ Unknown UBX message: Class=0x{Class:X2}, ID=0x{Id:X2}, Length={Length} bytes", 
+                _logger.LogInformation("❓ Unknown UBX message: Class=0x{Class:X2}, ID=0x{Id:X2}, Length={Length} bytes",
                     messageClass, messageId, data.Length);
 
                 // Log first few bytes for debugging
