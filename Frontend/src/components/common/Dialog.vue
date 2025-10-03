@@ -1,11 +1,12 @@
 <template>
-  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div v-if="show" class="fixed inset-0 z-50">
     <!-- Background overlay -->
-    <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity" @click="$emit('close')" />
+    <div class="absolute inset-0 bg-black opacity-25 transition-opacity" @click="$emit('close')" />
 
     <!-- Modal panel -->
-    <div class="relative bg-white border border-gray-200 rounded-lg shadow-xl w-full max-h-screen overflow-y-auto"
-         :class="maxWidthClass">
+    <div class="relative z-10 flex items-center justify-center min-h-full p-4">
+      <div class="relative bg-white border border-gray-200 rounded-lg shadow-xl w-full max-h-screen overflow-y-auto"
+           :class="maxWidthClass">
       <!-- Header -->
       <div class="px-6 py-4 border-b border-gray-100">
         <div class="flex items-center justify-between">
@@ -33,6 +34,7 @@
       <!-- Footer -->
       <div v-if="$slots.footer" class="px-6 py-4 border-t border-gray-100">
         <slot name="footer" />
+      </div>
       </div>
     </div>
   </div>

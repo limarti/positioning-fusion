@@ -349,21 +349,23 @@ public class GnssInitializer
     private async Task ConfigureBaseStation()
     {
         _logger.LogInformation("Configuring Base Station mode");
-        
+
         // Enable RTCM3 output
         await SetBoolWithValset(UbxConstants.UART1_PROTOCOL_RTCM3, true);
-        
+
         // Configure RTCM3 corrections
         await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_REF_STATION_ARP_UART1, 1);
         await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GPS_MSM7_UART1, 5);
         await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_GALILEO_MSM7_UART1, 5);
         await EnableMessageWithValset(UbxConstants.MSGOUT_RTCM3_BEIDOU_MSM7_UART1, 5);
-        
+
         // Enable Survey-In status
         await EnableMessageWithValset(UbxConstants.MSGOUT_UBX_NAV_SVIN_UART1, 1);
-        
-        // Start Survey-In
-        await SetSurveyInMode(UbxConstants.SURVEY_IN_DURATION_SECONDS, UbxConstants.SURVEY_IN_ACCURACY_LIMIT_0P1MM);
+
+        // Start Survey-In with configurable parameters
+        // Convert meters to 0.1mm units for UBlox
+        uint accuracyLimit0P1Mm = (uint)(_configurationManager.SurveyInAccuracyLimitMeters * 10000);
+        await SetSurveyInMode((uint)_configurationManager.SurveyInDurationSeconds, accuracyLimit0P1Mm);
     }
 
     private async Task ConfigureRover()
@@ -449,33 +451,53 @@ public class GnssInitializer
             _logger.LogInformation("Setting Survey-In mode: {Duration}s duration, {Accuracy}mm accuracy limit",
                 durationSeconds, accuracyLimit * 0.1);
 
-            var payload = new List<byte>
+            // Step 1: First disable TMODE to reset any running survey
+            _logger.LogDebug("Disabling TMODE to reset survey");
+            var disablePayload = new List<byte>
             {
-                UbxConstants.VAL_VERSION,                      // 0x01
-                (byte)(UbxConstants.VAL_LAYER_RAM             // bitmask for VALSET
-                     /* | UbxConstants.VAL_LAYER_BBR */),     // add if you want persistence across warm boots
-                (byte)UbxConstants.ValTransaction.None,       // single-message apply (atomic in one packet)
-                0x00,                                         // reserved
+                UbxConstants.VAL_VERSION,
+                (byte)UbxConstants.VAL_LAYER_RAM,
+                (byte)UbxConstants.ValTransaction.None,
+                0x00,
+            };
+            disablePayload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_MODE));
+            disablePayload.Add(UbxConstants.TMODE_DISABLED);
+
+            var disableResponse = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, disablePayload.ToArray());
+            if (disableResponse != UbxResponseType.Ack)
+            {
+                _logger.LogWarning("Failed to disable TMODE before starting survey");
+            }
+
+            // Wait for receiver to process the disable command
+            await Task.Delay(500);
+
+            // Step 2: Now enable Survey-In with parameters
+            _logger.LogDebug("Enabling Survey-In with new parameters");
+            var enablePayload = new List<byte>
+            {
+                UbxConstants.VAL_VERSION,
+                (byte)UbxConstants.VAL_LAYER_RAM,
+                (byte)UbxConstants.ValTransaction.None,
+                0x00,
             };
 
-            // Step 1: ensure we transition cleanly by disabling in the same transaction
-            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_MODE));
-            payload.Add(UbxConstants.TMODE_DISABLED);
+            // Set TMODE to Survey-In
+            enablePayload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_MODE));
+            enablePayload.Add(UbxConstants.TMODE_SURVEY_IN);
 
-            // Step 2: immediately set Survey-In + parameters
-            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_MODE));
-            payload.Add(UbxConstants.TMODE_SURVEY_IN);
+            // Set duration
+            enablePayload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_SVIN_MIN_DUR));
+            enablePayload.AddRange(BitConverter.GetBytes(durationSeconds));
 
-            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_SVIN_MIN_DUR));
-            payload.AddRange(BitConverter.GetBytes(durationSeconds));
+            // Set accuracy limit
+            enablePayload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_SVIN_ACC_LIMIT));
+            enablePayload.AddRange(BitConverter.GetBytes(accuracyLimit));
 
-            payload.AddRange(BitConverter.GetBytes(UbxConstants.TMODE_SVIN_ACC_LIMIT));
-            payload.AddRange(BitConverter.GetBytes(accuracyLimit));
-
-            var response = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, payload.ToArray());
+            var response = await SendUbxConfigMessageAsync(UbxConstants.CLASS_CFG, UbxConstants.CFG_VALSET, enablePayload.ToArray());
 
             if (response == UbxResponseType.Ack)
-                _logger.LogInformation("Survey-In mode configured successfully");
+                _logger.LogInformation("Survey-In mode configured successfully and survey started");
             else if (response == UbxResponseType.Nak)
                 _logger.LogWarning("Survey-In mode configuration NAK");
             else if (response == UbxResponseType.Timeout)

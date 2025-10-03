@@ -96,6 +96,12 @@ const messageRates = reactive({
 const isChangingMode = ref(false);
 const selectedMode = ref('DISABLED');
 
+// Survey-In settings
+const surveySettings = reactive({
+  durationSeconds: null,
+  accuracyLimitMeters: null
+});
+
 const modeOptions = [
   {
     value: 'DISABLED',
@@ -130,7 +136,8 @@ const state = reactive({
   messageRates,
   isChangingMode,
   selectedMode,
-  currentModeConfig
+  currentModeConfig,
+  surveySettings
 });
 
 // SignalR event handlers for GNSS data
@@ -355,7 +362,94 @@ export function handleModeChange(connection, newMode)
   });
 }
 
-export function useGnssData() 
+// Fetch settings from backend
+export async function fetchSettings(connection)
+{
+  try
+  {
+    if (connection && connection.state === 'Connected')
+    {
+      const settings = await connection.invoke('GetSettings');
+      surveySettings.durationSeconds = settings.surveyInDurationSeconds;
+      surveySettings.accuracyLimitMeters = settings.surveyInAccuracyLimitMeters;
+      console.log('Settings fetched:', settings);
+      return true;
+    }
+    else
+    {
+      console.error('No SignalR connection available');
+      return false;
+    }
+  }
+  catch (error)
+  {
+    console.error('Error fetching settings:', error);
+    return false;
+  }
+}
+
+// Update settings
+export async function updateSettings(connection, durationSeconds, accuracyLimitMeters)
+{
+  try
+  {
+    if (connection && connection.state === 'Connected')
+    {
+      const success = await connection.invoke('UpdateSettings', durationSeconds, accuracyLimitMeters);
+      if (success)
+      {
+        // Update local state
+        surveySettings.durationSeconds = durationSeconds;
+        surveySettings.accuracyLimitMeters = accuracyLimitMeters;
+        console.log('Settings updated successfully');
+      }
+      return success;
+    }
+    else
+    {
+      console.error('No SignalR connection available');
+      return false;
+    }
+  }
+  catch (error)
+  {
+    console.error('Error updating settings:', error);
+    return false;
+  }
+}
+
+// Reset survey-in
+export async function resetSurveyIn(connection)
+{
+  try
+  {
+    if (connection && connection.state === 'Connected')
+    {
+      const success = await connection.invoke('ResetSurveyIn');
+      if (success)
+      {
+        console.log('Survey-In reset successfully');
+      }
+      else
+      {
+        console.warn('Survey-In reset failed - check if in SEND mode');
+      }
+      return success;
+    }
+    else
+    {
+      console.error('No SignalR connection available');
+      return false;
+    }
+  }
+  catch (error)
+  {
+    console.error('Error resetting survey-in:', error);
+    return false;
+  }
+}
+
+export function useGnssData()
 {
   return {
     // Single state object
@@ -364,6 +458,9 @@ export function useGnssData()
     modeOptions,
     getModeConfig,
     handleModeChange,
-    registerGnssEvents
+    registerGnssEvents,
+    fetchSettings,
+    updateSettings,
+    resetSurveyIn
   };
 }

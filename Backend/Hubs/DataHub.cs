@@ -19,6 +19,7 @@ public class DataHub : Hub
     private readonly ImuInitializer _imuInitializer;
     private readonly GnssInitializer _gnssInitializer;
     private readonly CameraService _cameraService;
+    private readonly GeoConfigurationManager _configurationManager;
     private readonly ILogger<DataHub> _logger;
 
     public DataHub(
@@ -28,6 +29,7 @@ public class DataHub : Hub
         ImuInitializer imuInitializer,
         GnssInitializer gnssInitializer,
         CameraService cameraService,
+        GeoConfigurationManager configurationManager,
         ILogger<DataHub> logger)
     {
         _modeManagementService = modeManagementService;
@@ -36,6 +38,7 @@ public class DataHub : Hub
         _imuInitializer = imuInitializer;
         _gnssInitializer = gnssInitializer;
         _cameraService = cameraService;
+        _configurationManager = configurationManager;
         _logger = logger;
     }
 
@@ -370,6 +373,91 @@ public class DataHub : Hub
                 CameraAvailable = false,
                 EncoderAvailable = false
             });
+        }
+    }
+
+    // Settings management methods
+    public Task<object> GetSettings()
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogDebug("GetSettings called by client: {ConnectionId}", connectionId);
+
+        try
+        {
+            var settings = new
+            {
+                surveyInDurationSeconds = _configurationManager.SurveyInDurationSeconds,
+                surveyInAccuracyLimitMeters = _configurationManager.SurveyInAccuracyLimitMeters
+            };
+
+            _logger.LogDebug("Returning settings to client: {ConnectionId} - Duration: {Duration}s, Accuracy: {Accuracy}m",
+                connectionId, settings.surveyInDurationSeconds, settings.surveyInAccuracyLimitMeters);
+
+            return Task.FromResult<object>(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception getting settings for client: {ConnectionId}", connectionId);
+            return Task.FromResult<object>(new
+            {
+                surveyInDurationSeconds = 10,
+                surveyInAccuracyLimitMeters = 100.0
+            });
+        }
+    }
+
+    public async Task<bool> UpdateSettings(int surveyInDurationSeconds, double surveyInAccuracyLimitMeters)
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogInformation("UpdateSettings called by client: {ConnectionId} - Duration: {Duration}s, Accuracy: {Accuracy}m",
+            connectionId, surveyInDurationSeconds, surveyInAccuracyLimitMeters);
+
+        try
+        {
+            _configurationManager.SurveyInDurationSeconds = surveyInDurationSeconds;
+            _configurationManager.SurveyInAccuracyLimitMeters = surveyInAccuracyLimitMeters;
+            _configurationManager.SaveConfiguration();
+
+            _logger.LogInformation("Settings updated and saved successfully for client: {ConnectionId}", connectionId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception updating settings for client: {ConnectionId}", connectionId);
+            return false;
+        }
+    }
+
+    public async Task<bool> ResetSurveyIn()
+    {
+        var connectionId = Context.ConnectionId;
+        _logger.LogInformation("ResetSurveyIn called by client: {ConnectionId}", connectionId);
+
+        try
+        {
+            if (_configurationManager.OperatingMode != OperatingMode.SEND)
+            {
+                _logger.LogWarning("ResetSurveyIn called but not in SEND mode for client: {ConnectionId}", connectionId);
+                return false;
+            }
+
+            var success = await _gnssInitializer.ReconfigureAsync();
+
+            if (success)
+            {
+                _logger.LogInformation("Survey-In reset successfully for client: {ConnectionId}", connectionId);
+            }
+            else
+            {
+                _logger.LogWarning("Survey-In reset failed for client: {ConnectionId}", connectionId);
+            }
+
+            return success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception resetting Survey-In for client: {ConnectionId}", connectionId);
+            return false;
         }
     }
 }

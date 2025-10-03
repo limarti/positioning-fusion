@@ -105,6 +105,36 @@ public class GeoConfigurationManager
         }
     }
 
+    public int SurveyInDurationSeconds
+    {
+        get => _configuration.SurveyInDurationSeconds;
+        set
+        {
+            var oldValue = _configuration.SurveyInDurationSeconds;
+            if (oldValue != value)
+            {
+                _logger?.LogDebug("Survey-In duration changing from {OldValue}s to {NewValue}s", oldValue, value);
+                _configuration.SurveyInDurationSeconds = value;
+                _logger?.LogInformation("Survey-In duration updated: {OldValue}s → {NewValue}s", oldValue, value);
+            }
+        }
+    }
+
+    public double SurveyInAccuracyLimitMeters
+    {
+        get => _configuration.SurveyInAccuracyLimitMeters;
+        set
+        {
+            var oldValue = _configuration.SurveyInAccuracyLimitMeters;
+            if (Math.Abs(oldValue - value) > 0.001)
+            {
+                _logger?.LogDebug("Survey-In accuracy limit changing from {OldValue}m to {NewValue}m", oldValue, value);
+                _configuration.SurveyInAccuracyLimitMeters = value;
+                _logger?.LogInformation("Survey-In accuracy limit updated: {OldValue}m → {NewValue}m", oldValue, value);
+            }
+        }
+    }
+
     public void SaveConfiguration()
     {
         try
@@ -185,6 +215,8 @@ public class GeoConfigurationManager
         public string DeviceName { get; set; } = GetDefaultDeviceName();
         public OperatingMode OperatingMode { get; set; } = OperatingMode.DISABLED;
         public WiFiConfiguration WiFiConfiguration { get; set; } = new();
+        public int SurveyInDurationSeconds { get; set; } = 10;
+        public double SurveyInAccuracyLimitMeters { get; set; } = 100.0;
 
         private static string GetDefaultDeviceName()
         {

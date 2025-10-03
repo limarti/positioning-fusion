@@ -119,8 +119,18 @@
 
       <!-- Base Station Setup (Base Station Mode Only) -->
       <div v-if="gnssState.gnssData.corrections.mode === 'SEND'" class="border-t border-gray-200 pt-4 space-y-4">
-        <div class="text-sm font-semibold text-gray-800">
-          Correction Station Setup
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold text-gray-800">
+            Correction Station Setup
+          </div>
+          <button type="button"
+                  class="btn-icon"
+                  @click="openSurveySettingsDialog">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
         </div>
 
         <div class="space-y-3">
@@ -189,30 +199,59 @@
                    :mode-options="modeOptions"
                    @close="showModeDialog = false"
                    @change="onModeChange" />
+
+    <!-- Survey-In Settings Dialog -->
+    <SurveyInSettingsDialog :show="showSurveySettingsDialog"
+                            @close="showSurveySettingsDialog = false" />
   </Card>
 </template>
 
 <script setup>
-  import { ref, computed, watch } from 'vue';
+  import { ref, computed, watch, onMounted } from 'vue';
   import Card from '../common/Card.vue';
   import RtkModeDialog from './RtkModeDialog.vue';
+  import SurveyInSettingsDialog from './SurveyInSettingsDialog.vue';
   import { useGnssData } from '@/composables/useGnssData';
   import { useSystemData } from '@/composables/useSystemData';
   import { useSignalR } from '@/composables/useSignalR';
 
   // Get data from composables
-  const { state: gnssState, modeOptions, handleModeChange } = useGnssData();
+  const { state: gnssState, modeOptions, handleModeChange, fetchSettings } = useGnssData();
   const { state: systemState } = useSystemData();
   const { signalrConnection } = useSignalR();
 
   // Dialog state
   const showModeDialog = ref(false);
+  const showSurveySettingsDialog = ref(false);
 
   // Handle mode change using the composable function
   const onModeChange = async (newMode) =>
   {
     await handleModeChange(signalrConnection.value, newMode);
   };
+
+  // Handle opening survey settings dialog
+  const openSurveySettingsDialog = async () =>
+  {
+    // Fetch current settings before opening dialog
+    await fetchSettings(signalrConnection.value);
+    showSurveySettingsDialog.value = true;
+  };
+
+  // Fetch settings on mount when connection is ready
+  onMounted(() =>
+  {
+    // Watch for connection to become available and fetch settings
+    let unwatch;
+    unwatch = watch(signalrConnection, (connection) =>
+    {
+      if (connection && connection.state === 'Connected')
+      {
+        fetchSettings(connection);
+        if (unwatch) unwatch(); // Stop watching after first successful fetch
+      }
+    }, { immediate: true });
+  });
 
   // Correction status formatting and styling
   const formatCorrectionAge = () =>
