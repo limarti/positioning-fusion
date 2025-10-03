@@ -39,7 +39,6 @@ public class DataFileWriter : BackgroundService
     private static DateTime _sessionStartTime = DateTime.UtcNow;
     private static readonly object _renameLock = new object();
     private const string SessionCounterFileName = ".session_counter";
-    private const int FallbackRenameMinutes = 5;  // Wait 5 minutes before using system time
 
     public DataFileWriter(string fileName, ILogger<DataFileWriter> logger)
     {
@@ -109,21 +108,14 @@ public class DataFileWriter : BackgroundService
                     var timeSinceLastGnssCheck = DateTime.UtcNow - lastGnssTimeCheck;
                     if (timeSinceLastGnssCheck.TotalSeconds >= gnssTimeCheckIntervalSeconds && !_sessionRenamed)
                     {
-                        // Try to rename the session folder with the most reliable time available
+                        // Try to rename the session folder using GNSS time
                         var gnssTime = GnssService.GetLastValidGnssTime();
                         if (gnssTime.HasValue)
                         {
-                            // Use GNSS time - most accurate
                             _logger.LogInformation("Valid GNSS time detected: {GnssTime}, renaming session folder", gnssTime.Value);
-                            TryRenameSessionFolder(gnssTime.Value, useGnssTime: true);
+                            TryRenameSessionFolder(gnssTime.Value);
                         }
-                        else if ((DateTime.UtcNow - _sessionStartTime).TotalMinutes >= FallbackRenameMinutes)
-                        {
-                            // Fallback to system time after waiting
-                            _logger.LogInformation("No GNSS time after {Minutes} minutes, using system time for rename", FallbackRenameMinutes);
-                            TryRenameSessionFolder(DateTime.UtcNow, useGnssTime: false);
-                        }
-                        
+
                         lastGnssTimeCheck = DateTime.UtcNow;
                     }
 
@@ -573,16 +565,16 @@ public class DataFileWriter : BackgroundService
 
     // Removed FindExistingSessionPath - no longer needed
 
-    private void TryRenameSessionFolder(DateTime dateTime, bool useGnssTime)
+    private void TryRenameSessionFolder(DateTime gnssTime)
     {
         lock (_renameLock)
         {
             // Check if already renamed (by any writer)
             if (_sessionRenamed)
                 return;
-                
+
             // Check if another writer already renamed it
-            if (!string.IsNullOrEmpty(SharedSessionPath) && 
+            if (!string.IsNullOrEmpty(SharedSessionPath) &&
                 !SharedSessionPath.Contains("session_") &&
                 Directory.Exists(SharedSessionPath))
             {
@@ -611,18 +603,8 @@ public class DataFileWriter : BackgroundService
                     return;
                 }
 
-                string newFolderName;
-                if (useGnssTime)
-                {
-                    // GNSS time format: yyyy-MM-dd-HH-mm
-                    newFolderName = dateTime.ToString("yyyy-MM-dd-HH-mm");
-                }
-                else
-                {
-                    // System time format: yyyy-MM-dd-HH-mm-ss-systemtime
-                    newFolderName = dateTime.ToString("yyyy-MM-dd-HH-mm-ss") + "-systemtime";
-                }
-
+                // GNSS time format: yyyy-MM-dd-HH-mm
+                var newFolderName = gnssTime.ToString("yyyy-MM-dd-HH-mm");
                 var newSessionPath = Path.Combine(parentDir, newFolderName);
 
                 // Check if target already exists - add counter if needed
