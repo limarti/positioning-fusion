@@ -1,18 +1,19 @@
+using Backend.Configuration;
+using Backend.GnssSystem;
+using Backend.Hardware.Battery;
+using Backend.Hardware.Bluetooth;
+using Backend.Hardware.Camera;
 using Backend.Hardware.Gnss;
 using Backend.Hardware.Imu;
-using Backend.Hardware.Camera;
-using Backend.Hardware.Bluetooth;
 using Backend.Hardware.LoRa;
-using Backend.Hardware.Battery;
 using Backend.Hubs;
-using Backend.Storage;
-using Backend.GnssSystem;
-using Backend.Configuration;
 using Backend.Services;
+using Backend.Storage;
 using Backend.WiFi;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Console;
 using Serilog;
+using System.IO;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,15 +24,65 @@ builder.Services.Configure<HostOptions>(hostOptions =>
     hostOptions.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
 });
 
+// Helper method to get next log file number
+static int GetNextLogFileNumber(string directory)
+{
+    try
+    {
+        if (!Directory.Exists(directory))
+            return 1;
+
+        var existingFiles = Directory.GetFiles(directory, "*.log");
+        if (existingFiles.Length == 0)
+            return 1;
+
+        int maxNumber = 0;
+        foreach (var file in existingFiles)
+        {
+            var fileName = Path.GetFileNameWithoutExtension(file);
+            if (int.TryParse(fileName, out int number))
+            {
+                if (number > maxNumber)
+                    maxNumber = number;
+            }
+        }
+
+        return maxNumber + 1;
+    }
+    catch
+    {
+        return 1;
+    }
+}
+
 // Configure Serilog
-var logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "logs", "gnss-system-.log");
+var logDirectory = "/var/log/subterra/app";
+if (!Directory.Exists(logDirectory))
+{
+    Directory.CreateDirectory(logDirectory);
+
+    // Set permissions to 755 (rwxr-xr-x) - owner can write, all can read
+    if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+    {
+        try
+        {
+            File.SetUnixFileMode(logDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                                       UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                                       UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Could not set permissions on {logDirectory}: {ex.Message}");
+        }
+    }
+}
+var logFileNumber = GetNextLogFileNumber(logDirectory);
+var logPath = Path.Combine(logDirectory, $"{logFileNumber}.log");
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
     .WriteTo.Console(outputTemplate: "{Timestamp:HH:mm:ss.fff}: {Level:u3}: {Message:lj}{NewLine}{Exception}")
     .WriteTo.File(logPath,
-        rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 30,
         shared: true,
         flushToDiskInterval: TimeSpan.FromSeconds(10),
         fileSizeLimitBytes: 104_857_600, // 100 MB per file

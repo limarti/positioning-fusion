@@ -5,8 +5,8 @@ namespace Backend.Storage;
 
 public class LocalFileWriter : BackgroundService
 {
-    private const string LocalLogDirectory = "/var/log/gnss-data";
-    private const string FilePattern = "*-battery.txt";
+    private const string LocalLogDirectory = "/var/log/subterra/telemetry";
+    private const string FilePattern = "*.txt";
 
     private readonly ILogger<LocalFileWriter> _logger;
     private readonly string _basePath;
@@ -122,11 +122,27 @@ public class LocalFileWriter : BackgroundService
             {
                 Directory.CreateDirectory(_basePath);
                 _logger.LogInformation("Created local logging directory: {Path}", _basePath);
+
+                // Set permissions to 755 (rwxr-xr-x) - owner can write, all can read
+                if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+                {
+                    try
+                    {
+                        File.SetUnixFileMode(_basePath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                                                        UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                                                        UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                        _logger.LogInformation("Set directory permissions to 755 (world-readable)");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Could not set permissions on directory - files may not be world-readable");
+                    }
+                }
             }
 
             // Find highest existing session number
             _sessionNumber = GetNextSessionNumber();
-            _currentFilePath = Path.Combine(_basePath, $"{_sessionNumber:D5}-battery.txt");
+            _currentFilePath = Path.Combine(_basePath, $"{_sessionNumber}.txt");
 
             _logger.LogInformation("Local battery data will be written to: {FilePath}", _currentFilePath);
         }
