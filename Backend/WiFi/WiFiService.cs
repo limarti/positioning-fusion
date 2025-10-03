@@ -22,7 +22,6 @@ public class WiFiService : BackgroundService
     private bool _isAttemptingConnection = false;
     private int _currentKnownNetworkIndex = 0;
 
-    private const int CONNECTION_TIMEOUT_SECONDS = 120; // 2 minutes
     private const int STATUS_CHECK_INTERVAL_SECONDS = 30; // 30 seconds
     private const int FALLBACK_CHECK_INTERVAL_SECONDS = 10; // 10 seconds when trying to connect
     private const int CLIENT_RETRY_INTERVAL_SECONDS = 120; // 2 minutes - retry client connection from AP mode
@@ -112,14 +111,6 @@ public class WiFiService : BackgroundService
         {
             _logger.LogInformation("AP mode active with no connected clients, attempting to reconnect as client");
             await AttemptKnownNetworkConnection();
-        }
-
-        // Check for connection timeout
-        if (_isAttemptingConnection &&
-            (DateTime.Now - _lastConnectionAttempt).TotalSeconds > CONNECTION_TIMEOUT_SECONDS)
-        {
-            _logger.LogWarning("Connection attempt timed out after {Timeout} seconds, falling back to AP mode", CONNECTION_TIMEOUT_SECONDS);
-            await FallbackToAPMode("Connection timeout");
         }
     }
 
@@ -352,9 +343,10 @@ public class WiFiService : BackgroundService
             // If failed, immediately try next network in the loop
         }
 
-        // If we've tried all networks, reset index for next round (in 10 seconds)
-        _logger.LogDebug("Tried all {Count} known networks, none succeeded. Will retry in next check interval.", knownNetworks.Count);
+        // If we've tried all networks and all failed, immediately fall back to AP mode
+        _logger.LogInformation("Tried all {Count} known networks, none succeeded. Falling back to AP mode immediately.", knownNetworks.Count);
         _currentKnownNetworkIndex = 0;
+        await FallbackToAPMode("All known networks failed");
     }
 
     private async Task<bool> ConnectToNetworkDuringRetry(string ssid, string password)
@@ -512,6 +504,19 @@ public class WiFiService : BackgroundService
                 _logger.LogError("Failed to create AP connection: {Error}", createResult.Error);
                 return false;
             }
+
+            // Ensure WiFi device is fully disconnected before bringing up AP to prevent conflicting state
+            _logger.LogInformation("Disconnecting WiFi device {Interface} to ensure clean AP startup", wifiInterface);
+            var disconnectResult = await ExecuteNmcliCommand($"device disconnect {wifiInterface}");
+            if (disconnectResult.Success)
+            {
+                _logger.LogDebug("WiFi device disconnected successfully");
+            }
+            else
+            {
+                _logger.LogDebug("Device disconnect returned: {Error} (may already be disconnected)", disconnectResult.Error);
+            }
+            await Task.Delay(1000); // Give device time to fully disconnect
 
             // Bring up the connection
             _logger.LogInformation("Bringing up AP connection: {SSID}", ssid);
