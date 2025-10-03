@@ -271,16 +271,7 @@ public class WiFiService : BackgroundService
 
     private async Task AttemptKnownNetworkConnection()
     {
-        // Double-check we're not already connected before attempting
-        var currentStatus = await GetCurrentWiFiStatus();
-        if (currentStatus.CurrentMode == WiFiMode.Client && currentStatus.IsConnected)
-        {
-            _logger.LogDebug("Skipping known network connection attempt - already connected as client to {SSID}", currentStatus.ConnectedNetworkSSID);
-            _isAttemptingConnection = false;
-            _lastSuccessfulConnection = DateTime.Now; // Update cooldown
-            return;
-        }
-
+        // Get known networks first so we can check if current connection is valid
         var knownNetworks = _configManager.WiFiConfiguration.KnownNetworks
             .OrderByDescending(n => n.LastConnected)
             .ToList();
@@ -289,7 +280,8 @@ public class WiFiService : BackgroundService
             return;
 
         // Check if we're already connected to one of the known networks
-        if (!string.IsNullOrEmpty(currentStatus.ConnectedNetworkSSID))
+        var currentStatus = await GetCurrentWiFiStatus();
+        if (currentStatus.CurrentMode == WiFiMode.Client && currentStatus.IsConnected)
         {
             var alreadyConnectedToKnown = knownNetworks.Any(n => n.SSID == currentStatus.ConnectedNetworkSSID);
             if (alreadyConnectedToKnown)
@@ -298,6 +290,10 @@ public class WiFiService : BackgroundService
                 _isAttemptingConnection = false;
                 _lastSuccessfulConnection = DateTime.Now; // Update cooldown
                 return;
+            }
+            else
+            {
+                _logger.LogInformation("Currently connected to unknown network {SSID}, will disconnect and connect to known network", currentStatus.ConnectedNetworkSSID);
             }
         }
 
